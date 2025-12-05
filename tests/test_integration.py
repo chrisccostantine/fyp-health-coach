@@ -1,35 +1,65 @@
-import requests, time
+import pathlib
+import sys
 
-BASE = "http://127.0.0.1"
-PORTS = {"gateway":8000, "diet":8101, "exercise":8102, "motivation":8103, "scheduler":8104, "feedback":8105}
+sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
 
-def url(svc, path):
-    return f"{BASE}:{PORTS[svc]}{path}"
+from services.app import app
 
-def test_flow():
+
+def test_full_flow():
+    client = app.test_client()
+
     # Plan
-    plan = requests.post(url("gateway","/plan/today"), json={
-        "user_id":"demo-user",
-        "profile":{"age":24,"sex":"M","height_cm":178,"weight_kg":78,"activity_level":"moderate"},
-        "goal":{"type":"fat_loss","deficit_kcal":400},
-        "equipment":["dumbbells"]
-    }).json()
-    assert "meals" in plan and "workouts" in plan
+    plan_resp = client.post(
+        "/plan",
+        json={
+            "profile": {
+                "user_id": "demo-user",
+                "age": 28,
+                "sex": "M",
+                "height_cm": 180,
+                "weight_kg": 80,
+                "activity_level": "moderate",
+                "equipment": ["dumbbells", "outdoor"],
+            },
+            "goal": {"type": "fat_loss", "deficit_kcal": 400, "target_minutes": 40},
+        },
+    )
+    assert plan_resp.status_code == 200
+    plan_json = plan_resp.get_json()
+    assert "meals" in plan_json and "workouts" in plan_json
 
     # Schedule
-    ev = []
-    for m in plan["meals"]:
-        ev.append({"type":"meal","name":m["name"],"scheduled_at":"2025-10-16T08:00:00","duration_min":15})
-    for w in plan["workouts"]:
-        ev.append({"type":"workout","name":w["name"],"scheduled_at":"2025-10-16T18:00:00","duration_min":w["duration_min"]})
-    sch = requests.post(url("gateway","/schedule/commit"), json={"user_id":"demo-user","events":ev}).json()
-    assert sch["ok"]
+    schedule_resp = client.post(
+        "/schedule",
+        json={
+            "user_id": "demo-user",
+            "windows": ["06:30-07:30", "12:00-13:00", "19:00-20:00"],
+            "meals": plan_json["meals"],
+            "workouts": plan_json["workouts"],
+        },
+    )
+    assert schedule_resp.status_code == 200
+    schedule_json = schedule_resp.get_json()
+    assert schedule_json["ok"] is True
+    assert len(schedule_json["events"]) >= 1
 
     # Nudge
-    ndg = requests.post(url("gateway","/nudge/send"), json={"user_id":"demo-user","tone":"coach","goal":"stay_consistent"}).json()
-    assert "message" in ndg
+    nudge_resp = client.post("/nudge", json={"user_id": "demo-user", "tone": "coach", "goal": "stay_consistent"})
+    assert nudge_resp.status_code == 200
+    assert "message" in nudge_resp.get_json()
 
     # Feedback
-    first_event_id = sch["events"][0]["id"]
-    fb = requests.post(url("gateway","/feedback"), json={"event_id": first_event_id, "user_id":"demo-user", "rating":5, "reason":"felt great", "bandit_arm":"coach"}).json()
-    assert fb["ok"]
+    first_event = schedule_json["events"][0]
+    feedback_resp = client.post(
+        "/feedback",
+        json={
+            "event_id": first_event["id"],
+            "user_id": "demo-user",
+            "rating": 5,
+            "reason": "felt great",
+            "bandit_arm": "coach",
+        },
+    )
+    assert feedback_resp.status_code == 200
+    assert feedback_resp.get_json()["ok"] is True

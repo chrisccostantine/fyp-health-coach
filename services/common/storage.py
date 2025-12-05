@@ -1,12 +1,18 @@
-from sqlalchemy import create_engine, text
+from __future__ import annotations
+
+import sqlite3
 from pathlib import Path
+from typing import List, Dict
 
 DB_PATH = Path(__file__).resolve().parents[2] / "storage" / "app.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-engine = create_engine(f"sqlite:///{DB_PATH}", future=True, echo=False)
 
-SCHEMA = '''
+def _connect():
+    return sqlite3.connect(DB_PATH)
+
+
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS feedback (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id TEXT,
@@ -20,38 +26,47 @@ CREATE TABLE IF NOT EXISTS bandit_arm (
     agent TEXT,
     arm TEXT,
     pulls INTEGER DEFAULT 0,
-    reward_sum REAL DEFAULT 0.0
+    reward_sum REAL DEFAULT 0.0,
+    UNIQUE(agent, arm)
 );
-'''
+"""
+
 
 def init_db():
-    with engine.begin() as conn:
-        for stmt in SCHEMA.strip().split(';'):
-            s = stmt.strip()
-            if s:
-                conn.execute(text(s))
+    with _connect() as conn:
+        conn.executescript(SCHEMA)
 
-def record_feedback(event_id:str, user_id:str, rating:int, reason:str|None):
-    with engine.begin() as conn:
-        conn.execute(text("""INSERT INTO feedback(event_id,user_id,rating,reason)
-                             VALUES (:e,:u,:r,:re)"""),
-                     {"e":event_id,"u":user_id,"r":rating,"re":reason})
 
-def get_arms(agent:str):
-    with engine.begin() as conn:
-        rows = conn.execute(text("SELECT id, agent, arm, pulls, reward_sum FROM bandit_arm WHERE agent=:a"), {"a":agent}).mappings().all()
-    return [dict(r) for r in rows]
+def record_feedback(event_id: str, user_id: str, rating: int, reason: str | None):
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO feedback(event_id, user_id, rating, reason) VALUES (?, ?, ?, ?)",
+            (event_id, user_id, rating, reason),
+        )
+        conn.commit()
 
-def upsert_arm(agent:str, arm:str, reward:float|None=None, pulled:bool=False):
-    # Ensure row exists
-    with engine.begin() as conn:
-        conn.execute(text("""INSERT INTO bandit_arm(agent, arm, pulls, reward_sum)
-                           SELECT :agent, :arm, 0, 0.0
-                           WHERE NOT EXISTS (SELECT 1 FROM bandit_arm WHERE agent=:agent AND arm=:arm)"""),
-                     {"agent":agent,"arm":arm})
+
+def get_arms(agent: str) -> List[Dict]:
+    with _connect() as conn:
+        cur = conn.execute(
+            "SELECT agent, arm, pulls, reward_sum FROM bandit_arm WHERE agent=?", (agent,)
+        )
+        rows = cur.fetchall()
+    return [
+        {"agent": row[0], "arm": row[1], "pulls": row[2], "reward_sum": row[3]}
+        for row in rows
+    ]
+
+
+def upsert_arm(agent: str, arm: str, reward: float | None = None, pulled: bool = False):
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO bandit_arm(agent, arm, pulls, reward_sum) VALUES (?, ?, 0, 0.0)",
+            (agent, arm),
+        )
         if pulled or reward is not None:
-            conn.execute(text("""UPDATE bandit_arm SET
-                                pulls = pulls + :p,
-                                reward_sum = reward_sum + :r
-                                WHERE agent=:agent AND arm=:arm"""),
-                         {"p":1 if pulled else 0, "r":(reward or 0.0), "agent":agent, "arm":arm})
+            conn.execute(
+                "UPDATE bandit_arm SET pulls = pulls + ?, reward_sum = reward_sum + ? WHERE agent = ? AND arm = ?",
+                (1 if pulled else 0, reward or 0.0, agent, arm),
+            )
+        conn.commit()

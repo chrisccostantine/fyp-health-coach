@@ -1,86 +1,54 @@
-# FYP Health Coach — Multi‑Agent Flask System (MVP)
+# Intelligent Personal Health Coach (reboot)
 
-This is a **modular multi‑agent personal health coach** with a Flask **Gateway** that orchestrates five agents:
-**Diet, Exercise, Motivation, Scheduler, Feedback**. It’s an MVP aligned with your FYP brief and ready to run locally.
+Fresh restart of the multi‑agent health coach inspired by the project brief. Everything now runs from a minimal standard‑library HTTP server (`services/app.py`) with modular agents for diet, exercise, motivation, scheduling, and feedback.
 
-> Python 3.10+ recommended.
+## Stack
+- Python 3.11 (standard library only)
+- SQLite storage for bandit + feedback
 
-## Quick start (local, no Docker)
-
+## Getting started
 ```bash
-# 1) Create a virtual environment
-python -m venv .venv && source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# 2) Install requirements for all services
-pip install -r services/requirements.all.txt
-
-# 3) Start the agents in separate terminals (or run the helper script)
-# Terminal A
-python services/diet_agent/app.py
-# Terminal B
-python services/exercise_agent/app.py
-# Terminal C
-python services/motivation_agent/app.py
-# Terminal D
-python services/scheduler_agent/app.py
-# Terminal E
-python services/feedback_agent/app.py
-# Terminal F (Gateway)
-python services/gateway/app.py
-
-# (Optional) seed demo data
-python scripts/seed.py
-
-# (Optional) Run a demo flow that exercises the APIs end-to-end
-python scripts/demo_flow.py
+python -m services.app  # launches http://127.0.0.1:8000
 ```
 
-Gateway runs on **http://127.0.0.1:8000**. Each agent runs on its own port (see below).
+## API
+- `POST /plan` — Build a daily plan with meals + workouts from profile and goal.
+- `POST /schedule` — Turn a plan into scheduled events using optional time windows.
+- `POST /nudge` — Send a motivation nudge (multi‑armed bandit chooses tone).
+- `POST /feedback` — Log ratings and reinforce the bandit arm used.
 
-## Services & Ports
-
-- Gateway (Flask): **:8000**
-- Diet Agent: **:8101**
-- Exercise Agent: **:8102**
-- Motivation Agent: **:8103**
-- Scheduler Agent: **:8104**
-- Feedback Agent: **:8105**
-
-## API (Gateway)
-
-- `POST /chat` — echo-style chat + quick intent routing (MVP).
-- `POST /plan/today` — generate a daily plan (meals + workouts) from Diet/Exercise.
-- `POST /schedule/commit` — schedule events (delegates to Scheduler).
-- `POST /nudge/send` — send a motivation nudge (returns text; you can wire push later).
-- `POST /feedback` — log feedback and update simple bandit policy via Feedback Agent.
-
-### Example request: `POST /plan/today`
-```json
-{
-  "user_id": "demo-user",
-  "profile": {"age": 24, "sex": "M", "height_cm": 178, "weight_kg": 78, "activity_level": "moderate",
-              "diet": {"type": "balanced", "calorie_target": null}},
-  "goal": {"type": "fat_loss", "deficit_kcal": 400},
-  "equipment": ["dumbbells", "pullup_bar"]
-}
+### Example: generate a plan
+```bash
+curl -X POST http://127.0.0.1:8000/plan \
+  -H "Content-Type: application/json" \
+  -d '{
+        "profile": {"user_id": "demo", "age": 28, "height_cm": 180, "weight_kg": 80, "activity_level": "moderate", "equipment": ["dumbbells", "outdoor"]},
+        "goal": {"type": "fat_loss", "deficit_kcal": 400, "target_minutes": 40}
+      }'
 ```
 
-## Storage
+### Example: schedule and nudge
+```bash
+curl -X POST http://127.0.0.1:8000/schedule \
+  -H "Content-Type: application/json" \
+  -d '{
+        "user_id": "demo",
+        "windows": ["06:30-07:30", "12:00-13:00", "19:00-20:00"],
+        "meals": [],
+        "workouts": []
+      }'
 
-- SQLite file at `storage/app.db` via a minimal helper.
-- You can later swap to Firebase/Firestore by replacing the storage adapter in `services/common/storage.py`.
+curl -X POST http://127.0.0.1:8000/nudge \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "demo", "tone": "coach", "goal": "stay_consistent"}'
+```
 
 ## Tests
+```bash
+pytest
+```
 
-- `pytest` integration test: `tests/test_integration.py` spins up against running services.
-- Lightweight and fast.
-
-## Next steps (hooks present in code)
-
-- Swap the storage adapter to Firebase.
-- Add Google Calendar to `scheduler_agent` (stubs and TODOs in code).
-- Replace rule-based suggestions with learned policies (Feedback Agent includes a simple epsilon‑greedy bandit).
-
----
-
-© You. Built by ChatGPT as a scaffold you can extend.
+## Notes
+- Agents live under `services/agents/` and are plain Python modules.
+- Bandit rewards are stored in `storage/app.db` and updated whenever feedback specifies `bandit_arm`.
+- The system is intentionally rule‑based so it’s easy to extend with LLM calls or ML models later.

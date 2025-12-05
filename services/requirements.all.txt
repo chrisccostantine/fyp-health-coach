@@ -1,6 +1,1 @@
-Flask==3.0.0
-pydantic==2.8.2
-requests==2.32.3
-SQLAlchemy==2.0.35
-pytest==8.3.3
-Flask-Cors==4.0.0
+# Standard library only. No external packages required.
