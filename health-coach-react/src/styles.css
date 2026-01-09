@@ -1,0 +1,40 @@
+:root {
+  --bg: #0f172a;
+  --muted: #ffff;
+  --text: #fffff;
+}
+
+body {
+  background: linear-gradient(135deg, #0f172a 0%, #1f2937 100%);
+  color: var(--text);
+}
+
+.card {
+  background: rgba(17,24,39,0.9) !important;
+  border: 1px solid #1f2937 !important;
+}
+
+.text-muted { color: var(--muted) !important; }
+
+pre.out {
+  background: #0b1220;
+  color: #d1d5db;
+  border: 1px solid #1f2937;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+}
+
+footer small { color: var(--muted); }
+/* --- Titles white --- */
+h1, h2, h3, h4, h5, h6,
+.card .h5,
+.card-title {
+  color: #ffffff !important;
+}
+
+/* Keep form labels muted (optional) */
+.form-label { color: #94a3b8 !important; }
