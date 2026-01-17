@@ -1,10 +1,9 @@
 from flask import Flask, request, jsonify
 import requests, os
-from pydantic import BaseModel, ValidationError
-from typing import Any, Dict
+from pydantic import ValidationError
 from services.common.models import UserProfile, Goal, DayPlan, PlanMeal, PlanWorkout
 from services.common.storage import init_db
-from flask_cors import CORS 
+from flask_cors import CORS
 
 DIET_URL = os.environ.get("DIET_URL", "http://127.0.0.1:8101")
 EXERCISE_URL = os.environ.get("EXERCISE_URL", "http://127.0.0.1:8102")
@@ -16,11 +15,19 @@ app = Flask(__name__)
 CORS(app)
 init_db()
 
+# ✅ ADD THESE HERE (BEFORE app.run)
+@app.get("/health")
+def health():
+    return jsonify({"ok": True})
+
+@app.get("/")
+def home():
+    return jsonify({"ok": True, "service": "gateway"})
+
 @app.post("/chat")
 def chat():
     data = request.get_json(force=True)
     text = data.get("text","").lower()
-    # Very naive intent routing (MVP)
     if "plan" in text:
         return jsonify({"reply": "Sure, let's make today's plan. Call /plan/today with your profile & goal."})
     elif "nudge" in text or "motivate" in text:
@@ -38,13 +45,20 @@ def plan_today():
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
 
-    diet = requests.post(f"{DIET_URL}/diet/suggest", json={"user_id": user_id, "profile": profile.model_dump(), "goal": goal.model_dump()}).json()
-    work = requests.post(f"{EXERCISE_URL}/exercise/suggest", json={"user_id": user_id, "profile": profile.model_dump(), "goal": goal.model_dump(), "equipment": payload.get("equipment", [])}).json()
+    diet = requests.post(
+        f"{DIET_URL}/diet/suggest",
+        json={"user_id": user_id, "profile": profile.model_dump(), "goal": goal.model_dump()},
+    ).json()
+
+    work = requests.post(
+        f"{EXERCISE_URL}/exercise/suggest",
+        json={"user_id": user_id, "profile": profile.model_dump(), "goal": goal.model_dump(), "equipment": payload.get("equipment", [])},
+    ).json()
 
     plan = DayPlan(
         user_id=user_id,
         meals=[PlanMeal(**m) for m in diet["meals"]],
-        workouts=[PlanWorkout(**w) for w in work["workouts"]]
+        workouts=[PlanWorkout(**w) for w in work["workouts"]],
     )
     return jsonify(plan.model_dump())
 

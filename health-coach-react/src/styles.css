@@ -1,40 +1,124 @@
 :root {
-  --bg: #0f172a;
-  --muted: #ffff;
-  --text: #fffff;
+  --bg0: #0b1020;
+  --bg1: #0f172a;
+  --bg2: #111827;
+
+  --text: #e5e7eb;
+  --muted: #94a3b8;
+
+  --border: rgba(148, 163, 184, 0.16);
+  --card: rgba(17, 24, 39, 0.86);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+html, body {
+  height: 100%;
 }
 
 body {
-  background: linear-gradient(135deg, #0f172a 0%, #1f2937 100%);
+  margin: 0;
+  background: radial-gradient(1200px 600px at 20% -10%, rgba(59, 130, 246, 0.15), transparent 60%),
+              radial-gradient(900px 500px at 90% 0%, rgba(168, 85, 247, 0.12), transparent 55%),
+              linear-gradient(135deg, var(--bg1) 0%, var(--bg0) 100%);
   color: var(--text);
 }
 
-.card {
-  background: rgba(17,24,39,0.9) !important;
-  border: 1px solid #1f2937 !important;
+.text-muted {
+  color: var(--muted) !important;
 }
 
-.text-muted { color: var(--muted) !important; }
+/* Top bar */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(10px);
+  background: rgba(10, 14, 28, 0.55);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  color: #fff;
+}
+
+.app-subtitle {
+  font-size: 0.95rem;
+}
+
+/* Cards */
+.card-soft {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow);
+  border-radius: 16px;
+}
+
+/* List groups on dark */
+.list-group-soft .list-group-item {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.list-group-soft .list-group-item + .list-group-item {
+  margin-top: 10px;
+  border-radius: 12px;
+}
+
+.list-group-soft .list-group-item:first-child,
+.list-group-soft .list-group-item:last-child {
+  border-radius: 12px;
+}
+
+.form-label {
+  color: var(--muted) !important;
+  font-weight: 600;
+}
+
+.form-hint {
+  font-size: 0.85rem;
+}
+
+code.code-soft {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  padding: 0.12rem 0.35rem;
+  border-radius: 8px;
+  color: #e5e7eb;
+}
 
 pre.out {
-  background: #0b1220;
+  background: rgba(2, 6, 23, 0.7);
   color: #d1d5db;
-  border: 1px solid #1f2937;
-  border-radius: 0.5rem;
-  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.9rem;
   max-height: 360px;
   overflow: auto;
   white-space: pre-wrap;
   font-size: 0.9rem;
 }
-
-footer small { color: var(--muted); }
-/* --- Titles white --- */
-h1, h2, h3, h4, h5, h6,
-.card .h5,
-.card-title {
-  color: #ffffff !important;
+/* ===== Section Titles ===== */
+.section-title {
+  color: #e5e7eb; /* soft white (Tailwind gray-200) */
+  font-weight: 600;
+  letter-spacing: 0.2px;
 }
 
-/* Keep form labels muted (optional) */
-.form-label { color: #94a3b8 !important; }
+.section-subtitle {
+  color: #94a3b8; /* muted slate */
+}
+
+/* Card headers (User, Profile & Goal, etc.) */
+.card .h5,
+.card h2 {
+  color: #f1f5f9 !important; /* brighter than body text */
+}
+
+/* Smaller titles like Meals, Workout */
+.card .h6 {
+  color: #e2e8f0 !important;
+}
