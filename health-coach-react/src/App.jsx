@@ -45,7 +45,7 @@ function fmtIso(iso) {
   return `${date} • ${time}`;
 }
 
-/* -------------------- views -------------------- */
+/* -------------------- views (kept) -------------------- */
 function PlanView({ plan }) {
   if (!plan) return null;
 
@@ -68,7 +68,6 @@ function PlanView({ plan }) {
         <span className="badge text-bg-secondary">Generated</span>
       </div>
 
-      {/* Summary */}
       {(totals.kcal ??
         totals.calories ??
         totals.protein_g ??
@@ -95,7 +94,6 @@ function PlanView({ plan }) {
         </div>
       )}
 
-      {/* Meals */}
       {meals.length > 0 && (
         <div className="mb-3">
           <div className="d-flex align-items-center justify-content-between mb-2">
@@ -124,7 +122,6 @@ function PlanView({ plan }) {
         </div>
       )}
 
-      {/* Workouts */}
       {workouts.length > 0 && (
         <div className="mb-2">
           <div className="d-flex align-items-center justify-content-between mb-2">
@@ -279,6 +276,61 @@ function saveProfile(profile) {
   }
 }
 
+/* -------------------- tiny UI blocks -------------------- */
+function ProgressPills({ step, total }) {
+  return (
+    <div className="d-flex align-items-center gap-2">
+      {Array.from({ length: total }).map((_, i) => (
+        <span
+          key={i}
+          className={`pill ${i === step ? "pill-active" : ""}`}
+          aria-hidden="true"
+        />
+      ))}
+    </div>
+  );
+}
+
+function QuickStat({ label, value }) {
+  return (
+    <div className="stat">
+      <div className="stat-label">{label}</div>
+      <div className="stat-value">{value}</div>
+    </div>
+  );
+}
+function OptionCard({ title, subtitle, active, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`option-card ${active ? "active" : ""}`}
+      onClick={onClick}
+    >
+      <div className="option-title">{title}</div>
+      {subtitle ? <div className="option-sub">{subtitle}</div> : null}
+    </button>
+  );
+}
+function LongSelect({ title, subtitle, active, onClick, right }) {
+  return (
+    <button
+      type="button"
+      className={`long-card ${active ? "active" : ""}`}
+      onClick={onClick}
+    >
+      <div className="long-left">
+        <div className="long-title">{title}</div>
+        {subtitle ? <div className="long-sub">{subtitle}</div> : null}
+      </div>
+      <div className="long-right">{right}</div>
+    </button>
+  );
+}
+
+function OptionGrid({ children }) {
+  return <div className="option-grid">{children}</div>;
+}
+
 /* -------------------- App -------------------- */
 export default function App() {
   // ------- Settings -------
@@ -286,6 +338,7 @@ export default function App() {
   const [userId, setUserId] = useState(getSettings().userId);
   const [ping, setPing] = useState(null);
   const didPingRef = useRef(false);
+  // Extra quiz answers (MadMuscles style)
 
   useEffect(() => {
     saveSettings({ gatewayUrl, userId });
@@ -294,7 +347,6 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    // Failsafe so UI never stays "Pinging..."
     const timeout = setTimeout(() => {
       if (!cancelled) setPing({ ok: false, error: "Ping timeout" });
     }, 3000);
@@ -317,6 +369,11 @@ export default function App() {
     };
   }, []);
 
+  // ------- Funnel state (NEW) -------
+  const [stage, setStage] = useState("landing"); // landing | quiz | results
+  const [step, setStep] = useState(0); // 0..3
+  const TOTAL_STEPS = 28;
+
   // ------- Profile & Goal (with persistence) -------
   const stored = useMemo(() => loadProfileDefaults(), []);
   const [age, setAge] = useState(stored?.age ?? 24);
@@ -331,6 +388,58 @@ export default function App() {
   const [equipment, setEquipment] = useState(
     stored?.equipment ?? "dumbbells,pullup_bar",
   );
+  const [ageBand, setAgeBand] = useState("18-29");
+  const [gender, setGender] = useState(sex || "M"); // keep in sync with your existing sex
+  const [bodyType, setBodyType] = useState("average"); // slim | average | big | heavy
+  const [goalPick, setGoalPick] = useState(goalType || "fat_loss"); // reuse your goalType
+  const [targetBody, setTargetBody] = useState("athlete"); // athlete | hero | bodybuilder
+  const [bodyFatLevel, setBodyFatLevel] = useState(22); // slider number
+  const [problemAreas, setProblemAreas] = useState([]); // multi select
+  const [dietPref, setDietPref] = useState("none"); // none | vegetarian | vegan | keto | mediterranean
+  const [sugarFreq, setSugarFreq] = useState("not_often"); // not_often | 3_5_week | daily
+  const [waterIntake, setWaterIntake] = useState("2_6"); // lt2 | 2_6 | 7_10 | gt10 | coffee_tea
+  // Height & weight units
+  const [heightUnit, setHeightUnit] = useState("cm"); // cm | ft
+  const [weightUnit, setWeightUnit] = useState("kg"); // kg | lb
+
+  const [heightValue, setHeightValue] = useState(height || "");
+  const [currentWeight, setCurrentWeight] = useState(weight || "");
+  const [targetWeight, setTargetWeight] = useState("");
+
+  // Fitness level
+  const [fitnessLevel, setFitnessLevel] = useState("beginner");
+
+  // Exercise preferences (like / neutral / dislike)
+  const [exercisePrefs, setExercisePrefs] = useState({});
+
+  // Sports interests
+  const [sports, setSports] = useState([]);
+  // ---- New quiz states ----
+  const [additionalGoals, setAdditionalGoals] = useState([]);
+  const [pushupsLevel, setPushupsLevel] = useState("");
+  const [pullupsLevel, setPullupsLevel] = useState("");
+  const [workoutLocation, setWorkoutLocation] = useState(""); // home|gym|mixed
+  const [trainingFreq, setTrainingFreq] = useState(""); // not_at_all|1_2|3|more_3
+  const [workoutDurationPref, setWorkoutDurationPref] = useState(""); // 10_15|20_30|30_40|40_60|auto
+
+  const [letFoodDecide, setLetFoodDecide] = useState(false);
+  const [veggies, setVeggies] = useState([]);
+
+  const [leadName, setLeadName] = useState("");
+  const [leadDob, setLeadDob] = useState("");
+  const [leadEmail, setLeadEmail] = useState("");
+  const [fitnessAge, setFitnessAge] = useState(null);
+  useEffect(() => {
+    if (step === 27) {
+      setFitnessAge(calcFitnessAge());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  useEffect(() => {
+    if (heightUnit === "cm") setHeight(+heightValue || height);
+    if (weightUnit === "kg") setWeight(+currentWeight || weight);
+  }, [heightValue, currentWeight, heightUnit, weightUnit]);
 
   useEffect(() => {
     saveProfile({
@@ -345,6 +454,7 @@ export default function App() {
     });
   }, [age, sex, height, weight, activity, goalType, deficit, equipment]);
 
+  // ------- Plan -------
   const [plan, setPlan] = useState(null);
   const [planMsg, setPlanMsg] = useState("");
   const [isPlanning, setIsPlanning] = useState(false);
@@ -353,11 +463,10 @@ export default function App() {
     if (cached) setPlan(cached);
   }, []);
 
-  async function handlePlanToday() {
+  async function handlePlanToday({ autoGoResults = true } = {}) {
     setIsPlanning(true);
     setPlanMsg("");
     try {
-      // basic validation
       if (!userId?.trim()) throw new Error("User ID is required.");
       if (+age <= 0 || +height <= 0 || +weight <= 0)
         throw new Error("Enter valid profile numbers.");
@@ -379,6 +488,7 @@ export default function App() {
 
       const data = await api.planToday(payload);
       setPlan(data);
+      if (autoGoResults) setStage("results");
     } catch (e) {
       setPlan(null);
       setPlanMsg(`Error: ${e.message}`);
@@ -393,13 +503,38 @@ export default function App() {
   const [schedule, setSchedule] = useState(getCachedSchedule());
   const [scheduleMsg, setScheduleMsg] = useState("");
   const [isScheduling, setIsScheduling] = useState(false);
+  function calcFitnessAge() {
+    // super simple placeholder logic (you can improve later)
+    const base = Number(age) || 24;
+
+    let score = 0;
+    if (trainingFreq === "not_at_all") score += 4;
+    if (trainingFreq === "1_2") score += 2;
+    if (trainingFreq === "3") score += 1;
+
+    if (additionalGoals.includes("Improve sleep")) score += 1;
+    if (additionalGoals.includes("Reduce Stress")) score += 1;
+
+    // If user drinks very little water, add a bit
+    if (waterIntake === "lt2") score += 1;
+
+    return Math.max(14, base + score);
+  }
+  function toggleInArray(arr, item) {
+    return arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item];
+  }
+
+  function pickSingle(setter, value) {
+    setter(value);
+    nextStep();
+  }
 
   function parseTimes(csv) {
     return (csv || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean)
-      .filter((t) => /^\d{2}:\d{2}$/.test(t)); // HH:MM only
+      .filter((t) => /^\d{2}:\d{2}$/.test(t));
   }
 
   async function handleSchedule() {
@@ -415,7 +550,6 @@ export default function App() {
       if (times.length === 0)
         throw new Error("Enter meal times as HH:MM (comma-separated).");
 
-      // Build meals with titles cycling through plan meals
       const mealItems = times.map((t, idx) => ({
         type: "meal",
         when: isoTodayAt(t),
@@ -507,27 +641,45 @@ export default function App() {
 
   const pingBadge = useMemo(() => {
     if (ping == null)
-      return <span className="badge text-bg-secondary">Pinging…</span>;
-    if (ping.ok)
-      return <span className="badge text-bg-success">Gateway OK</span>;
+      return <span className="badge text-bg-secondary">Connecting…</span>;
+    if (ping.ok) return <span className="badge text-bg-success">Online</span>;
     return (
       <span className="badge text-bg-danger">
-        Gateway Error{ping?.error ? `: ${ping.error}` : ""}
+        Offline{ping?.error ? `: ${ping.error}` : ""}
       </span>
     );
   }, [ping]);
+
+  function startQuiz() {
+    setStage("quiz");
+    setStep(0);
+    setPlanMsg("");
+  }
+
+  function nextStep() {
+    setStep((s) => Math.min(TOTAL_STEPS - 1, s + 1));
+  }
+
+  function prevStep() {
+    setStep((s) => Math.max(0, s - 1));
+  }
+
+  function goResults() {
+    setStage("results");
+  }
 
   return (
     <div className="app-shell">
       {/* Top Bar */}
       <div className="topbar">
         <div className="container d-flex align-items-center justify-content-between py-3">
-          <div>
+          <div className="d-flex flex-column">
             <div className="app-title">Health Coach</div>
             <div className="app-subtitle text-muted">
-              Plan meals & workouts · Schedule · Nudges · Feedback
+              Personalized meals & workouts in minutes
             </div>
           </div>
+
           <div className="d-flex align-items-center gap-2">
             {pingBadge}
             <span className="badge text-bg-dark">User: {userId || "—"}</span>
@@ -536,339 +688,1510 @@ export default function App() {
       </div>
 
       <div className="container py-4">
-        {/* Settings / User */}
-        <div className="card card-soft mb-3">
-          <div className="card-body">
-            <h2 className="h5 mb-3">User</h2>
-            <div className="row g-3">
-              <div className="col-md-6">
-                <label className="form-label">User ID</label>
-                <input
-                  className="form-control"
-                  value={userId}
-                  onChange={(e) => setUserId(e.target.value)}
-                  placeholder="demo-user"
-                />
-              </div>
+        {/* LANDING */}
+        {stage === "landing" && (
+          <div className="row g-4 align-items-stretch">
+            <div className="col-lg-7">
+              <div className="hero card card-soft">
+                <div className="card-body p-4 p-md-5">
+                  <div className="hero-kicker">AI-Powered Daily Plan</div>
+                  <h1 className="hero-title">
+                    Build your plan for today — meals + workouts + schedule.
+                  </h1>
+                  <p className="hero-sub text-muted">
+                    Answer a quick quiz and get a plan that matches your goal,
+                    body, and equipment.
+                  </p>
 
-              {/* Keep gateway hidden like you had it (you can re-enable if needed)
-              <div className="col-md-6">
-                <label className="form-label">Gateway URL</label>
-                <input
-                  className="form-control"
-                  value={gatewayUrl}
-                  onChange={(e) => setGatewayUrl(e.target.value)}
-                  placeholder="http://127.0.0.1:8000"
-                />
+                  <div className="d-flex flex-wrap gap-3 mt-4">
+                    <button
+                      className="btn btn-primary btn-lg fw-bold"
+                      onClick={startQuiz}
+                    >
+                      Start Quiz
+                    </button>
+                    <button
+                      className="btn btn-outline-light btn-lg"
+                      onClick={() => setStage("results")}
+                      disabled={!getCachedPlan()}
+                      title={!getCachedPlan() ? "Generate a plan first" : ""}
+                    >
+                      View My Plan
+                    </button>
+                  </div>
+
+                  <div className="mt-4 hero-stats">
+                    <QuickStat label="Time" value="~60 sec" />
+                    <QuickStat label="Workouts" value="Home / Gym" />
+                    <QuickStat label="Nutrition" value="Daily meals" />
+                  </div>
+                </div>
               </div>
-              */}
+            </div>
+
+            <div className="col-lg-5">
+              <div className="card card-soft h-100">
+                <div className="card-body p-4">
+                  <h2 className="h5 section-title mb-3">Your Account</h2>
+                  <label className="form-label">User ID</label>
+                  <input
+                    className="form-control"
+                    value={userId}
+                    onChange={(e) => setUserId(e.target.value)}
+                    placeholder="demo-user"
+                  />
+                  <div className="text-muted small mt-2">
+                    This ID is used for planning, scheduling, nudges, and
+                    feedback.
+                  </div>
+
+                  {/* Optional: keep gateway hidden */}
+                  {/* <div className="mt-3">
+                    <label className="form-label">Gateway URL</label>
+                    <input
+                      className="form-control"
+                      value={gatewayUrl}
+                      onChange={(e) => setGatewayUrl(e.target.value)}
+                    />
+                  </div> */}
+
+                  <div className="mt-4">
+                    <div className="card card-soft">
+                      <div className="card-body">
+                        <div className="fw-semibold mb-1">What you’ll get</div>
+                        <ul className="mb-0 small text-muted">
+                          <li>Daily calorie & macro summary (if available)</li>
+                          <li>Meal + workout timing suggestions</li>
+                          <li>One-click scheduling + motivational nudges</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <button
+                      className="btn btn-outline-light w-100"
+                      onClick={startQuiz}
+                    >
+                      Continue →
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Profile & Goal */}
-        <div className="card card-soft mb-3">
-          <div className="card-body">
+        {/* QUIZ */}
+        {stage === "quiz" && (
+          <div className="quiz-wrap">
             <div className="d-flex align-items-center justify-content-between mb-3">
-              <h2 className="h5 mb-3 section-title">Profile & Goal</h2>
-
-              <span className="badge text-bg-dark">Saved locally</span>
+              <div>
+                <div className="text-muted small">Quiz</div>
+                <h2 className="h4 section-title mb-0">
+                  Build your personalized plan
+                </h2>
+              </div>
+              <ProgressPills step={step} total={TOTAL_STEPS} />
             </div>
 
-            <div className="row g-3">
-              <div className="col-md-3">
-                <label className="form-label">Age</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={age}
-                  onChange={(e) => setAge(e.target.value)}
-                />
-              </div>
+            <div className="card card-soft">
+              <div className="card-body p-4 p-md-5">
+                {/* Step 0 */}
+                {step === 0 && (
+                  <>
+                    <h3 className="quiz-title">BUILD YOUR PERFECT BODY</h3>
+                    <div className="quiz-sub">
+                      According to your age and BMI
+                    </div>
 
-              <div className="col-md-3">
-                <label className="form-label">Sex</label>
-                <select
-                  className="form-select"
-                  value={sex}
-                  onChange={(e) => setSex(e.target.value)}
-                >
-                  <option>M</option>
-                  <option>F</option>
-                  <option>Other</option>
-                </select>
-              </div>
+                    <div className="age-grid mt-4">
+                      {[
+                        { k: "18-29", t: "Age: 18–29" },
+                        { k: "30-39", t: "Age: 30–39" },
+                        { k: "40-49", t: "Age: 40–49" },
+                        { k: "50+", t: "Age: 50+" },
+                      ].map((x) => (
+                        <button
+                          key={x.k}
+                          type="button"
+                          className={`age-card ${ageBand === x.k ? "active" : ""}`}
+                          onClick={() => {
+                            setAgeBand(x.k);
+                            // Optional: set a reasonable default age
+                            const midpoint =
+                              x.k === "18-29"
+                                ? 24
+                                : x.k === "30-39"
+                                  ? 35
+                                  : x.k === "40-49"
+                                    ? 45
+                                    : 55;
+                            setAge(midpoint);
+                            nextStep();
+                          }}
+                        >
+                          <div className="age-card-label">{x.t}</div>
+                          <div className="age-card-arrow">›</div>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
 
-              <div className="col-md-3">
-                <label className="form-label">Height (cm)</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={height}
-                  onChange={(e) => setHeight(e.target.value)}
-                />
-              </div>
+                {/* Step 1 */}
+                {step === 1 && (
+                  <>
+                    <h3 className="quiz-title">Choose your gender</h3>
 
-              <div className="col-md-3">
-                <label className="form-label">Weight (kg)</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={weight}
-                  onChange={(e) => setWeight(e.target.value)}
-                />
-              </div>
+                    <div className="long-stack mt-4">
+                      <LongSelect
+                        title="Male"
+                        active={gender === "M"}
+                        onClick={() => {
+                          setGender("M");
+                          nextStep();
+                        }}
+                        right={
+                          <div className="long-right">
+                            <img
+                              className="long-img"
+                              src="/images/male.png"
+                              alt="Male"
+                            />
+                          </div>
+                        }
+                      />
+                      <LongSelect
+                        title="Female"
+                        active={gender === "F"}
+                        onClick={() => {
+                          setGender("F");
+                          nextStep();
+                        }}
+                        right={
+                          <div className="long-right">
+                            <img
+                              className="long-img"
+                              src="/images/female.png"
+                              alt="Male"
+                            />
+                          </div>
+                        }
+                      />
+                    </div>
+                  </>
+                )}
 
-              <div className="col-md-3">
-                <label className="form-label">Activity</label>
-                <select
-                  className="form-select"
-                  value={activity}
-                  onChange={(e) => setActivity(e.target.value)}
-                >
-                  <option>sedentary</option>
-                  <option>light</option>
-                  <option>moderate</option>
-                  <option>active</option>
-                  <option>very_active</option>
-                </select>
-              </div>
+                {/* Step 2 */}
+                {step === 2 && (
+                  <>
+                    <h3 className="quiz-title">Choose your body type</h3>
 
-              <div className="col-md-3">
-                <label className="form-label">Goal Type</label>
-                <select
-                  className="form-select"
-                  value={goalType}
-                  onChange={(e) => setGoalType(e.target.value)}
-                >
-                  <option>fat_loss</option>
-                  <option>muscle_gain</option>
-                  <option>endurance</option>
-                  <option>general_health</option>
-                </select>
-              </div>
+                    <OptionGrid>
+                      {[
+                        {
+                          k: "slim",
+                          t: "Slim",
+                          img: "/images/slim-body-male.png",
+                        },
+                        {
+                          k: "average",
+                          t: "Average",
+                          img: "/images/average-body-male.png",
+                        },
+                        {
+                          k: "big",
+                          t: "Big",
+                          img: "/images/big-body-male.png",
+                        },
+                        {
+                          k: "heavy",
+                          t: "Heavy",
+                          img: "/images/heavy-body-male.png",
+                        },
+                      ].map((x) => (
+                        <button
+                          key={x.k}
+                          type="button"
+                          className={`img-card ${bodyType === x.k ? "active" : ""}`}
+                          onClick={() => {
+                            setBodyType(x.k);
+                            nextStep();
+                          }}
+                        >
+                          <div className="img-card-top">
+                            <img
+                              className="img-card-img"
+                              src={x.img}
+                              alt={x.t}
+                            />
+                          </div>
+                          <div className="img-card-bottom">{x.t}</div>
+                        </button>
+                      ))}
+                    </OptionGrid>
+                  </>
+                )}
 
-              <div className="col-md-3">
-                <label className="form-label">Deficit (kcal)</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={deficit}
-                  onChange={(e) => setDeficit(e.target.value)}
-                />
-              </div>
+                {/* Step 3 */}
+                {step === 3 && (
+                  <>
+                    <h3 className="quiz-title">Choose your goal</h3>
 
-              <div className="col-md-3">
-                <label className="form-label">
-                  Equipment (comma-separated)
-                </label>
-                <input
-                  className="form-control"
-                  value={equipment}
-                  onChange={(e) => setEquipment(e.target.value)}
-                  placeholder="dumbbells,pullup_bar"
-                />
+                    <div className="long-stack mt-4">
+                      <LongSelect
+                        title="Lose Weight"
+                        active={goalPick === "fat_loss"}
+                        onClick={() => {
+                          setGoalPick("fat_loss");
+                          setGoalType("fat_loss");
+                          nextStep();
+                        }}
+                      />
+                      <LongSelect
+                        title="Gain Muscle Mass"
+                        active={goalPick === "muscle_gain"}
+                        onClick={() => {
+                          setGoalPick("muscle_gain");
+                          setGoalType("muscle_gain");
+                          nextStep();
+                        }}
+                      />
+                      <LongSelect
+                        title="Get Shredded"
+                        active={goalPick === "endurance"} // map however you want
+                        onClick={() => {
+                          setGoalPick("endurance");
+                          setGoalType("endurance");
+                          nextStep();
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+                {/*Step 4*/}
+                {step === 4 && (
+                  <>
+                    <h3 className="quiz-title">Choose the body you want</h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        { k: "athlete", t: "Athlete" },
+                        { k: "hero", t: "Hero" },
+                        { k: "bodybuilder", t: "Bodybuilder" },
+                      ].map((x) => (
+                        <LongSelect
+                          key={x.k}
+                          title={x.t}
+                          active={targetBody === x.k}
+                          onClick={() => {
+                            setTargetBody(x.k);
+                            nextStep();
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {/*Step 5*/}
+                {step === 5 && (
+                  <>
+                    <h3 className="quiz-title">
+                      Choose your level of body fat
+                    </h3>
+
+                    <div className="slider-wrap mt-4">
+                      <div className="slider-card mt-3">
+                        {/* ❌ REMOVE THIS */}
+                        {/* <div className="slider-pill">{bodyFatLevel}%</div> */}
+
+                        <input
+                          type="range"
+                          min={5}
+                          max={45}
+                          value={bodyFatLevel}
+                          onChange={(e) => setBodyFatLevel(+e.target.value)}
+                          className="range"
+                        />
+
+                        <div className="slider-labels">
+                          <span>5–9%</span>
+                          <span>&gt;40%</span>
+                        </div>
+                      </div>
+
+                      <button
+                        className="btn btn-primary fw-bold btn-lg w-100 mt-4"
+                        onClick={nextStep}
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/*Step 6*/}
+                {step === 6 && (
+                  <>
+                    <h3 className="quiz-title">Select problem areas</h3>
+
+                    <div className="problem-layout mt-4">
+                      <div className="img-ph tall">
+                        <img
+                          src="/images/average-body-male.png"
+                          alt="Preview"
+                        />
+                      </div>
+
+                      <div className="problem-stack">
+                        {["Chest", "Arms", "Belly", "Legs", "Full body"].map(
+                          (p) => {
+                            const key = p.toLowerCase().replace(" ", "_");
+                            const active = problemAreas.includes(key);
+                            return (
+                              <button
+                                key={key}
+                                type="button"
+                                className={`pill-btn ${active ? "active" : ""}`}
+                                onClick={() => {
+                                  setProblemAreas((prev) =>
+                                    active
+                                      ? prev.filter((x) => x !== key)
+                                      : [...prev, key],
+                                  );
+                                }}
+                              >
+                                {p}
+                              </button>
+                            );
+                          },
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn btn-primary fw-bold btn-lg w-100 mt-4"
+                      onClick={nextStep}
+                      disabled={problemAreas.length === 0}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 7*/}
+                {step === 7 && (
+                  <>
+                    <h3 className="quiz-title">
+                      Do you follow any of these diets?
+                    </h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        {
+                          k: "vegetarian",
+                          t: "Vegetarian",
+                          s: "Excludes meat",
+                        },
+                        {
+                          k: "vegan",
+                          t: "Vegan",
+                          s: "Excludes all animal products",
+                        },
+                        { k: "keto", t: "Keto", s: "Low-carb, high-fat" },
+                        {
+                          k: "mediterranean",
+                          t: "Mediterranean",
+                          s: "Rich in plant-based foods",
+                        },
+                        {
+                          k: "I don't follow any diet",
+                          t: "I don't follow any diet",
+                          // s: "Rich in plant-based foods",
+                        },
+                      ].map((x) => (
+                        <LongSelect
+                          key={x.k}
+                          title={x.t}
+                          subtitle={x.s}
+                          active={dietPref === x.k}
+                          onClick={() => {
+                            setDietPref(x.k);
+                            nextStep();
+                          }}
+                          right={<span className="icon-ph">◦</span>}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {/*Step 8*/}
+                {step === 8 && (
+                  <>
+                    <h3 className="quiz-title">
+                      How often do you have sugary foods or drinks?
+                    </h3>
+
+                    <div className="long-stack mt-4">
+                      <LongSelect
+                        title="Not often. I'm not big on sweets"
+                        active={sugarFreq === "not_often"}
+                        onClick={() => {
+                          setSugarFreq("not_often");
+                          nextStep();
+                        }}
+                        right={<span className="icon-ph">🙂</span>}
+                      />
+                      <LongSelect
+                        title="3–5 times a week"
+                        active={sugarFreq === "3_5_week"}
+                        onClick={() => {
+                          setSugarFreq("3_5_week");
+                          nextStep();
+                        }}
+                        right={<span className="icon-ph">🍦</span>}
+                      />
+                      <LongSelect
+                        title="Pretty much every day"
+                        active={sugarFreq === "daily"}
+                        onClick={() => {
+                          setSugarFreq("daily");
+                          nextStep();
+                        }}
+                        right={<span className="icon-ph">🧁</span>}
+                      />
+                    </div>
+                  </>
+                )}
+                {/*Step 9*/}
+                {step === 9 && (
+                  <>
+                    <h3 className="quiz-title">
+                      How much water do you drink daily?
+                    </h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        {
+                          k: "lt2",
+                          t: "Less than 2 glasses",
+                          s: "up to 0.5L / 17oz",
+                          ic: "💧",
+                        },
+                        {
+                          k: "2_6",
+                          t: "2–6 glasses",
+                          s: "0.5–1.5L / 17–50oz",
+                          ic: "💧💧",
+                        },
+                        {
+                          k: "7_10",
+                          t: "7–10 glasses",
+                          s: "1.5–2.5L / 50–85oz",
+                          ic: "💧💧💧",
+                        },
+                        {
+                          k: "gt10",
+                          t: "More than 10 glasses",
+                          s: "more than 2.5L / 85oz",
+                          ic: "🌧️",
+                        },
+                        {
+                          k: "coffee_tea",
+                          t: "I drink only coffee or tea",
+                          s: "",
+                          ic: "☕",
+                        },
+                      ].map((x) => (
+                        <LongSelect
+                          key={x.k}
+                          title={x.t}
+                          subtitle={x.s}
+                          active={waterIntake === x.k}
+                          onClick={() => setWaterIntake(x.k)}
+                          right={<span className="icon-ph">{x.ic}</span>}
+                        />
+                      ))}
+                    </div>
+
+                    <button className="btn btn-primary ..." onClick={nextStep}>
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 10*/}
+                {step === 10 && (
+                  <>
+                    <h3 className="quiz-title">What’s your height?</h3>
+
+                    <div className="unit-toggle">
+                      <button
+                        className={heightUnit === "cm" ? "active" : ""}
+                        onClick={() => setHeightUnit("cm")}
+                      >
+                        cm
+                      </button>
+                      <button
+                        className={heightUnit === "ft" ? "active" : ""}
+                        onClick={() => setHeightUnit("ft")}
+                      >
+                        ft
+                      </button>
+                    </div>
+
+                    <input
+                      className="line-input"
+                      placeholder={`Height, ${heightUnit}`}
+                      value={heightValue}
+                      onChange={(e) => setHeightValue(e.target.value)}
+                    />
+
+                    <button className="btn btn-primary ..." onClick={nextStep}>
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 11*/}
+                {step === 11 && (
+                  <>
+                    <h3 className="quiz-title">What’s your current weight?</h3>
+
+                    <div className="unit-toggle">
+                      <button
+                        className={weightUnit === "kg" ? "active" : ""}
+                        onClick={() => setWeightUnit("kg")}
+                      >
+                        kg
+                      </button>
+                      <button
+                        className={weightUnit === "lb" ? "active" : ""}
+                        onClick={() => setWeightUnit("lb")}
+                      >
+                        lb
+                      </button>
+                    </div>
+
+                    <input
+                      className="line-input"
+                      placeholder={`Current weight, ${weightUnit}`}
+                      value={currentWeight}
+                      onChange={(e) => setCurrentWeight(e.target.value)}
+                    />
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                      disabled={!currentWeight}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 12*/}
+                {step === 12 && (
+                  <>
+                    <h3 className="quiz-title">What’s your target weight?</h3>
+
+                    <div className="unit-toggle">
+                      <button
+                        className={weightUnit === "kg" ? "active" : ""}
+                        onClick={() => setWeightUnit("kg")}
+                      >
+                        kg
+                      </button>
+                      <button
+                        className={weightUnit === "lb" ? "active" : ""}
+                        onClick={() => setWeightUnit("lb")}
+                      >
+                        lb
+                      </button>
+                    </div>
+
+                    <input
+                      className="line-input"
+                      placeholder={`Target weight, ${weightUnit}`}
+                      value={targetWeight}
+                      onChange={(e) => setTargetWeight(e.target.value)}
+                    />
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                      disabled={!targetWeight}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 13*/}
+                {step === 13 && (
+                  <>
+                    <h3 className="quiz-title">
+                      The last plan you’ll ever need to{" "}
+                      <span style={{ color: "#ff4d00" }}>
+                        finally get in shape
+                      </span>
+                    </h3>
+
+                    <p className="quiz-sub mt-3">
+                      Based on our calculations, you may hit your goal weight of{" "}
+                      <strong>
+                        {targetWeight} {weightUnit}
+                      </strong>{" "}
+                      by
+                    </p>
+
+                    <h4 className="mt-2" style={{ color: "#ff4d00" }}>
+                      {new Date(Date.now() + 50 * 86400000).toDateString()}
+                    </h4>
+
+                    <div className="chart-placeholder mt-4">
+                      📉 Progress Curve
+                    </div>
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 14*/}
+                {step === 14 && (
+                  <>
+                    <h3 className="quiz-title">
+                      What’s your level of fitness?
+                    </h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        {
+                          k: "beginner",
+                          t: "Beginner",
+                          s: "Standing up from the floor is hard.",
+                        },
+                        {
+                          k: "amateur",
+                          t: "Amateur",
+                          s: "Exercise once a week, not consistent.",
+                        },
+                        {
+                          k: "advanced",
+                          t: "Advanced",
+                          s: "I’m in the best shape of my life.",
+                        },
+                      ].map((x) => (
+                        <LongSelect
+                          key={x.k}
+                          title={x.t}
+                          subtitle={x.s}
+                          active={fitnessLevel === x.k}
+                          onClick={() => {
+                            setFitnessLevel(x.k);
+                            nextStep();
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+                {/*Step 15*/}
+                {step === 15 && (
+                  <>
+                    <h3 className="quiz-title">Like it or dislike it</h3>
+
+                    {[
+                      "Cardio",
+                      "Yoga / Stretching",
+                      "Lifting weights",
+                      "Pull-ups",
+                    ].map((ex) => (
+                      <div key={ex} className="exercise-card">
+                        <div className="img-ph tall center">{ex}</div>
+
+                        <div className="reaction-row">
+                          {["dislike", "neutral", "like"].map((r) => (
+                            <button
+                              key={r}
+                              className={`reaction-btn ${exercisePrefs[ex] === r ? "active" : ""}`}
+                              onClick={() =>
+                                setExercisePrefs((prev) => ({
+                                  ...prev,
+                                  [ex]: r,
+                                }))
+                              }
+                            >
+                              {r === "dislike"
+                                ? "👎"
+                                : r === "neutral"
+                                  ? "😐"
+                                  : "👍"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 16*/}
+                {step === 16 && (
+                  <>
+                    <h3 className="quiz-title">
+                      What sports are you interested in?
+                    </h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        "Gym Workouts",
+                        "Workouts at home",
+                        "Boxing",
+                        "Other martial arts",
+                        "Jogging",
+                      ].map((s) => {
+                        const active = sports.includes(s);
+                        return (
+                          <button
+                            key={s}
+                            className={`long-card ${active ? "active" : ""}`}
+                            onClick={() =>
+                              setSports((prev) =>
+                                active
+                                  ? prev.filter((x) => x !== s)
+                                  : [...prev, s],
+                              )
+                            }
+                          >
+                            {s}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <button className="btn btn-primary ..." onClick={nextStep}>
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 17*/}
+                {step === 17 && (
+                  <>
+                    <h3 className="quiz-title">
+                      Tick your additional goals below:
+                    </h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        "Improve sleep",
+                        "Form a physical habit",
+                        "Feel healthier",
+                        "Reduce Stress",
+                        "Increase energy",
+                        "Boost metabolism",
+                      ].map((g) => {
+                        const active = additionalGoals.includes(g);
+                        return (
+                          <button
+                            key={g}
+                            className={`long-card check ${active ? "active" : ""}`}
+                            onClick={() =>
+                              setAdditionalGoals((prev) =>
+                                toggleInArray(prev, g),
+                              )
+                            }
+                          >
+                            <span className="long-card-title">{g}</span>
+                            <span className={`box ${active ? "on" : ""}`} />
+                          </button>
+                        );
+                      })}
+
+                      <button
+                        className={`long-card danger ${additionalGoals.length === 0 ? "active" : ""}`}
+                        onClick={() => setAdditionalGoals([])}
+                      >
+                        <span className="long-card-title">
+                          None of the above
+                        </span>
+                        <span className="xMark">✕</span>
+                      </button>
+                    </div>
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 18*/}
+                {step === 18 && (
+                  <>
+                    <h3 className="quiz-title">
+                      How many push-ups can you do in one round?
+                    </h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        { k: "lt10", t: "Less than 10" },
+                        { k: "10_20", t: "10 to 20" },
+                        { k: "21_30", t: "21 to 30" },
+                        { k: "gt30", t: "More than 30" },
+                      ].map((o) => (
+                        <button
+                          key={o.k}
+                          className={`long-card ${pushupsLevel === o.k ? "active" : ""}`}
+                          onClick={() => pickSingle(setPushupsLevel, o.k)}
+                        >
+                          <span className="long-card-title">{o.t}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {/*Step 19*/}
+                {step === 19 && (
+                  <>
+                    <h3 className="quiz-title">
+                      How many pull-ups can you do in one round?
+                    </h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        { k: "none", t: "I can't do a single pull-up" },
+                        { k: "lt5", t: "Less than 5" },
+                        { k: "5_10", t: "5 to 10" },
+                        { k: "gt10", t: "More than 10" },
+                      ].map((o) => (
+                        <button
+                          key={o.k}
+                          className={`long-card ${pullupsLevel === o.k ? "active" : ""}`}
+                          onClick={() => pickSingle(setPullupsLevel, o.k)}
+                        >
+                          <span className="long-card-title">{o.t}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {/*Step 20*/}
+                {step === 20 && (
+                  <>
+                    <h3 className="quiz-title">Choose your workout location</h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        { k: "home", t: "Home" },
+                        { k: "gym", t: "Gym" },
+                        { k: "mixed", t: "Mixed" },
+                      ].map((o) => (
+                        <button
+                          key={o.k}
+                          className={`long-card ${workoutLocation === o.k ? "active" : ""}`}
+                          onClick={() => pickSingle(setWorkoutLocation, o.k)}
+                        >
+                          <span className="long-card-title">{o.t}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {/*Step 21*/}
+                {step === 21 && (
+                  <>
+                    <h3 className="quiz-title">
+                      How many times per week have you trained in the last 3
+                      months?
+                    </h3>
+
+                    <div className="long-stack mt-4">
+                      {[
+                        {
+                          k: "not_at_all",
+                          t: "Not at all",
+                          s: "I haven't trained, but I will after claiming my program!",
+                        },
+                        { k: "1_2", t: "1-2 times a week" },
+                        { k: "3", t: "3 times a week" },
+                        { k: "more_3", t: "More than 3 times a week" },
+                      ].map((o) => (
+                        <button
+                          key={o.k}
+                          className={`long-card ${trainingFreq === o.k ? "active" : ""}`}
+                          onClick={() => pickSingle(setTrainingFreq, o.k)}
+                        >
+                          <div>
+                            <div className="long-card-title">{o.t}</div>
+                            {o.s ? (
+                              <div className="long-card-sub">{o.s}</div>
+                            ) : null}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                      disabled={!trainingFreq}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 22*/}
+                {step === 22 && (
+                  <>
+                    <h3 className="quiz-title">
+                      How long do you want your workouts to be?
+                    </h3>
+
+                    <div className="grid-2 mt-4">
+                      {[
+                        { k: "10_15", t: "10–15 minutes" },
+                        { k: "20_30", t: "20–30 minutes" },
+                        { k: "30_40", t: "30–40 minutes" },
+                        { k: "40_60", t: "40–60 minutes" },
+                      ].map((o) => (
+                        <button
+                          key={o.k}
+                          className={`grid-card ${workoutDurationPref === o.k ? "active" : ""}`}
+                          onClick={() => {
+                            setWorkoutDurationPref(o.k);
+                            nextStep();
+                          }}
+                        >
+                          {o.t}
+                        </button>
+                      ))}
+                      <button
+                        className={`grid-card wide ${workoutDurationPref === "auto" ? "active" : ""}`}
+                        onClick={() => {
+                          setWorkoutDurationPref("auto");
+                          nextStep();
+                        }}
+                      >
+                        Let MadMuscles decide
+                      </button>
+                    </div>
+                  </>
+                )}
+                {/*Step 23*/}
+                {step === 23 && (
+                  <>
+                    <h3 className="quiz-title">Choose the products you like</h3>
+                    <p className="quiz-sub">
+                      Let us create a meal plan based on your preferences. You
+                      can always adjust it later.
+                    </p>
+
+                    <div className="toggle-row mt-4">
+                      <span className="fw-semibold">Let MadMuscles choose</span>
+                      <button
+                        className={`switch ${letFoodDecide ? "on" : ""}`}
+                        onClick={() => {
+                          setLetFoodDecide((v) => !v);
+                          if (!letFoodDecide) setVeggies([]); // when turning ON, clear manual picks
+                        }}
+                        type="button"
+                      >
+                        <span className="knob" />
+                      </button>
+                    </div>
+
+                    <h4 className="chips-title mt-4">Veggies</h4>
+
+                    <div className={`chips ${letFoodDecide ? "disabled" : ""}`}>
+                      {[
+                        "Broccoli",
+                        "Cauliflower",
+                        "Onion",
+                        "Bell pepper",
+                        "Eggplant",
+                        "Cabbage",
+                        "Asparagus",
+                        "Spinach",
+                        "Cucumber",
+                        "Tomato",
+                      ].map((v) => {
+                        const active = veggies.includes(v);
+                        return (
+                          <button
+                            key={v}
+                            className={`chip ${active ? "active" : ""}`}
+                            onClick={() =>
+                              setVeggies((prev) => toggleInArray(prev, v))
+                            }
+                            disabled={letFoodDecide}
+                            type="button"
+                          >
+                            {v}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* IMPORTANT: DO NOT go to results here */}
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 24*/}
+                {step === 24 && (
+                  <>
+                    <div className="ready-banner">
+                      ✅ Your personalized workout plan is ready!
+                    </div>
+
+                    <h3 className="quiz-title mt-4">What’s your name?</h3>
+
+                    <input
+                      className="line-input"
+                      placeholder="Name"
+                      value={leadName}
+                      onChange={(e) => setLeadName(e.target.value)}
+                    />
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                      disabled={!leadName.trim()}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 25*/}
+                {step === 25 && (
+                  <>
+                    <div className="ready-banner">
+                      ✅ Your personalized workout plan is ready!
+                    </div>
+
+                    <h3 className="quiz-title mt-4">
+                      What’s your date of birth?
+                    </h3>
+
+                    <input
+                      className="line-input"
+                      placeholder="DD / MM / YYYY"
+                      value={leadDob}
+                      onChange={(e) => setLeadDob(e.target.value)}
+                    />
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                      disabled={!leadDob.trim()}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 26*/}
+                {step === 26 && (
+                  <>
+                    <div className="ready-banner">
+                      ✅ Your personalized workout plan is ready!
+                    </div>
+
+                    <h3 className="quiz-title mt-4">Enter your email</h3>
+
+                    <input
+                      className="line-input"
+                      placeholder="name@example.com"
+                      value={leadEmail}
+                      onChange={(e) => setLeadEmail(e.target.value)}
+                      type="email"
+                    />
+
+                    <div className="privacy-row">
+                      🔒 We respect your privacy and take protecting it very
+                      seriously — no spam
+                    </div>
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                      disabled={!leadDob.trim()}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 27*/}
+                {step === 27 && (
+                  <>
+                    <h3 className="quiz-title">Your fitness age is</h3>
+
+                    <div className="age-pill">
+                      {fitnessAge ?? Number(age) ?? 24} years
+                    </div>
+
+                    <div className="fitness-copy">
+                      <p>
+                        This indicates a slight aging of the body. Irregular
+                        exercise and sleeping late at night can lead to
+                        metabolic aging.
+                      </p>
+                      <p>
+                        People with a low metabolism are more likely to gain
+                        weight and tire quickly.
+                      </p>
+                    </div>
+
+                    <div className="meter-card">
+                      <div className="meter-bar">
+                        <span
+                          className="meter-pin"
+                          style={{ left: "45%" }} // you can compute this later
+                        />
+                      </div>
+                      <div className="meter-text">
+                        Your body age is older than your actual age
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={() => handlePlanToday({ autoGoResults: true })}
+                      disabled={!leadEmail.trim() || isPlanning}
+                    >
+                      {isPlanning ? (
+                        <Spinner label="Generating..." />
+                      ) : (
+                        "Continue"
+                      )}
+                    </button>
+                  </>
+                )}
+
+                {/* Nav buttons */}
+                <div className="d-flex flex-wrap gap-2 mt-4">
+                  <button
+                    className="btn btn-outline-light"
+                    onClick={() =>
+                      step === 0 ? setStage("landing") : prevStep()
+                    }
+                  >
+                    ← Back
+                  </button>
+
+                  {/* {step < TOTAL_STEPS - 1 ? (
+                    <button
+                      className="btn btn-primary fw-bold"
+                      onClick={nextStep}
+                    >
+                      Continue →
+                    </button>
+                  ) : (
+                    <button
+                      className="btn btn-primary fw-bold"
+                      onClick={() => handlePlanToday({ autoGoResults: true })}
+                      disabled={isPlanning}
+                    >
+                      {isPlanning ? (
+                        <Spinner label="Generating..." />
+                      ) : (
+                        "Get My Plan"
+                      )}
+                    </button>
+                  )} */}
+                </div>
+
+                <Alert variant="warning">{planMsg}</Alert>
               </div>
             </div>
-
-            <div className="mt-3 d-flex gap-2">
-              <button
-                className="btn btn-primary fw-bold"
-                onClick={handlePlanToday}
-                disabled={isPlanning}
-              >
-                {isPlanning ? <Spinner label="Planning..." /> : "Plan Today"}
-              </button>
-            </div>
-
-            <Alert variant="warning">{planMsg}</Alert>
-            {plan && <PlanView plan={plan} />}
           </div>
-        </div>
+        )}
 
-        {/* Schedule */}
-        <div className="card card-soft mb-3">
-          <div className="card-body">
-            <h2 className="h5 mb-2">Schedule</h2>
-            <p className="text-muted mb-3">
-              After planning, commit items to the Scheduler.
-            </p>
+        {/* RESULTS */}
+        {stage === "results" && (
+          <div className="row g-4">
+            <div className="col-lg-8">
+              <div className="card card-soft">
+                <div className="card-body p-4">
+                  <div className="d-flex align-items-center justify-content-between">
+                    <div>
+                      <div className="text-muted small">Results</div>
+                      <h2 className="h4 section-title mb-0">
+                        Your plan for today
+                      </h2>
+                    </div>
+                    <div className="d-flex gap-2">
+                      <button
+                        className="btn btn-outline-light"
+                        onClick={() => setStage("quiz")}
+                      >
+                        Edit Quiz
+                      </button>
+                      <button
+                        className="btn btn-primary fw-bold"
+                        onClick={() =>
+                          handlePlanToday({ autoGoResults: false })
+                        }
+                        disabled={isPlanning}
+                      >
+                        {isPlanning ? (
+                          <Spinner label="Refreshing..." />
+                        ) : (
+                          "Regenerate"
+                        )}
+                      </button>
+                    </div>
+                  </div>
 
-            <div className="row g-3">
-              <div className="col-md-8">
-                <label className="form-label">
-                  Meal Time(s) (HH:MM, comma-separated)
-                </label>
-                <input
-                  className="form-control"
-                  value={mealTimes}
-                  onChange={(e) => setMealTimes(e.target.value)}
-                  placeholder="08:00,13:00,19:00"
-                />
-                <div className="form-hint text-muted mt-1">
-                  Example: <code className="code-soft">08:00,13:00,19:00</code>
+                  {!plan ? (
+                    <div className="mt-3 text-muted">
+                      No plan yet. Go to quiz and generate one.
+                    </div>
+                  ) : (
+                    <PlanView plan={plan} />
+                  )}
                 </div>
               </div>
 
-              <div className="col-md-4">
-                <label className="form-label">Workout Time (HH:MM)</label>
-                <input
-                  className="form-control"
-                  value={workoutTime}
-                  onChange={(e) => setWorkoutTime(e.target.value)}
-                  placeholder="18:00"
-                />
+              {/* Feedback (advanced) */}
+              <div className="card card-soft mt-4">
+                <div className="card-body p-4">
+                  <h2 className="h5 section-title mb-2">Feedback (Advanced)</h2>
+                  <p className="text-muted mb-3">
+                    Use an event ID from the schedule result.
+                  </p>
+
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label">Event ID</label>
+                      <input
+                        className="form-control"
+                        value={eventId}
+                        onChange={(e) => setEventId(e.target.value)}
+                        placeholder="paste event id here"
+                      />
+                    </div>
+
+                    <div className="col-md-2">
+                      <label className="form-label">Rating (1–5)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={5}
+                        className="form-control"
+                        value={rating}
+                        onChange={(e) => setRating(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="col-md-4">
+                      <label className="form-label">Reason</label>
+                      <input
+                        className="form-control"
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="col-md-4">
+                      <label className="form-label">
+                        Bandit Arm (optional)
+                      </label>
+                      <select
+                        className="form-select"
+                        value={banditArm}
+                        onChange={(e) => setBanditArm(e.target.value)}
+                      >
+                        <option value="">(none)</option>
+                        <option>coach</option>
+                        <option>friendly</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 d-flex gap-2">
+                    <button
+                      className="btn btn-primary fw-bold"
+                      onClick={handleFeedback}
+                      disabled={isFeedback}
+                    >
+                      {isFeedback ? (
+                        <Spinner label="Submitting..." />
+                      ) : (
+                        "Submit Feedback"
+                      )}
+                    </button>
+
+                    <button
+                      className="btn btn-outline-light"
+                      type="button"
+                      onClick={copyFeedback}
+                      disabled={
+                        !feedbackOut || feedbackOut.startsWith("Submitting")
+                      }
+                    >
+                      Copy Output
+                    </button>
+                  </div>
+
+                  <pre className="out mt-3">{feedbackOut}</pre>
+                </div>
               </div>
             </div>
 
-            <div className="mt-3">
-              <button
-                className="btn btn-primary fw-bold"
-                onClick={handleSchedule}
-                disabled={isScheduling}
-              >
-                {isScheduling ? (
-                  <Spinner label="Committing..." />
-                ) : (
-                  "Commit Schedule"
-                )}
-              </button>
-            </div>
+            <div className="col-lg-4">
+              {/* Schedule */}
+              <div className="card card-soft">
+                <div className="card-body p-4">
+                  <h2 className="h5 section-title mb-2">Schedule</h2>
+                  <p className="text-muted mb-3">
+                    Commit items to the Scheduler.
+                  </p>
 
-            <Alert variant="warning">{scheduleMsg}</Alert>
-            {schedule && <ScheduleView result={schedule} />}
-          </div>
-        </div>
+                  <div className="mb-3">
+                    <label className="form-label">
+                      Meal Times (HH:MM, comma-separated)
+                    </label>
+                    <input
+                      className="form-control"
+                      value={mealTimes}
+                      onChange={(e) => setMealTimes(e.target.value)}
+                      placeholder="08:00,13:00,19:00"
+                    />
+                    <div className="text-muted small mt-1">
+                      Example:{" "}
+                      <code className="code-soft">08:00,13:00,19:00</code>
+                    </div>
+                  </div>
 
-        {/* Nudge */}
-        <div className="card card-soft mb-3">
-          <div className="card-body">
-            <h2 className="h5 mb-3">Motivation Nudge</h2>
-            <div className="row g-3">
-              <div className="col-md-4">
-                <label className="form-label">Tone</label>
-                <select
-                  className="form-select"
-                  value={tone}
-                  onChange={(e) => setTone(e.target.value)}
+                  <div className="mb-3">
+                    <label className="form-label">Workout Time (HH:MM)</label>
+                    <input
+                      className="form-control"
+                      value={workoutTime}
+                      onChange={(e) => setWorkoutTime(e.target.value)}
+                      placeholder="18:00"
+                    />
+                  </div>
+
+                  <button
+                    className="btn btn-primary fw-bold w-100"
+                    onClick={handleSchedule}
+                    disabled={isScheduling}
+                  >
+                    {isScheduling ? (
+                      <Spinner label="Committing..." />
+                    ) : (
+                      "Commit Schedule"
+                    )}
+                  </button>
+
+                  <Alert variant="warning">{scheduleMsg}</Alert>
+                  {schedule && <ScheduleView result={schedule} />}
+                </div>
+              </div>
+
+              {/* Nudge */}
+              <div className="card card-soft mt-4">
+                <div className="card-body p-4">
+                  <h2 className="h5 section-title mb-3">Motivation</h2>
+
+                  <div className="row g-3">
+                    <div className="col-12">
+                      <label className="form-label">Tone</label>
+                      <select
+                        className="form-select"
+                        value={tone}
+                        onChange={(e) => setTone(e.target.value)}
+                      >
+                        <option>coach</option>
+                        <option>friendly</option>
+                      </select>
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label">Goal Text</label>
+                      <input
+                        className="form-control"
+                        value={goalText}
+                        onChange={(e) => setGoalText(e.target.value)}
+                        placeholder="stay_consistent"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    className="btn btn-primary fw-bold w-100 mt-3"
+                    onClick={handleNudge}
+                    disabled={isNudging}
+                  >
+                    {isNudging ? <Spinner label="Sending..." /> : "Send Nudge"}
+                  </button>
+
+                  <Alert variant="warning">{nudgeMsg}</Alert>
+                  {nudge && (
+                    <NudgeView result={nudge} tone={tone} goal={goalText} />
+                  )}
+                </div>
+              </div>
+
+              {/* Back */}
+              <div className="mt-4">
+                <button
+                  className="btn btn-outline-light w-100"
+                  onClick={() => setStage("landing")}
                 >
-                  <option>coach</option>
-                  <option>friendly</option>
-                </select>
-              </div>
-
-              <div className="col-md-8">
-                <label className="form-label">Goal Text</label>
-                <input
-                  className="form-control"
-                  value={goalText}
-                  onChange={(e) => setGoalText(e.target.value)}
-                  placeholder="stay_consistent"
-                />
+                  ← Back to Home
+                </button>
               </div>
             </div>
-
-            <div className="mt-3">
-              <button
-                className="btn btn-primary fw-bold"
-                onClick={handleNudge}
-                disabled={isNudging}
-              >
-                {isNudging ? <Spinner label="Sending..." /> : "Send Nudge"}
-              </button>
-            </div>
-
-            <Alert variant="warning">{nudgeMsg}</Alert>
-            {nudge && <NudgeView result={nudge} tone={tone} goal={goalText} />}
           </div>
-        </div>
+        )}
 
-        {/* Feedback */}
-        <div className="card card-soft mb-4">
-          <div className="card-body">
-            <h2 className="h5 mb-2">Feedback</h2>
-            <p className="text-muted mb-3">
-              Use an event ID from the Schedule result above.
-            </p>
-
-            <div className="row g-3">
-              <div className="col-md-6">
-                <label className="form-label">Event ID</label>
-                <input
-                  className="form-control"
-                  value={eventId}
-                  onChange={(e) => setEventId(e.target.value)}
-                  placeholder="paste event id here"
-                />
-              </div>
-
-              <div className="col-md-2">
-                <label className="form-label">Rating (1–5)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={5}
-                  className="form-control"
-                  value={rating}
-                  onChange={(e) => setRating(e.target.value)}
-                />
-              </div>
-
-              <div className="col-md-4">
-                <label className="form-label">Reason</label>
-                <input
-                  className="form-control"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-              </div>
-
-              <div className="col-md-4">
-                <label className="form-label">Bandit Arm (optional)</label>
-                <select
-                  className="form-select"
-                  value={banditArm}
-                  onChange={(e) => setBanditArm(e.target.value)}
-                >
-                  <option value="">(none)</option>
-                  <option>coach</option>
-                  <option>friendly</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-3 d-flex gap-2">
-              <button
-                className="btn btn-primary fw-bold"
-                onClick={handleFeedback}
-                disabled={isFeedback}
-              >
-                {isFeedback ? (
-                  <Spinner label="Submitting..." />
-                ) : (
-                  "Submit Feedback"
-                )}
-              </button>
-
-              <button
-                className="btn btn-outline-light"
-                type="button"
-                onClick={copyFeedback}
-                disabled={!feedbackOut || feedbackOut.startsWith("Submitting")}
-              >
-                Copy Output
-              </button>
-            </div>
-
-            <pre className="out mt-3">{feedbackOut}</pre>
-          </div>
-        </div>
-
-        <footer className="text-center pb-4">
+        <footer className="text-center pb-4 pt-4">
           <small className="text-muted">
             Done By: Anthony, Chris, Omar, Zaed
           </small>
         </footer>
+      </div>
+      {/* Sticky CTA (mobile only) */}
+      <div className="sticky-cta">
+        <div className="inner">
+          <div className="cta-text">
+            <div className="cta-title">Get your plan in 60 seconds</div>
+            <div className="cta-sub">Quiz → Plan → Schedule</div>
+          </div>
+
+          <button
+            className="btn btn-primary fw-bold"
+            onClick={() => {
+              if (stage === "landing") startQuiz();
+              else if (stage === "quiz" && step < 3) nextStep();
+              else if (stage === "quiz" && step === 3)
+                handlePlanToday({ autoGoResults: true });
+              else if (stage === "results") setStage("quiz");
+            }}
+            disabled={isPlanning}
+          >
+            {stage === "results"
+              ? "Edit Quiz"
+              : stage === "quiz" && step === 3
+                ? isPlanning
+                  ? "Generating…"
+                  : "Get Plan"
+                : "Continue"}
+          </button>
+        </div>
       </div>
     </div>
   );

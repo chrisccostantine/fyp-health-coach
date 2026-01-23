@@ -1,25 +1,44 @@
+/* =========================================================
+   MADMUSCLES THEME (clean + single-source-of-truth)
+   - No blue/purple gradients
+   - Orange accent (#ff4d00)
+   - Dark cards + soft borders
+   ========================================================= */
+
+/* ===== Tokens ===== */
 :root {
-  --bg0: #0b1020;
-  --bg1: #0f172a;
-  --bg2: #111827;
+  /* Backgrounds */
+  --bg0: #000000;  /* page */
+  --bg1: #0b0b0b;  /* sections */
+  --bg2: #121212;  /* deeper panels */
 
-  --text: #e5e7eb;
-  --muted: #94a3b8;
+  /* Surfaces */
+  --card: #1a1a1a;
+  --card-2: #202020;
+  --border: rgba(255, 255, 255, 0.08);
 
-  --border: rgba(148, 163, 184, 0.16);
-  --card: rgba(17, 24, 39, 0.86);
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  /* Text */
+  --text: #ffffff;
+  --muted: #9ca3af;
+
+  /* Brand */
+  --accent: #ff4d00;
+  --accent-hover: #ff5e1a;
+  --accent-soft: rgba(255, 77, 0, 0.15);
+
+  /* Effects */
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
 }
 
-html, body {
+/* ===== Base ===== */
+html,
+body {
   height: 100%;
 }
 
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 20% -10%, rgba(59, 130, 246, 0.15), transparent 60%),
-              radial-gradient(900px 500px at 90% 0%, rgba(168, 85, 247, 0.12), transparent 55%),
-              linear-gradient(135deg, var(--bg1) 0%, var(--bg0) 100%);
+  background: var(--bg0);
   color: var(--text);
 }
 
@@ -27,72 +46,111 @@ body {
   color: var(--muted) !important;
 }
 
-/* Top bar */
+/* ===== Top bar ===== */
 .topbar {
   position: sticky;
   top: 0;
   z-index: 10;
+  background: rgba(0, 0, 0, 0.75);
   backdrop-filter: blur(10px);
-  background: rgba(10, 14, 28, 0.55);
   border-bottom: 1px solid var(--border);
 }
 
 .app-title {
   font-size: 1.25rem;
-  font-weight: 800;
+  font-weight: 900;
   letter-spacing: 0.2px;
   color: #fff;
 }
 
 .app-subtitle {
   font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.75);
 }
 
-/* Cards */
-.card-soft {
+/* ===== Containers ===== */
+.container {
+  max-width: 1100px;
+}
+
+/* ===== Cards / Panels ===== */
+.card-soft,
+.quiz-card,
+.option-card,
+.slider-card,
+.meter-card {
   background: var(--card) !important;
   border: 1px solid var(--border) !important;
   box-shadow: var(--shadow);
-  border-radius: 16px;
+  border-radius: 18px;
 }
 
-/* List groups on dark */
+/* ===== List groups (cleaner cards) ===== */
 .list-group-soft .list-group-item {
-  background: rgba(15, 23, 42, 0.55);
+  background: var(--card-2);
   border: 1px solid var(--border);
   color: var(--text);
+  border-radius: 14px;
 }
 
 .list-group-soft .list-group-item + .list-group-item {
   margin-top: 10px;
-  border-radius: 12px;
 }
 
-.list-group-soft .list-group-item:first-child,
-.list-group-soft .list-group-item:last-child {
-  border-radius: 12px;
-}
-
+/* ===== Forms ===== */
 .form-label {
   color: var(--muted) !important;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .form-hint {
   font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.65);
 }
 
+.form-control,
+.form-select {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text) !important;
+  border-radius: 12px !important;
+}
+
+.form-control:focus,
+.form-select:focus {
+  box-shadow: 0 0 0 4px var(--accent-soft) !important;
+  border-color: rgba(255, 77, 0, 0.65) !important;
+}
+
+/* Inline line input (height/weight/name/email) */
+.line-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.35);
+  color: #fff;
+  font-size: 1.4rem;
+  text-align: center;
+  padding: 10px;
+  outline: none;
+}
+
+.line-input:focus {
+  border-bottom-color: rgba(255, 77, 0, 0.9);
+}
+
+/* ===== Code blocks ===== */
 code.code-soft {
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
   padding: 0.12rem 0.35rem;
   border-radius: 8px;
   color: #e5e7eb;
 }
 
 pre.out {
-  background: rgba(2, 6, 23, 0.7);
-  color: #d1d5db;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e5e7eb;
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 0.9rem;
@@ -101,24 +159,788 @@ pre.out {
   white-space: pre-wrap;
   font-size: 0.9rem;
 }
-/* ===== Section Titles ===== */
-.section-title {
-  color: #e5e7eb; /* soft white (Tailwind gray-200) */
-  font-weight: 600;
-  letter-spacing: 0.2px;
+
+/* ===== Titles System ===== */
+.section-title,
+.quiz-title {
+  color: #fff !important;
+  font-weight: 900;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  text-align: center;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  margin-bottom: 6px;
 }
 
-.section-subtitle {
-  color: #94a3b8; /* muted slate */
+.section-subtitle,
+.quiz-sub {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.7) !important;
 }
 
-/* Card headers (User, Profile & Goal, etc.) */
+/* Card headings */
 .card .h5,
 .card h2 {
-  color: #f1f5f9 !important; /* brighter than body text */
+  color: rgba(255, 255, 255, 0.95) !important;
+  font-weight: 900;
 }
 
-/* Smaller titles like Meals, Workout */
 .card .h6 {
-  color: #e2e8f0 !important;
+  color: rgba(255, 255, 255, 0.88) !important;
+  font-weight: 800;
+}
+
+/* ===== Buttons ===== */
+.btn-primary {
+  background: var(--accent) !important;
+  border: 0 !important;
+  color: #fff !important;
+  font-weight: 900;
+  border-radius: 14px;
+  padding: 14px 28px;
+  box-shadow: 0 10px 25px rgba(255, 77, 0, 0.35);
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover) !important;
+  transform: translateY(-1px);
+  filter: brightness(1.02);
+}
+
+.btn-outline-light {
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+  background: transparent !important;
+  border-radius: 12px;
+}
+
+.btn-outline-light:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ===== Hero ===== */
+.hero {
+  position: relative;
+  overflow: hidden;
+}
+
+/* (Removed blue/purple glow) */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: -100px;
+  background: radial-gradient(900px 500px at 50% 0%, rgba(255, 77, 0, 0.08), transparent 60%);
+  pointer-events: none;
+}
+
+.hero .card-body {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-kicker {
+  display: inline-block;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 0.75rem;
+}
+
+.hero-title {
+  color: #fff;
+  font-weight: 900;
+  line-height: 1.1;
+  margin-bottom: 0.75rem;
+}
+
+.hero-sub {
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.stat-value {
+  font-weight: 800;
+  color: #fff;
+}
+
+/* ===== Progress dots / pills ===== */
+.pill {
+  width: 22px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.pill-active {
+  background: rgba(255, 77, 0, 0.95);
+}
+
+/* ===== Sticky CTA (mobile) ===== */
+.sticky-cta {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.78);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+}
+
+.sticky-cta .inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sticky-cta .cta-title {
+  font-weight: 900;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.sticky-cta .cta-sub {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.8rem;
+}
+
+@media (min-width: 992px) {
+  .sticky-cta {
+    display: none;
+  }
+}
+
+@media (max-width: 991px) {
+  .app-shell {
+    padding-bottom: 76px;
+  }
+}
+
+/* ===== Quiz option cards ===== */
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .option-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.option-card {
+  width: 100%;
+  text-align: left;
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: rgba(255, 255, 255, 0.92);
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.option-card:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.option-card.active,
+.option-card.selected {
+  border-color: rgba(255, 77, 0, 0.95);
+  box-shadow: 0 0 0 2px rgba(255, 77, 0, 0.18) inset;
+}
+
+.option-title {
+  font-weight: 900;
+  color: #fff;
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
+
+.option-sub {
+  margin-top: 4px;
+  font-size: 0.84rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+/* ===== Age cards (2x2) ===== */
+.age-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.age-card {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 18px;
+  padding: 14px;
+  position: relative;
+  overflow: hidden;
+  min-height: 170px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  color: #fff;
+}
+
+.age-card.active {
+  border-color: rgba(255, 77, 0, 0.95);
+  box-shadow: 0 0 0 2px rgba(255, 77, 0, 0.18) inset;
+}
+
+.age-card-label {
+  font-weight: 900;
+  font-size: 1.05rem;
+  background: var(--accent);
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
+.age-card-arrow {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.10);
+  font-size: 22px;
+}
+
+/* ===== Long cards (Gender / Goals / Diet / Fitness level) ===== */
+.long-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.long-card {
+  width: 100%;
+  text-align: left;
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.long-card:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.long-card.active {
+  border-color: rgba(255, 77, 0, 0.95);
+  box-shadow: 0 0 0 2px rgba(255, 77, 0, 0.18) inset;
+}
+
+.long-card-title {
+  font-weight: 900;
+  font-size: 1.05rem;
+}
+
+.long-card-sub {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.92rem;
+  margin-top: 6px;
+}
+
+.long-card.check .box {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.long-card.check .box.on {
+  background: rgba(255, 77, 0, 0.95);
+  border-color: rgba(255, 77, 0, 0.95);
+}
+
+.long-card.danger {
+  border-color: var(--border);
+}
+
+.xMark {
+  color: rgba(255, 77, 0, 0.95);
+  font-weight: 900;
+  font-size: 1.2rem;
+}
+
+/* ===== Grid 2 (Workout duration options, etc.) ===== */
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.grid-card {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font-weight: 800;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.grid-card:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.grid-card.active {
+  border-color: rgba(255, 77, 0, 0.95);
+  box-shadow: 0 0 0 2px rgba(255, 77, 0, 0.18) inset;
+}
+
+.grid-card.wide {
+  grid-column: 1 / -1;
+  text-align: left;
+}
+
+/* ===== Toggle / Switch ===== */
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.switch {
+  width: 54px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.10);
+  position: relative;
+}
+
+.switch .knob {
+  width: 26px;
+  height: 26px;
+  background: #fff;
+  border-radius: 999px;
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  transform: translateY(-50%);
+  transition: 0.18s ease;
+}
+
+.switch.on {
+  background: rgba(255, 77, 0, 0.55);
+  border-color: rgba(255, 77, 0, 0.55);
+}
+
+.switch.on .knob {
+  left: 25px;
+}
+
+/* ===== Chips (Veggies / Products) ===== */
+.chips-title {
+  text-align: center;
+  font-weight: 900;
+  font-size: 2rem;
+  color: #fff;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.chip {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font-weight: 800;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.chip:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.chip.active {
+  border-color: rgba(255, 77, 0, 0.95);
+  box-shadow: 0 0 0 2px rgba(255, 77, 0, 0.18) inset;
+}
+
+.chips.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ===== Slider ===== */
+.slider-wrap {
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.slider-pill {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  font-weight: 900;
+}
+
+.range {
+  width: 100%;
+  margin-top: 14px;
+  accent-color: var(--accent);
+}
+
+.slider-labels {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+  margin-top: 8px;
+}
+
+/* ===== Problem areas ===== */
+.problem-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.problem-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .problem-layout {
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+  }
+}
+
+.pill-btn {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 18px;
+  padding: 14px 16px;
+  color: #fff;
+  font-weight: 900;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.pill-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.pill-btn.active {
+  border-color: rgba(255, 77, 0, 0.95);
+  box-shadow: 0 0 0 2px rgba(255, 77, 0, 0.18) inset;
+}
+
+/* ===== Unit toggle (cm/ft, kg/lb) ===== */
+.unit-toggle {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 18px 0;
+}
+
+.unit-toggle button {
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: transparent;
+  color: #fff;
+  font-weight: 900;
+}
+
+.unit-toggle .active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ===== “Ready” banner + privacy row ===== */
+.ready-banner {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: #fff;
+  font-weight: 800;
+}
+
+.privacy-row {
+  margin-top: 14px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.95rem;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ===== Fitness age screen ===== */
+.age-pill {
+  margin: 18px auto 22px;
+  width: min(360px, 100%);
+  text-align: center;
+  padding: 18px 22px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  font-size: 2.2rem;
+  font-weight: 900;
+  color: #fff;
+}
+
+.fitness-copy {
+  width: min(560px, 100%);
+  margin: 0 auto;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.6;
+  font-size: 1.05rem;
+}
+
+/* Meter */
+.meter-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 77, 0, 0.95), rgba(255, 77, 0, 0.55));
+  position: relative;
+  margin: 10px 8px 16px;
+}
+
+.meter-pin {
+  position: absolute;
+  top: -10px;
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 10px solid #fff;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+}
+
+.meter-text {
+  text-align: center;
+  font-weight: 900;
+  color: #fff;
+}
+
+/* ===== Charts placeholder (optional) ===== */
+.chart-placeholder {
+  height: 220px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 77, 0, 0.18), rgba(0, 0, 0, 0.65));
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+
+/* ===== Reactions row ===== */
+.reaction-row {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 14px;
+  gap: 12px;
+}
+
+.reaction-btn {
+  font-size: 1.1rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: #fff;
+  border-radius: 16px;
+  padding: 10px 16px;
+  font-weight: 900;
+}
+
+.reaction-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.option-img{
+  width: 84px;
+  height: 84px;
+  border-radius: 16px;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(0,0,0,.25);
+}
+.right-media{
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 96px;   /* prevents shrinking */
+}
+
+.option-img{
+  width: 84px;
+  height: 84px;
+  border-radius: 16px;
+  object-fit: contain; /* use contain for characters; cover may crop */
+  display: block;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,.45));
+}
+/* right container (fixed) */
+.long-right{
+  width: 96px;
+  height: 96px;
+  flex: 0 0 96px;         /* DO NOT shrink */
+  display: grid;
+  place-items: center;
+}
+
+/* the image itself */
+.long-img{
+  width: 84px;
+  height: 84px;
+  border-radius: 16px;
+  object-fit: contain;     /* characters -> contain */
+  display: block;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,.45));
+}
+.img-card-img{
+  width: 100%;
+  height: 140px;
+  object-fit: contain;
+  border-radius: 18px;
+  display: block;
+}
+:root{
+  --accent: #ff4d00; /* your red/orange */
+}
+
+/* The card itself */
+.img-card{
+  border: 2px solid rgba(255,77,0,.55);
+  background: transparent;
+  border-radius: 18px;
+  overflow: hidden;
+  padding: 0;
+  transition: .15s ease;
+}
+
+.img-card:hover{
+  transform: translateY(-2px);
+  border-color: rgba(255,77,0,.9);
+}
+
+.img-card.active{
+  border-color: rgba(255,77,0,1);
+  box-shadow: 0 0 0 3px rgba(255,77,0,.18);
+}
+
+/* Top area = transparent container for the image */
+.img-card-top{
+  background: rgba(0,0,0,.18);   /* transparent dark glass */
+  border-bottom: 1px solid rgba(255,77,0,.25);
+  padding: 14px;
+  display: grid;
+  place-items: center;
+}
+
+/* Image itself */
+.img-card-img{
+  width: 100%;
+  height: 150px;
+  object-fit: contain;
+  display: block;
+  background: transparent; /* important */
+}
+
+/* Label at bottom */
+.img-card-bottom{
+  background: rgba(0,0,0,.28);
+  color: #fff;
+  text-align: center;
+  padding: 12px;
+  font-weight: 900;
+}
+/* FORCE 4 cards in one row */
+.option-grid{
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+/* Responsive fallback (tablet & mobile) */
+@media (max-width: 1100px){
+  .option-grid{
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px){
+  .option-grid{
+    grid-template-columns: 1fr;
+  }
+}
+.img-card{
+  border-radius: 16px;
+  min-height: 260px;
+}
+.img-card-top{
+  padding: 10px;
+}
+
+.img-card-img{
+  height: 120px;   /* ↓ smaller image */
+  max-width: 100%;
+  object-fit: contain;
+}
+.img-card-bottom{
+  padding: 8px;
+  font-size: 0.95rem;
+}
+.img-ph{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.img-ph img{
+  width: 100%;
+  height: 100%;
+  object-fit: contain;   /* keeps transparency & proportions */
+  background: transparent;
 }
