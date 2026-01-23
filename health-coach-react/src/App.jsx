@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import ResultsSection from "./ResultsSection";
 
 import {
   api,
@@ -1402,23 +1403,40 @@ export default function App() {
                     <h3 className="quiz-title">Like it or dislike it</h3>
 
                     {[
-                      "Cardio",
-                      "Yoga / Stretching",
-                      "Lifting weights",
-                      "Pull-ups",
-                    ].map((ex) => (
-                      <div key={ex} className="exercise-card">
-                        <div className="img-ph tall center">{ex}</div>
+                      { name: "Cardio", img: "/images/exercises/cardio.png" },
+                      {
+                        name: "Yoga / Stretching",
+                        img: "/images/exercises/yoga.png",
+                      },
+                      {
+                        name: "Lifting weights",
+                        img: "/images/exercises/lifting.png",
+                      },
+                      {
+                        name: "Pull-ups",
+                        img: "/images/exercises/pullups.png",
+                      },
+                    ].map((item) => (
+                      <div key={item.name} className="exercise-card">
+                        <div className="exercise-img-box">
+                          <img
+                            className="exercise-img"
+                            src={item.img}
+                            alt={item.name}
+                          />
+                        </div>
+
+                        <div className="exercise-name">{item.name}</div>
 
                         <div className="reaction-row">
                           {["dislike", "neutral", "like"].map((r) => (
                             <button
                               key={r}
-                              className={`reaction-btn ${exercisePrefs[ex] === r ? "active" : ""}`}
+                              className={`reaction-btn ${exercisePrefs[item.name] === r ? "active" : ""}`}
                               onClick={() =>
                                 setExercisePrefs((prev) => ({
                                   ...prev,
-                                  [ex]: r,
+                                  [item.name]: r,
                                 }))
                               }
                             >
@@ -1441,6 +1459,7 @@ export default function App() {
                     </button>
                   </>
                 )}
+
                 {/*Step 16*/}
                 {step === 16 && (
                   <>
@@ -1679,7 +1698,7 @@ export default function App() {
                           nextStep();
                         }}
                       >
-                        Let MadMuscles decide
+                        Let Health Coach decide
                       </button>
                     </div>
                   </>
@@ -1694,12 +1713,17 @@ export default function App() {
                     </p>
 
                     <div className="toggle-row mt-4">
-                      <span className="fw-semibold">Let MadMuscles choose</span>
+                      <span
+                        className={`toggle-label ${letFoodDecide ? "on" : ""}`}
+                      >
+                        Let Health Coach choose
+                      </span>
+
                       <button
                         className={`switch ${letFoodDecide ? "on" : ""}`}
                         onClick={() => {
                           setLetFoodDecide((v) => !v);
-                          if (!letFoodDecide) setVeggies([]); // when turning ON, clear manual picks
+                          if (!letFoodDecide) setVeggies([]);
                         }}
                         type="button"
                       >
@@ -1918,281 +1942,53 @@ export default function App() {
         )}
 
         {/* RESULTS */}
-        {stage === "results" && (
-          <div className="row g-4">
-            <div className="col-lg-8">
-              <div className="card card-soft">
-                <div className="card-body p-4">
-                  <div className="d-flex align-items-center justify-content-between">
-                    <div>
-                      <div className="text-muted small">Results</div>
-                      <h2 className="h4 section-title mb-0">
-                        Your plan for today
-                      </h2>
-                    </div>
-                    <div className="d-flex gap-2">
-                      <button
-                        className="btn btn-outline-light"
-                        onClick={() => setStage("quiz")}
-                      >
-                        Edit Quiz
-                      </button>
-                      <button
-                        className="btn btn-primary fw-bold"
-                        onClick={() =>
-                          handlePlanToday({ autoGoResults: false })
-                        }
-                        disabled={isPlanning}
-                      >
-                        {isPlanning ? (
-                          <Spinner label="Refreshing..." />
-                        ) : (
-                          "Regenerate"
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {!plan ? (
-                    <div className="mt-3 text-muted">
-                      No plan yet. Go to quiz and generate one.
-                    </div>
-                  ) : (
-                    <PlanView plan={plan} />
-                  )}
-                </div>
-              </div>
-
-              {/* Feedback (advanced) */}
-              <div className="card card-soft mt-4">
-                <div className="card-body p-4">
-                  <h2 className="h5 section-title mb-2">Feedback (Advanced)</h2>
-                  <p className="text-muted mb-3">
-                    Use an event ID from the schedule result.
-                  </p>
-
-                  <div className="row g-3">
-                    <div className="col-md-6">
-                      <label className="form-label">Event ID</label>
-                      <input
-                        className="form-control"
-                        value={eventId}
-                        onChange={(e) => setEventId(e.target.value)}
-                        placeholder="paste event id here"
-                      />
-                    </div>
-
-                    <div className="col-md-2">
-                      <label className="form-label">Rating (1–5)</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={5}
-                        className="form-control"
-                        value={rating}
-                        onChange={(e) => setRating(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="col-md-4">
-                      <label className="form-label">Reason</label>
-                      <input
-                        className="form-control"
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="col-md-4">
-                      <label className="form-label">
-                        Bandit Arm (optional)
-                      </label>
-                      <select
-                        className="form-select"
-                        value={banditArm}
-                        onChange={(e) => setBanditArm(e.target.value)}
-                      >
-                        <option value="">(none)</option>
-                        <option>coach</option>
-                        <option>friendly</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 d-flex gap-2">
-                    <button
-                      className="btn btn-primary fw-bold"
-                      onClick={handleFeedback}
-                      disabled={isFeedback}
-                    >
-                      {isFeedback ? (
-                        <Spinner label="Submitting..." />
-                      ) : (
-                        "Submit Feedback"
-                      )}
-                    </button>
-
-                    <button
-                      className="btn btn-outline-light"
-                      type="button"
-                      onClick={copyFeedback}
-                      disabled={
-                        !feedbackOut || feedbackOut.startsWith("Submitting")
-                      }
-                    >
-                      Copy Output
-                    </button>
-                  </div>
-
-                  <pre className="out mt-3">{feedbackOut}</pre>
-                </div>
-              </div>
-            </div>
-
-            <div className="col-lg-4">
-              {/* Schedule */}
-              <div className="card card-soft">
-                <div className="card-body p-4">
-                  <h2 className="h5 section-title mb-2">Schedule</h2>
-                  <p className="text-muted mb-3">
-                    Commit items to the Scheduler.
-                  </p>
-
-                  <div className="mb-3">
-                    <label className="form-label">
-                      Meal Times (HH:MM, comma-separated)
-                    </label>
-                    <input
-                      className="form-control"
-                      value={mealTimes}
-                      onChange={(e) => setMealTimes(e.target.value)}
-                      placeholder="08:00,13:00,19:00"
-                    />
-                    <div className="text-muted small mt-1">
-                      Example:{" "}
-                      <code className="code-soft">08:00,13:00,19:00</code>
-                    </div>
-                  </div>
-
-                  <div className="mb-3">
-                    <label className="form-label">Workout Time (HH:MM)</label>
-                    <input
-                      className="form-control"
-                      value={workoutTime}
-                      onChange={(e) => setWorkoutTime(e.target.value)}
-                      placeholder="18:00"
-                    />
-                  </div>
-
-                  <button
-                    className="btn btn-primary fw-bold w-100"
-                    onClick={handleSchedule}
-                    disabled={isScheduling}
-                  >
-                    {isScheduling ? (
-                      <Spinner label="Committing..." />
-                    ) : (
-                      "Commit Schedule"
-                    )}
-                  </button>
-
-                  <Alert variant="warning">{scheduleMsg}</Alert>
-                  {schedule && <ScheduleView result={schedule} />}
-                </div>
-              </div>
-
-              {/* Nudge */}
-              <div className="card card-soft mt-4">
-                <div className="card-body p-4">
-                  <h2 className="h5 section-title mb-3">Motivation</h2>
-
-                  <div className="row g-3">
-                    <div className="col-12">
-                      <label className="form-label">Tone</label>
-                      <select
-                        className="form-select"
-                        value={tone}
-                        onChange={(e) => setTone(e.target.value)}
-                      >
-                        <option>coach</option>
-                        <option>friendly</option>
-                      </select>
-                    </div>
-
-                    <div className="col-12">
-                      <label className="form-label">Goal Text</label>
-                      <input
-                        className="form-control"
-                        value={goalText}
-                        onChange={(e) => setGoalText(e.target.value)}
-                        placeholder="stay_consistent"
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    className="btn btn-primary fw-bold w-100 mt-3"
-                    onClick={handleNudge}
-                    disabled={isNudging}
-                  >
-                    {isNudging ? <Spinner label="Sending..." /> : "Send Nudge"}
-                  </button>
-
-                  <Alert variant="warning">{nudgeMsg}</Alert>
-                  {nudge && (
-                    <NudgeView result={nudge} tone={tone} goal={goalText} />
-                  )}
-                </div>
-              </div>
-
-              {/* Back */}
-              <div className="mt-4">
-                <button
-                  className="btn btn-outline-light w-100"
-                  onClick={() => setStage("landing")}
-                >
-                  ← Back to Home
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <footer className="text-center pb-4 pt-4">
-          <small className="text-muted">
-            Done By: Anthony, Chris, Omar, Zaed
-          </small>
-        </footer>
+        <ResultsSection
+          stage={stage}
+          plan={plan}
+          setStage={setStage}
+          isPlanning={isPlanning}
+          handlePlanToday={handlePlanToday}
+          eventId={eventId}
+          setEventId={setEventId}
+          rating={rating}
+          setRating={setRating}
+          reason={reason}
+          setReason={setReason}
+          banditArm={banditArm}
+          setBanditArm={setBanditArm}
+          isFeedback={isFeedback}
+          handleFeedback={handleFeedback}
+          feedbackOut={feedbackOut}
+          copyFeedback={copyFeedback}
+          mealTimes={mealTimes}
+          setMealTimes={setMealTimes}
+          workoutTime={workoutTime}
+          setWorkoutTime={setWorkoutTime}
+          isScheduling={isScheduling}
+          handleSchedule={handleSchedule}
+          scheduleMsg={scheduleMsg}
+          schedule={schedule}
+          tone={tone}
+          setTone={setTone}
+          goalText={goalText}
+          setGoalText={setGoalText}
+          isNudging={isNudging}
+          handleNudge={handleNudge}
+          nudgeMsg={nudgeMsg}
+          nudge={nudge}
+          PlanView={PlanView}
+          ScheduleView={ScheduleView}
+          NudgeView={NudgeView}
+          Spinner={Spinner}
+          Alert={Alert}
+        />
       </div>
-      {/* Sticky CTA (mobile only) */}
-      <div className="sticky-cta">
-        <div className="inner">
-          <div className="cta-text">
-            <div className="cta-title">Get your plan in 60 seconds</div>
-            <div className="cta-sub">Quiz → Plan → Schedule</div>
-          </div>
 
-          <button
-            className="btn btn-primary fw-bold"
-            onClick={() => {
-              if (stage === "landing") startQuiz();
-              else if (stage === "quiz" && step < 3) nextStep();
-              else if (stage === "quiz" && step === 3)
-                handlePlanToday({ autoGoResults: true });
-              else if (stage === "results") setStage("quiz");
-            }}
-            disabled={isPlanning}
-          >
-            {stage === "results"
-              ? "Edit Quiz"
-              : stage === "quiz" && step === 3
-                ? isPlanning
-                  ? "Generating…"
-                  : "Get Plan"
-                : "Continue"}
-          </button>
-        </div>
-      </div>
+      <footer className="text-center pb-4 pt-4">
+        <small className="text-muted">
+          Done By: Anthony, Chris, Omar, Zaed
+        </small>
+      </footer>
     </div>
   );
 }

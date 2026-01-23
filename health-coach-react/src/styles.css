@@ -944,3 +944,212 @@ pre.out {
   object-fit: contain;   /* keeps transparency & proportions */
   background: transparent;
 }
+.exercise-img-wrap{
+  width: 100%;
+  height: 320px;              /* adjust if you want smaller */
+  border-radius: 22px;
+  border: 1px solid rgba(255,77,0,.45);
+  background: rgba(255,255,255,.03); /* transparent-ish */
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.exercise-img{
+  width: 80%;
+  height: 80%;
+  object-fit: contain;        /* keeps full body visible */
+  filter: drop-shadow(0 12px 30px rgba(0,0,0,.6));
+}
+
+.exercise-title{
+  margin-top: 12px;
+  text-align: center;
+  font-weight: 900;
+  font-size: 1.2rem;
+  color: #fff;
+}
+.exercise-img-box{
+  width: 100%;
+  height: 320px;              /* change height as you like */
+  border-radius: 22px;
+  border: 1px solid rgba(255,77,0,.55);
+  background: rgba(255,255,255,.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;           /* prevents weird overflow */
+}
+
+.exercise-img{
+  max-width: 70%;
+  max-height: 90%;
+  object-fit: contain;        /* IMPORTANT: keep whole image visible */
+  display: block;
+}
+
+.exercise-name{
+  text-align: center;
+  font-weight: 900;
+  margin-top: 12px;
+  color: #fff;
+}
+.toggle-label{
+  color:#fff;
+  font-weight:700;
+  font-size:1rem;
+  opacity:1;
+}
+
+.toggle-label.on{
+  color: var(--accent); /* your orange */
+}
+.results-shell{
+  border-radius: 22px;
+}
+
+.results-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+}
+
+.results-kicker{
+  color: rgba(255,255,255,.55);
+  font-size:.9rem;
+}
+
+.results-title{
+  margin: 6px 0 0;
+  font-weight: 900;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+}
+
+.results-actions{
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+
+.results-summary{
+  margin-top: 18px;
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap:12px;
+}
+
+@media (max-width: 768px){
+  .results-header{ flex-direction: column; }
+  .results-actions{ width:100%; }
+  .results-summary{ grid-template-columns: 1fr; }
+}
+
+.summary-card{
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.05);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.summary-label{
+  color: rgba(255,255,255,.60);
+  font-size:.9rem;
+  font-weight:700;
+}
+
+.summary-value{
+  margin-top: 4px;
+  font-size: 1.4rem;
+  font-weight: 900;
+  color:#fff;
+}
+
+.results-section{
+  margin-top: 18px;
+}
+
+.section-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom: 12px;
+}
+
+.section-h{
+  font-weight: 900;
+  margin:0;
+  color:#fff;
+}
+
+.count-pill{
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.10);
+  color:#fff;
+  font-weight:800;
+  font-size:.9rem;
+}
+
+.results-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.result-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:14px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.04);
+}
+
+.result-left{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width: 0;
+}
+
+.result-icon{
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display:grid;
+  place-items:center;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+  font-size: 1.2rem;
+}
+
+.result-title{
+  font-weight: 900;
+  color:#fff;
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+  max-width: 520px;
+}
+
+.result-sub{
+  margin-top: 2px;
+  color: rgba(255,255,255,.65);
+  font-size: .95rem;
+}
+
+.time-pill{
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.12);
+  font-weight: 900;
+  color:#fff;
+  white-space: nowrap;
+}
