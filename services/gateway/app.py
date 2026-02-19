@@ -45,15 +45,23 @@ def plan_today():
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
 
-    diet = requests.post(
+    diet_res = requests.post(
         f"{DIET_URL}/diet/suggest",
         json={"user_id": user_id, "profile": profile.model_dump(), "goal": goal.model_dump()},
-    ).json()
+        timeout=20,
+    )
+    if diet_res.status_code != 200:
+        return jsonify({"error": "diet agent failed", "detail": diet_res.text}), 502
+    diet = diet_res.json()
 
-    work = requests.post(
+    work_res = requests.post(
         f"{EXERCISE_URL}/exercise/suggest",
         json={"user_id": user_id, "profile": profile.model_dump(), "goal": goal.model_dump(), "equipment": payload.get("equipment", [])},
-    ).json()
+        timeout=20,
+    )
+    if work_res.status_code != 200:
+        return jsonify({"error": "exercise agent failed", "detail": work_res.text}), 502
+    work = work_res.json()
 
     plan = DayPlan(
         user_id=user_id,
@@ -61,6 +69,13 @@ def plan_today():
         workouts=[PlanWorkout(**w) for w in work["workouts"]],
     )
     return jsonify(plan.model_dump())
+
+
+@app.post("/diet/chat")
+def diet_chat():
+    body = request.get_json(force=True)
+    res = requests.post(f"{DIET_URL}/diet/chat", json=body, timeout=30)
+    return jsonify(res.json()), res.status_code
 
 @app.post("/schedule/commit")
 def schedule_commit():

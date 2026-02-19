@@ -184,6 +184,21 @@ export const api = {
       body: JSON.stringify(body),
     });
   },
+
+  async dietChat({ message, current_plan, profile, goal, chat_history = [] }) {
+    const body = withUserId({
+      message,
+      current_plan,
+      profile,
+      goal,
+      chat_history,
+    });
+    return await fetchJSON("/diet/chat", {
+      method: "POST",
+      body: JSON.stringify(body),
+      timeoutMs: 30000,
+    });
+  },
 };
 
 // ---------- Shared utils ----------
