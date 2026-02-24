@@ -11,8 +11,7 @@ import {
   saveSettings,
 } from "./api";
 /* -------------------- Exports -------------------- */
-export { App, ScheduleView, NudgeView };
-
+export { App, NudgeView, ScheduleView };
 
 /* -------------------- small helpers -------------------- */
 function Spinner({ label = "Loading..." }) {
@@ -81,8 +80,8 @@ function ScheduleView({ result }) {
                     (e.type === "meal"
                       ? "Meal"
                       : e.type === "workout"
-                      ? "Workout"
-                      : "Item")}
+                        ? "Workout"
+                        : "Item")}
                 </div>
                 <small className="text-muted">
                   {e.type ? `${e.type}` : "item"}
@@ -91,7 +90,8 @@ function ScheduleView({ result }) {
                   {e.calories ? ` · ${e.calories} kcal` : ""}
                   {e.id && (
                     <>
-                      {" "}· ID: <code className="code-soft">{e.id}</code>
+                      {" "}
+                      · ID: <code className="code-soft">{e.id}</code>
                     </>
                   )}
                 </small>
@@ -235,7 +235,6 @@ export default function App() {
   const [ping, setPing] = useState(null);
   // Extra quiz answers (MadMuscles style)
 
-
   useEffect(() => {
     saveSettings({ gatewayUrl, userId });
   }, [gatewayUrl, userId]);
@@ -267,10 +266,12 @@ export default function App() {
 
   // ------- Funnel state (NEW) -------
   const [stage, setStage] = useState("landing"); // landing | quiz | results
-  const [step, setStep] = useState(0); // 0..3
-  const TOTAL_STEPS = 28;
+  const ACTIVE_QUIZ_STEPS = [0, 1, 3, 7, 10, 11, 13, 20, 21, 22, 27];
+  const [step, setStep] = useState(ACTIVE_QUIZ_STEPS[0]);
+  const TOTAL_STEPS = ACTIVE_QUIZ_STEPS.length;
+  const stepPosition = Math.max(0, ACTIVE_QUIZ_STEPS.indexOf(step));
 
-/* -------------------- Exports -------------------- */
+  /* -------------------- Exports -------------------- */
 
   // ------- Profile & Goal (with persistence) -------
   const stored = useMemo(() => loadProfileDefaults(), []);
@@ -328,7 +329,7 @@ export default function App() {
   const [leadEmail, setLeadEmail] = useState("");
   const [fitnessAge, setFitnessAge] = useState(null);
   useEffect(() => {
-    if (step === 27) {
+    if (step === ACTIVE_QUIZ_STEPS[ACTIVE_QUIZ_STEPS.length - 1]) {
       setFitnessAge(calcFitnessAge());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -607,16 +608,24 @@ export default function App() {
 
   function startQuiz() {
     setStage("quiz");
-    setStep(0);
+    setStep(ACTIVE_QUIZ_STEPS[0]);
     setPlanMsg("");
   }
 
   function nextStep() {
-    setStep((s) => Math.min(TOTAL_STEPS - 1, s + 1));
+    setStep((current) => {
+      const idx = ACTIVE_QUIZ_STEPS.indexOf(current);
+      if (idx === -1) return ACTIVE_QUIZ_STEPS[0];
+      return ACTIVE_QUIZ_STEPS[Math.min(idx + 1, ACTIVE_QUIZ_STEPS.length - 1)];
+    });
   }
 
   function prevStep() {
-    setStep((s) => Math.max(0, s - 1));
+    setStep((current) => {
+      const idx = ACTIVE_QUIZ_STEPS.indexOf(current);
+      if (idx <= 0) return ACTIVE_QUIZ_STEPS[0];
+      return ACTIVE_QUIZ_STEPS[idx - 1];
+    });
   }
 
   function goResults() {
@@ -747,7 +756,7 @@ export default function App() {
                   Build your personalized plan
                 </h2>
               </div>
-              <ProgressPills step={step} total={TOTAL_STEPS} />
+              <ProgressPills step={stepPosition} total={TOTAL_STEPS} />{" "}
             </div>
 
             <div className="card card-soft">
@@ -1845,7 +1854,7 @@ export default function App() {
                     <button
                       className="btn btn-primary w-100 mt-4"
                       onClick={() => handlePlanToday({ autoGoResults: true })}
-                      disabled={!leadEmail.trim() || isPlanning}
+                      disabled={isPlanning}
                     >
                       {isPlanning ? (
                         <Spinner label="Generating..." />
@@ -1951,4 +1960,3 @@ export default function App() {
     </div>
   );
 }
-

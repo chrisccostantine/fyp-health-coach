@@ -1,4 +1,25 @@
-import React from "react";
+function sumBy(items, keys) {
+  return items.reduce((acc, item) => {
+    const value = keys
+      .map((key) => Number(item?.[key]))
+      .find((num) => Number.isFinite(num));
+    return acc + (value || 0);
+  }, 0);
+}
+
+function cleanTime(value) {
+  if (!value) return "Any time";
+  if (typeof value === "string" && value.includes("T")) {
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+  }
+  return String(value);
+}
 
 export default function ResultsSection({
   stage,
@@ -60,22 +81,24 @@ export default function ResultsSection({
   const meals = Array.isArray(plan?.meals) ? plan.meals : [];
   const workouts = Array.isArray(plan?.workouts) ? plan.workouts : [];
   const chatMessages = Array.isArray(dietChatMessages) ? dietChatMessages : [];
+  const totalMealCalories = sumBy(meals, ["kcal", "calories"]);
+  const totalWorkoutMinutes = sumBy(workouts, ["duration", "duration_min"]);
 
   return (
     <div className="row g-4">
       <div className="col-lg-8">
-        <div className="card card-soft results-card">
-          <div className="card-body p-4">
+        <div className="card card-soft results-shell">
+          <div className="card-body p-4 p-md-5">
             <div className="results-header">
               <div>
-                <div className="text-muted small">Results</div>
-                <h1 className="results-title mb-1">Your plan for today</h1>
-                <div className="text-muted results-subtitle">
-                  Quiz - Plan - Schedule
+                <div className="results-kicker">Daily Plan Dashboard</div>
+                <h1 className="results-title">Your plan for today</h1>
+                <div className="text-muted">
+                  Clean overview of nutrition, training, and actions.
                 </div>
               </div>
 
-              <div className="d-flex gap-2">
+              <div className="results-actions">
                 <button
                   className="btn btn-outline-light"
                   type="button"
@@ -90,74 +113,97 @@ export default function ResultsSection({
                   onClick={() => handlePlanToday({ autoGoResults: false })}
                   disabled={isPlanning}
                 >
-                  {isPlanning ? <Spinner label="Refreshing..." /> : "Regenerate"}
+                  {isPlanning ? (
+                    <Spinner label="Refreshing..." />
+                  ) : (
+                    "Regenerate"
+                  )}
                 </button>
               </div>
             </div>
 
             {!plan ? (
               <div className="empty-state mt-4">
-                <div className="text-muted mb-2">No plan yet.</div>
+                <div className="empty-state-title">No plan generated yet</div>
+                <p className="text-muted mb-3">
+                  Complete the quiz to generate a personalized meal and workout
+                  plan.
+                </p>{" "}
                 <button
                   className="btn btn-primary fw-bold"
                   type="button"
                   onClick={() => setStage("quiz")}
                 >
-                  Go to Quiz
+                  Start Quiz
                 </button>
               </div>
             ) : (
               <>
-                <div className="row g-3 mt-3">
-                  <div className="col-md-4">
-                    <div className="mini-stat">
-                      <div className="mini-stat-label">Meals</div>
-                      <div className="mini-stat-value">{meals.length}</div>
+                <div className="results-summary">
+                  <div className="summary-card">
+                    <div className="summary-label">Meals</div>
+                    <div className="summary-value">{meals.length}</div>
+                    <div className="summary-meta">
+                      {totalMealCalories} kcal planned
                     </div>
                   </div>
 
-                  <div className="col-md-4">
-                    <div className="mini-stat">
-                      <div className="mini-stat-label">Workouts</div>
-                      <div className="mini-stat-value">{workouts.length}</div>
+                  <div className="summary-card">
+                    <div className="summary-label">Workouts</div>
+                    <div className="summary-value">{workouts.length}</div>
+                    <div className="summary-meta">
+                      {totalWorkoutMinutes} total minutes
                     </div>
                   </div>
 
-                  <div className="col-md-4">
-                    <div className="mini-stat">
-                      <div className="mini-stat-label">Generated</div>
-                      <div className="mini-stat-value">
-                        {new Date().toLocaleDateString()}
-                      </div>
+                  <div className="summary-card">
+                    <div className="summary-label">Generated</div>
+                    <div className="summary-value summary-date">
+                      {new Date().toLocaleDateString()}
                     </div>
+                    <div className="summary-meta">Ready to schedule</div>
                   </div>
                 </div>
 
-                <div className="mt-4">
+                 <section className="results-section">
                   <div className="section-head">
-                    <h2 className="section-title mb-0">Meals</h2>
-                    <span className="badge rounded-pill text-bg-dark-soft">
-                      {meals.length}
-                    </span>
+                     <h2 className="section-h">Meals</h2>
+                    <span className="count-pill">{meals.length}</span>
                   </div>
 
-                  <div className="list-stack mt-2">
-                    {meals.map((m, idx) => (
-                      <div key={idx} className="list-item">
-                        <div className="list-item-main">
-                          <div className="list-item-title">
-                            {m.title || m.name || `Meal ${idx + 1}`}
+                  <div className="results-list">
+                    {meals.length === 0 ? (
+                      <div className="result-item result-empty">No meals in this plan.</div>
+                    ) : (
+                      meals.map((meal, idx) => (
+                        <div key={idx} className="result-item">
+                          <div className="result-left">
+                            <div className="result-icon" aria-hidden="true">
+                              🍽️
+                            </div>
+                            <div>
+                              <div className="result-title">
+                                {meal.title || meal.name || `Meal ${idx + 1}`}
+                              </div>
+                              <div className="result-sub">
+                                Protein {meal.protein ?? meal.macros?.protein ?? 0}g • Carbs{" "}
+                                {meal.carbs ?? meal.macros?.carbs ?? 0}g • Fat{" "}
+                                {meal.fat ?? meal.macros?.fat ?? 0}g •{" "}
+                                {meal.kcal ?? meal.calories ?? 0} kcal
+                              </div>
+                            </div>
                           </div>
-                          <div className="list-item-meta text-muted">
-                            Protein {m.protein ?? m.macros?.protein ?? 0}g - Carbs{" "}
-                            {m.carbs ?? m.macros?.carbs ?? 0}g - Fat{" "}
-                            {m.fat ?? m.macros?.fat ?? 0}g -{" "}
-                            {m.kcal ?? m.calories ?? 0} kcal
+                          <span className="time-pill">{cleanTime(meal.time || meal.when)}</span>
+                        </div>
+                      ))
+                    )}
                           </div>
                         </div>
 
                         <div className="list-item-right">
-                          <span className="time-pill">{m.time || m.when || "-"}</span>
+                          <span className="time-pill">
+                            {m.time || m.when || "-"}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -185,7 +231,9 @@ export default function ResultsSection({
                         </div>
 
                         <div className="list-item-right">
-                          <span className="time-pill">{w.time || w.when || "-"}</span>
+                          <span className="time-pill">
+                            {w.time || w.when || "-"}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -213,7 +261,9 @@ export default function ResultsSection({
                     ) : (
                       chatMessages.map((m, idx) => (
                         <div key={idx} className="list-group-item">
-                          <strong>{m.role === "user" ? "You" : "Coach"}:</strong>{" "}
+                          <strong>
+                            {m.role === "user" ? "You" : "Coach"}:
+                          </strong>{" "}
                           {m.text}
                         </div>
                       ))
@@ -368,7 +418,11 @@ export default function ResultsSection({
               onClick={handleSchedule}
               disabled={isScheduling}
             >
-              {isScheduling ? <Spinner label="Committing..." /> : "Commit Schedule"}
+              {isScheduling ? (
+                <Spinner label="Committing..." />
+              ) : (
+                "Commit Schedule"
+              )}
             </button>
 
             <Alert variant="warning">{scheduleMsg}</Alert>
