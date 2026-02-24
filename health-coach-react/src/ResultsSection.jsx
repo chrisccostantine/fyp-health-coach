@@ -41,8 +41,15 @@ export default function ResultsSection({
   nudgeMsg,
   nudge,
 
+  // diet chat
+  dietChatInput,
+  setDietChatInput,
+  dietChatMessages,
+  isDietChatting,
+  dietChatMsg,
+  handleDietChat,
+
   // views
-  PlanView,
   ScheduleView,
   NudgeView,
   Spinner,
@@ -50,12 +57,12 @@ export default function ResultsSection({
 }) {
   if (stage !== "results") return null;
 
-  const meals = plan && plan.meals ? plan.meals : [];
-  const workouts = plan && plan.workouts ? plan.workouts : [];
+  const meals = Array.isArray(plan?.meals) ? plan.meals : [];
+  const workouts = Array.isArray(plan?.workouts) ? plan.workouts : [];
+  const chatMessages = Array.isArray(dietChatMessages) ? dietChatMessages : [];
 
   return (
     <div className="row g-4">
-      {/* LEFT */}
       <div className="col-lg-8">
         <div className="card card-soft results-card">
           <div className="card-body p-4">
@@ -64,7 +71,7 @@ export default function ResultsSection({
                 <div className="text-muted small">Results</div>
                 <h1 className="results-title mb-1">Your plan for today</h1>
                 <div className="text-muted results-subtitle">
-                  Quiz → Plan → Schedule
+                  Quiz - Plan - Schedule
                 </div>
               </div>
 
@@ -83,11 +90,7 @@ export default function ResultsSection({
                   onClick={() => handlePlanToday({ autoGoResults: false })}
                   disabled={isPlanning}
                 >
-                  {isPlanning ? (
-                    <Spinner label="Refreshing..." />
-                  ) : (
-                    "Regenerate"
-                  )}
+                  {isPlanning ? <Spinner label="Refreshing..." /> : "Regenerate"}
                 </button>
               </div>
             </div>
@@ -104,8 +107,7 @@ export default function ResultsSection({
                 </button>
               </div>
             ) : (
-              <React.Fragment>
-                {/* Summary */}
+              <>
                 <div className="row g-3 mt-3">
                   <div className="col-md-4">
                     <div className="mini-stat">
@@ -131,7 +133,6 @@ export default function ResultsSection({
                   </div>
                 </div>
 
-                {/* Meals */}
                 <div className="mt-4">
                   <div className="section-head">
                     <h2 className="section-title mb-0">Meals</h2>
@@ -144,22 +145,25 @@ export default function ResultsSection({
                     {meals.map((m, idx) => (
                       <div key={idx} className="list-item">
                         <div className="list-item-main">
-                          <div className="list-item-title">{m.title}</div>
+                          <div className="list-item-title">
+                            {m.title || m.name || `Meal ${idx + 1}`}
+                          </div>
                           <div className="list-item-meta text-muted">
-                            Protein {m.protein}g · Carbs {m.carbs}g · Fat{" "}
-                            {m.fat}g · {m.kcal} kcal
+                            Protein {m.protein ?? m.macros?.protein ?? 0}g - Carbs{" "}
+                            {m.carbs ?? m.macros?.carbs ?? 0}g - Fat{" "}
+                            {m.fat ?? m.macros?.fat ?? 0}g -{" "}
+                            {m.kcal ?? m.calories ?? 0} kcal
                           </div>
                         </div>
 
                         <div className="list-item-right">
-                          <span className="time-pill">{m.time}</span>
+                          <span className="time-pill">{m.time || m.when || "-"}</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Workouts */}
                 <div className="mt-4">
                   <div className="section-head">
                     <h2 className="section-title mb-0">Workout</h2>
@@ -172,37 +176,76 @@ export default function ResultsSection({
                     {workouts.map((w, idx) => (
                       <div key={idx} className="list-item">
                         <div className="list-item-main">
-                          <div className="list-item-title">{w.title}</div>
+                          <div className="list-item-title">
+                            {w.title || w.name || `Workout ${idx + 1}`}
+                          </div>
                           <div className="list-item-meta text-muted">
-                            {w.duration} min
+                            {w.duration ?? w.duration_min ?? 0} min
                           </div>
                         </div>
 
                         <div className="list-item-right">
-                          <span className="time-pill">{w.time}</span>
+                          <span className="time-pill">{w.time || w.when || "-"}</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Raw Plan */}
                 <div className="mt-4">
                   <details className="details-soft">
                     <summary className="details-summary">
                       View full raw plan output
                     </summary>
                     <div className="mt-3">
-                      <PlanView plan={plan} />
+                      <pre className="out">{JSON.stringify(plan, null, 2)}</pre>
                     </div>
                   </details>
                 </div>
-              </React.Fragment>
+
+                <div className="mt-4">
+                  <h2 className="section-title mb-2">Diet Chat</h2>
+                  <div className="list-group list-group-soft mb-3">
+                    {chatMessages.length === 0 ? (
+                      <div className="list-group-item text-muted">
+                        Ask to swap meals, adjust calories, or explain macros.
+                      </div>
+                    ) : (
+                      chatMessages.map((m, idx) => (
+                        <div key={idx} className="list-group-item">
+                          <strong>{m.role === "user" ? "You" : "Coach"}:</strong>{" "}
+                          {m.text}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="d-flex gap-2">
+                    <input
+                      className="form-control"
+                      value={dietChatInput}
+                      onChange={(e) => setDietChatInput(e.target.value)}
+                      placeholder="e.g. replace tuna with vegetarian lunch"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleDietChat();
+                      }}
+                    />
+                    <button
+                      className="btn btn-primary fw-bold"
+                      type="button"
+                      onClick={handleDietChat}
+                      disabled={isDietChatting}
+                    >
+                      {isDietChatting ? <Spinner label="Sending..." /> : "Send"}
+                    </button>
+                  </div>
+                  <Alert variant="warning">{dietChatMsg}</Alert>
+                </div>
+              </>
             )}
           </div>
         </div>
 
-        {/* Feedback */}
         <div className="card card-soft mt-4">
           <div className="card-body p-4">
             <details className="details-soft">
@@ -224,7 +267,7 @@ export default function ResultsSection({
                   </div>
 
                   <div className="col-md-2">
-                    <label className="form-label">Rating (1–5)</label>
+                    <label className="form-label">Rating (1-5)</label>
                     <input
                       type="number"
                       min={1}
@@ -288,7 +331,6 @@ export default function ResultsSection({
         </div>
       </div>
 
-      {/* RIGHT */}
       <div className="col-lg-4">
         <div className="card card-soft">
           <div className="card-body p-4">
@@ -326,11 +368,7 @@ export default function ResultsSection({
               onClick={handleSchedule}
               disabled={isScheduling}
             >
-              {isScheduling ? (
-                <Spinner label="Committing..." />
-              ) : (
-                "Commit Schedule"
-              )}
+              {isScheduling ? <Spinner label="Committing..." /> : "Commit Schedule"}
             </button>
 
             <Alert variant="warning">{scheduleMsg}</Alert>
@@ -388,7 +426,7 @@ export default function ResultsSection({
             type="button"
             onClick={() => setStage("landing")}
           >
-            ← Back to Home
+            {"<-"} Back to Home
           </button>
         </div>
       </div>

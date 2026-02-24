@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import ResultsSection from "./ResultsSection";
 
 import {
   api,
+  cachePlan,
   getCachedPlan,
   getCachedSchedule,
   getSettings,
   isoTodayAt,
   saveSettings,
 } from "./api";
+/* -------------------- Exports -------------------- */
+export { App, ScheduleView, NudgeView };
+
 
 /* -------------------- small helpers -------------------- */
 function Spinner({ label = "Loading..." }) {
@@ -46,115 +50,7 @@ function fmtIso(iso) {
   return `${date} • ${time}`;
 }
 
-/* -------------------- views (kept) -------------------- */
-function PlanView({ plan }) {
-  if (!plan) return null;
-
-  const meals = safeArray(plan.meals);
-  const workouts = safeArray(plan.workouts);
-  const totals = plan.totals || plan.total || plan.summary || {};
-
-  const fmtMacros = (m = {}) =>
-    ["protein", "carbs", "fat"]
-      .map((k) =>
-        m[k] != null ? `${k[0].toUpperCase()}${k.slice(1)} ${m[k]}g` : null,
-      )
-      .filter(Boolean)
-      .join(" · ");
-
-  return (
-    <div className="mt-3">
-      <div className="d-flex align-items-center justify-content-between mb-2">
-        <h3 className="h6 text-white mb-0">Today’s Plan</h3>
-        <span className="badge text-bg-secondary">Generated</span>
-      </div>
-
-      {(totals.kcal ??
-        totals.calories ??
-        totals.protein_g ??
-        totals.carbs_g ??
-        totals.fat_g) != null && (
-        <div className="card card-soft mb-3">
-          <div className="card-body py-3">
-            <div className="fw-semibold mb-1">Daily Summary</div>
-            <div className="small text-muted">
-              {(totals.kcal != null || totals.calories != null) && (
-                <span className="me-3">
-                  Calories: {totals.kcal ?? totals.calories} kcal
-                </span>
-              )}
-              {totals.protein_g != null && (
-                <span className="me-3">Protein: {totals.protein_g} g</span>
-              )}
-              {totals.carbs_g != null && (
-                <span className="me-3">Carbs: {totals.carbs_g} g</span>
-              )}
-              {totals.fat_g != null && <span>Fat: {totals.fat_g} g</span>}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {meals.length > 0 && (
-        <div className="mb-3">
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h3 className="h6 text-white mb-0">Meals</h3>
-            <span className="badge text-bg-dark">{meals.length}</span>
-          </div>
-          <ul className="list-group list-group-soft">
-            {meals.map((m, i) => (
-              <li
-                key={i}
-                className="list-group-item d-flex flex-column flex-md-row justify-content-between align-items-start"
-              >
-                <div className="me-3">
-                  <div className="fw-semibold">{m.name || `Meal ${i + 1}`}</div>
-                  <small className="text-muted">
-                    {fmtMacros(m.macros)}
-                    {m.calories != null ? ` · ${m.calories} kcal` : ""}
-                  </small>
-                </div>
-                <span className="badge text-bg-secondary align-self-md-center mt-2 mt-md-0">
-                  {fmtTimeHHMM(m.when)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {workouts.length > 0 && (
-        <div className="mb-2">
-          <div className="d-flex align-items-center justify-content-between mb-2">
-            <h3 className="h6 text-white mb-0">Workout</h3>
-            <span className="badge text-bg-dark">{workouts.length}</span>
-          </div>
-          <ul className="list-group list-group-soft">
-            {workouts.map((w, i) => (
-              <li
-                key={i}
-                className="list-group-item d-flex flex-column flex-md-row justify-content-between align-items-start"
-              >
-                <div className="me-3">
-                  <div className="fw-semibold">{w.name || "Workout"}</div>
-                  <small className="text-muted">
-                    {w.focus ? `${w.focus} · ` : ""}
-                    {w.duration_min != null ? `${w.duration_min} min` : ""}
-                    {w.calories != null ? ` · ${w.calories} kcal` : ""}
-                  </small>
-                </div>
-                <span className="badge text-bg-secondary align-self-md-center mt-2 mt-md-0">
-                  {fmtTimeHHMM(w.when)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
-
+/* -------------------- ScheduleView -------------------- */
 function ScheduleView({ result }) {
   if (!result) return null;
 
@@ -185,20 +81,19 @@ function ScheduleView({ result }) {
                     (e.type === "meal"
                       ? "Meal"
                       : e.type === "workout"
-                        ? "Workout"
-                        : "Item")}
+                      ? "Workout"
+                      : "Item")}
                 </div>
                 <small className="text-muted">
                   {e.type ? `${e.type}` : "item"}
                   {e.status ? ` · ${e.status}` : ""}
                   {e.notes ? ` · ${e.notes}` : ""}
                   {e.calories ? ` · ${e.calories} kcal` : ""}
-                  {e.id ? (
+                  {e.id && (
                     <>
-                      {" "}
-                      · ID: <code className="code-soft">{e.id}</code>
+                      {" "}· ID: <code className="code-soft">{e.id}</code>
                     </>
-                  ) : null}
+                  )}
                 </small>
               </div>
               <span className="badge text-bg-secondary align-self-md-center mt-2 mt-md-0">
@@ -216,6 +111,7 @@ function ScheduleView({ result }) {
   );
 }
 
+/* -------------------- NudgeView (formerly second PlanView) -------------------- */
 function NudgeView({ result, tone, goal }) {
   if (!result) return null;
 
@@ -256,7 +152,6 @@ function NudgeView({ result, tone, goal }) {
   );
 }
 
-/* -------------------- local profile persistence -------------------- */
 const PROFILE_KEY = "hc_profile_v1";
 
 function loadProfileDefaults() {
@@ -338,8 +233,8 @@ export default function App() {
   const [gatewayUrl, setGatewayUrl] = useState(getSettings().gatewayUrl);
   const [userId, setUserId] = useState(getSettings().userId);
   const [ping, setPing] = useState(null);
-  const didPingRef = useRef(false);
   // Extra quiz answers (MadMuscles style)
+
 
   useEffect(() => {
     saveSettings({ gatewayUrl, userId });
@@ -374,6 +269,8 @@ export default function App() {
   const [stage, setStage] = useState("landing"); // landing | quiz | results
   const [step, setStep] = useState(0); // 0..3
   const TOTAL_STEPS = 28;
+
+/* -------------------- Exports -------------------- */
 
   // ------- Profile & Goal (with persistence) -------
   const stored = useMemo(() => loadProfileDefaults(), []);
@@ -459,11 +356,14 @@ export default function App() {
   const [plan, setPlan] = useState(null);
   const [planMsg, setPlanMsg] = useState("");
   const [isPlanning, setIsPlanning] = useState(false);
+  const [dietChatInput, setDietChatInput] = useState("");
+  const [dietChatMessages, setDietChatMessages] = useState([]);
+  const [isDietChatting, setIsDietChatting] = useState(false);
+  const [dietChatMsg, setDietChatMsg] = useState("");
   useEffect(() => {
     const cached = getCachedPlan();
     if (cached) setPlan(cached);
   }, []);
-
   async function handlePlanToday({ autoGoResults = true } = {}) {
     setIsPlanning(true);
     setPlanMsg("");
@@ -478,7 +378,7 @@ export default function App() {
           sex,
           height_cm: +height,
           weight_kg: +weight,
-          activity,
+          activity_level: activity,
         },
         goal: { type: goalType, deficit_kcal: +deficit },
         equipment: (equipment || "")
@@ -489,12 +389,66 @@ export default function App() {
 
       const data = await api.planToday(payload);
       setPlan(data);
+      setDietChatMessages([
+        {
+          role: "assistant",
+          text: "Your plan is ready. Ask me to modify meals or explain anything in the plan.",
+        },
+      ]);
       if (autoGoResults) setStage("results");
     } catch (e) {
       setPlan(null);
       setPlanMsg(`Error: ${e.message}`);
     } finally {
       setIsPlanning(false);
+    }
+  }
+
+  async function handleDietChat() {
+    const message = dietChatInput.trim();
+    if (!message) return;
+    if (!plan) {
+      setDietChatMsg("Generate a plan first.");
+      return;
+    }
+
+    setIsDietChatting(true);
+    setDietChatMsg("");
+    setDietChatMessages((prev) => [...prev, { role: "user", text: message }]);
+    setDietChatInput("");
+
+    try {
+      const payload = {
+        profile: {
+          age: +age,
+          sex,
+          height_cm: +height,
+          weight_kg: +weight,
+          activity_level: activity,
+        },
+        goal: { type: goalType, deficit_kcal: +deficit },
+      };
+
+      const data = await api.dietChat({
+        message,
+        current_plan: plan,
+        profile: payload.profile,
+        goal: payload.goal,
+        chat_history: dietChatMessages,
+      });
+
+      if (data?.updated_plan) {
+        setPlan(data.updated_plan);
+        cachePlan(data.updated_plan);
+      }
+      setDietChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", text: data?.assistant_reply || "Plan updated." },
+      ]);
+    } catch (e) {
+      setDietChatMsg(`Error: ${e.message}`);
+    } finally {
+      setIsDietChatting(false);
     }
   }
 
@@ -1976,7 +1930,12 @@ export default function App() {
           handleNudge={handleNudge}
           nudgeMsg={nudgeMsg}
           nudge={nudge}
-          PlanView={PlanView}
+          dietChatInput={dietChatInput}
+          setDietChatInput={setDietChatInput}
+          dietChatMessages={dietChatMessages}
+          isDietChatting={isDietChatting}
+          dietChatMsg={dietChatMsg}
+          handleDietChat={handleDietChat}
           ScheduleView={ScheduleView}
           NudgeView={NudgeView}
           Spinner={Spinner}
@@ -1992,3 +1951,4 @@ export default function App() {
     </div>
   );
 }
+
