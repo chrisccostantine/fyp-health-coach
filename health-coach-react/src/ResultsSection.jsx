@@ -128,7 +128,7 @@ export default function ResultsSection({
                 <p className="text-muted mb-3">
                   Complete the quiz to generate a personalized meal and workout
                   plan.
-                </p>{" "}
+                </p>
                 <button
                   className="btn btn-primary fw-bold"
                   type="button"
@@ -165,15 +165,18 @@ export default function ResultsSection({
                   </div>
                 </div>
 
-                 <section className="results-section">
+                {/* Meals */}
+                <section className="results-section">
                   <div className="section-head">
-                     <h2 className="section-h">Meals</h2>
+                    <h2 className="section-h">Meals</h2>
                     <span className="count-pill">{meals.length}</span>
                   </div>
 
                   <div className="results-list">
                     {meals.length === 0 ? (
-                      <div className="result-item result-empty">No meals in this plan.</div>
+                      <div className="result-item result-empty">
+                        No meals in this plan.
+                      </div>
                     ) : (
                       meals.map((meal, idx) => (
                         <div key={idx} className="result-item">
@@ -186,30 +189,25 @@ export default function ResultsSection({
                                 {meal.title || meal.name || `Meal ${idx + 1}`}
                               </div>
                               <div className="result-sub">
-                                Protein {meal.protein ?? meal.macros?.protein ?? 0}g • Carbs{" "}
-                                {meal.carbs ?? meal.macros?.carbs ?? 0}g • Fat{" "}
-                                {meal.fat ?? meal.macros?.fat ?? 0}g •{" "}
+                                Protein{" "}
+                                {meal.protein ?? meal.macros?.protein ?? 0}g •
+                                Carbs {meal.carbs ?? meal.macros?.carbs ?? 0}g •
+                                Fat {meal.fat ?? meal.macros?.fat ?? 0}g •{" "}
                                 {meal.kcal ?? meal.calories ?? 0} kcal
                               </div>
                             </div>
                           </div>
-                          <span className="time-pill">{cleanTime(meal.time || meal.when)}</span>
+
+                          <span className="time-pill">
+                            {cleanTime(meal.time || meal.when)}
+                          </span>
                         </div>
                       ))
                     )}
-                          </div>
-                        </div>
-
-                        <div className="list-item-right">
-                          <span className="time-pill">
-                            {m.time || m.when || "-"}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
                   </div>
-                </div>
+                </section>
 
+                {/* Workouts */}
                 <div className="mt-4">
                   <div className="section-head">
                     <h2 className="section-title mb-0">Workout</h2>
@@ -219,24 +217,30 @@ export default function ResultsSection({
                   </div>
 
                   <div className="list-stack mt-2">
-                    {workouts.map((w, idx) => (
-                      <div key={idx} className="list-item">
-                        <div className="list-item-main">
-                          <div className="list-item-title">
-                            {w.title || w.name || `Workout ${idx + 1}`}
-                          </div>
-                          <div className="list-item-meta text-muted">
-                            {w.duration ?? w.duration_min ?? 0} min
-                          </div>
-                        </div>
-
-                        <div className="list-item-right">
-                          <span className="time-pill">
-                            {w.time || w.when || "-"}
-                          </span>
-                        </div>
+                    {workouts.length === 0 ? (
+                      <div className="list-item result-empty">
+                        No workouts in this plan.
                       </div>
-                    ))}
+                    ) : (
+                      workouts.map((w, idx) => (
+                        <div key={idx} className="list-item">
+                          <div className="list-item-main">
+                            <div className="list-item-title">
+                              {w.title || w.name || `Workout ${idx + 1}`}
+                            </div>
+                            <div className="list-item-meta text-muted">
+                              {w.duration ?? w.duration_min ?? 0} min
+                            </div>
+                          </div>
+
+                          <div className="list-item-right">
+                            <span className="time-pill">
+                              {cleanTime(w.time || w.when)}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 
@@ -251,8 +255,10 @@ export default function ResultsSection({
                   </details>
                 </div>
 
+                {/* Diet Chat */}
                 <div className="mt-4">
                   <h2 className="section-title mb-2">Diet Chat</h2>
+
                   <div className="list-group list-group-soft mb-3">
                     {chatMessages.length === 0 ? (
                       <div className="list-group-item text-muted">
@@ -289,6 +295,7 @@ export default function ResultsSection({
                       {isDietChatting ? <Spinner label="Sending..." /> : "Send"}
                     </button>
                   </div>
+
                   <Alert variant="warning">{dietChatMsg}</Alert>
                 </div>
               </>
@@ -296,6 +303,7 @@ export default function ResultsSection({
           </div>
         </div>
 
+        {/* Feedback */}
         <div className="card card-soft mt-4">
           <div className="card-body p-4">
             <details className="details-soft">
@@ -381,6 +389,7 @@ export default function ResultsSection({
         </div>
       </div>
 
+      {/* Right column */}
       <div className="col-lg-4">
         <div className="card card-soft">
           <div className="card-body p-4">
