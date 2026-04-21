@@ -7,3 +7,6 @@ __pycache__/
 .coverage
 htmlcov/
 .env
+storage/app.db
+health-coach-react/node_modules/
+health-coach-react/dist/

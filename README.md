@@ -1,86 +1,212 @@
-# FYP Health Coach — Multi‑Agent Flask System (MVP)
+# FYP Health Coach
 
-This is a **modular multi‑agent personal health coach** with a Flask **Gateway** that orchestrates five agents:
-**Diet, Exercise, Motivation, Scheduler, Feedback**. It’s an MVP aligned with your FYP brief and ready to run locally.
+This project is a multi-agent personal health coach with:
 
-> Python 3.10+ recommended.
+- a Flask gateway API
+- five backend agents: diet, exercise, motivation, scheduler, and feedback
+- a React + Vite frontend in `health-coach-react`
 
-## Quick start (local, no Docker)
+The backend can run without OpenAI keys by falling back to rule-based responses.
 
-```bash
-# 1) Create a virtual environment
-python -m venv .venv && source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+## Project Structure
 
-# 2) Install requirements for all services
-pip install -r services/requirements.all.txt
+- `services/gateway` - main API entrypoint on port `8000`
+- `services/diet_agent` - diet planning agent on port `8101`
+- `services/exercise_agent` - exercise planning agent on port `8102`
+- `services/motivation_agent` - motivation agent on port `8103`
+- `services/scheduler_agent` - scheduling agent on port `8104`
+- `services/feedback_agent` - feedback agent on port `8105`
+- `services/common` - shared models and SQLite storage helper
+- `health-coach-react` - React frontend
+- `scripts` - helper scripts such as demo data and API flow testing
+- `tests` - integration test that hits running backend services
 
-# 3) Start the agents in separate terminals (or run the helper script)
-# Terminal A
-python services/diet_agent/app.py
-# Terminal B
-python services/exercise_agent/app.py
-# Terminal C
-python services/motivation_agent/app.py
-# Terminal D
-python services/scheduler_agent/app.py
-# Terminal E
-python services/feedback_agent/app.py
-# Terminal F (Gateway)
-python services/gateway/app.py
+## Requirements
 
-# (Optional) seed demo data
-python scripts/seed.py
+- Python 3.10+
+- Node.js 18+ and npm
 
-# (Optional) Run a demo flow that exercises the APIs end-to-end
-python scripts/demo_flow.py
+## Backend Setup
+
+Create a virtual environment and install the Python dependencies:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-Gateway runs on **http://127.0.0.1:8000**. Each agent runs on its own port (see below).
+`requirements.txt` and `services/requirements.all.txt` currently contain the backend dependencies used by the services.
 
-## Services & Ports
+## Environment Variables
 
-- Gateway (Flask): **:8000**
-- Diet Agent: **:8101**
-- Exercise Agent: **:8102**
-- Motivation Agent: **:8103**
-- Scheduler Agent: **:8104**
-- Feedback Agent: **:8105**
+### Gateway URLs
 
-## API (Gateway)
+Create a root `.env` file from `.env.example` if you want to override service URLs:
 
-- `POST /chat` — echo-style chat + quick intent routing (MVP).
-- `POST /plan/today` — generate a daily plan (meals + workouts) from Diet/Exercise.
-- `POST /schedule/commit` — schedule events (delegates to Scheduler).
-- `POST /nudge/send` — send a motivation nudge (returns text; you can wire push later).
-- `POST /feedback` — log feedback and update simple bandit policy via Feedback Agent.
+```powershell
+Copy-Item .env.example .env
+```
 
-### Example request: `POST /plan/today`
+Default local URLs are:
+
+- `DIET_URL=http://127.0.0.1:8101`
+- `EXERCISE_URL=http://127.0.0.1:8102`
+- `MOTIVATION_URL=http://127.0.0.1:8103`
+- `SCHEDULER_URL=http://127.0.0.1:8104`
+- `FEEDBACK_URL=http://127.0.0.1:8105`
+
+### Optional OpenAI Keys
+
+If you want AI-backed diet or exercise chat/planning, create these files:
+
+```powershell
+Copy-Item services\diet_agent\diet.env.example services\diet_agent\diet.env
+Copy-Item services\exercise_agent\exercise.env.example services\exercise_agent\exercise.env
+```
+
+Then put your API key in each file:
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+If those files are missing or the key is empty, the app still runs with rule-based logic.
+
+## Run the Backend
+
+Start each service in its own terminal:
+
+```powershell
+python -m services.diet_agent.app
+python -m services.exercise_agent.app
+python -m services.motivation_agent.app
+python -m services.scheduler_agent.app
+python -m services.feedback_agent.app
+python -m services.gateway.app
+```
+
+Or use the helper script after activating the virtual environment:
+
+```powershell
+run_all.bat
+```
+
+Backend ports:
+
+- Gateway: `8000`
+- Diet Agent: `8101`
+- Exercise Agent: `8102`
+- Motivation Agent: `8103`
+- Scheduler Agent: `8104`
+- Feedback Agent: `8105`
+
+Quick health check:
+
+```powershell
+curl http://127.0.0.1:8000/health
+```
+
+## Run the Frontend
+
+Install frontend dependencies:
+
+```powershell
+cd health-coach-react
+npm install
+```
+
+Start the development server:
+
+```powershell
+npm run dev
+```
+
+The frontend is configured to call the gateway at `http://127.0.0.1:8000` by default.
+
+## Run Everything From Scratch
+
+Backend:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+Copy-Item .env.example .env
+python -m services.diet_agent.app
+python -m services.exercise_agent.app
+python -m services.motivation_agent.app
+python -m services.scheduler_agent.app
+python -m services.feedback_agent.app
+python -m services.gateway.app
+```
+
+Frontend:
+
+```powershell
+cd health-coach-react
+npm install
+npm run dev
+```
+
+## Useful API Endpoints
+
+- `GET /health` - gateway health check
+- `POST /plan/today` - combine diet and exercise suggestions into one day plan
+- `POST /schedule/commit` - schedule events
+- `POST /nudge/send` - generate a motivation message
+- `POST /feedback` - submit event feedback
+- `POST /diet/chat` - modify diet plan via the diet agent
+
+Example `POST /plan/today` request:
+
 ```json
 {
   "user_id": "demo-user",
-  "profile": {"age": 24, "sex": "M", "height_cm": 178, "weight_kg": 78, "activity_level": "moderate",
-              "diet": {"type": "balanced", "calorie_target": null}},
-  "goal": {"type": "fat_loss", "deficit_kcal": 400},
+  "profile": {
+    "age": 24,
+    "sex": "M",
+    "height_cm": 178,
+    "weight_kg": 78,
+    "activity_level": "moderate"
+  },
+  "goal": {
+    "type": "fat_loss",
+    "deficit_kcal": 400
+  },
   "equipment": ["dumbbells", "pullup_bar"]
 }
 ```
 
-## Storage
+## Demo Scripts
 
-- SQLite file at `storage/app.db` via a minimal helper.
-- You can later swap to Firebase/Firestore by replacing the storage adapter in `services/common/storage.py`.
+Seed demo data:
+
+```powershell
+python scripts\seed.py
+```
+
+Run the sample API flow:
+
+```powershell
+python scripts\demo_flow.py
+```
 
 ## Tests
 
-- `pytest` integration test: `tests/test_integration.py` spins up against running services.
-- Lightweight and fast.
+The integration test expects the backend services to already be running:
 
-## Next steps (hooks present in code)
+```powershell
+pytest tests\test_integration.py
+```
 
-- Swap the storage adapter to Firebase.
-- Add Google Calendar to `scheduler_agent` (stubs and TODOs in code).
-- Replace rule-based suggestions with learned policies (Feedback Agent includes a simple epsilon‑greedy bandit).
+## Storage
 
----
+- SQLite database path: `storage/app.db`
+- This file is generated locally and is ignored by Git
 
-© You. Built by ChatGPT as a scaffold you can extend.
+## Notes
+
+- If you recreated the virtual environment, rerun `pip install -r requirements.txt`
+- If the frontend cannot reach the backend, make sure the gateway is running on port `8000`
+- If AI responses are not working, confirm the `diet.env` and `exercise.env` files contain a valid `OPENAI_API_KEY`
