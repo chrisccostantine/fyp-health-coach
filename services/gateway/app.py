@@ -3,6 +3,7 @@ import requests, os
 from pydantic import ValidationError
 from services.common.models import UserProfile, Goal, DayPlan, PlanMeal, PlanWorkout
 from services.common.storage import init_db, upsert_user, get_user, save_plan, get_latest_plan
+from services.common.storage import init_db
 from flask_cors import CORS
 
 DIET_URL = os.environ.get("DIET_URL", "http://127.0.0.1:8101")
