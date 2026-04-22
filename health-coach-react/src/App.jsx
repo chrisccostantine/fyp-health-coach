@@ -368,6 +368,9 @@ export default function App() {
     };
   }, []);
 
+  const [isCheckingUser, setIsCheckingUser] = useState(false);
+  const [checkUserMsg, setCheckUserMsg] = useState("");
+
   // ------- Funnel state (NEW) -------
   const [stage, setStage] = useState("landing"); // landing | quiz | results
   const ACTIVE_QUIZ_STEPS = [0, 1, 3, 7, 10, 11, 12, 13, 20, 21, 22, 27];
@@ -499,6 +502,15 @@ export default function App() {
           text: "Your plan is ready. Ask me to modify meals or explain anything in the plan.",
         },
       ]);
+      // Persist profile so the user is recognised on next visit
+      api.saveUserProfile(userId, {
+        profile: payload.profile,
+        goal: payload.goal,
+        quizData: {
+          ageBand, gender, bodyType, goalPick, targetBody, dietPref,
+          fitnessLevel, workoutLocation, trainingFreq, workoutDurationPref,
+        },
+      }).catch(() => {}); // non-blocking; failures are silent
       if (autoGoResults) setStage("results");
     } catch (e) {
       setPlan(null);
@@ -713,6 +725,45 @@ export default function App() {
     setStage("quiz");
     setStep(ACTIVE_QUIZ_STEPS[0]);
     setPlanMsg("");
+    setCheckUserMsg("");
+  }
+
+  async function handleContinue() {
+    const uid = userId?.trim();
+    if (!uid) {
+      setCheckUserMsg("Please enter a User ID.");
+      return;
+    }
+    saveSettings({ userId: uid });
+    setIsCheckingUser(true);
+    setCheckUserMsg("");
+    try {
+      const data = await api.checkUser(uid);
+      if (data.exists) {
+        // Restore profile state
+        const p = data.profile || {};
+        const g = data.goal || {};
+        if (p.age) setAge(p.age);
+        if (p.sex) { setSex(p.sex); setGender(p.sex); }
+        if (p.height_cm) { setHeight(p.height_cm); setHeightValue(String(p.height_cm)); }
+        if (p.weight_kg) { setWeight(p.weight_kg); setCurrentWeight(String(p.weight_kg)); }
+        if (p.activity_level) setActivity(p.activity_level);
+        if (g.type) { setGoalType(g.type); setGoalPick(g.type); }
+        if (g.deficit_kcal != null) setDeficit(g.deficit_kcal);
+        // Restore plan
+        if (data.plan) {
+          setPlan(data.plan);
+          cachePlan(data.plan);
+        }
+        setStage("results");
+      } else {
+        startQuiz();
+      }
+    } catch (e) {
+      setCheckUserMsg(`Error: ${e.message}`);
+    } finally {
+      setIsCheckingUser(false);
+    }
   }
 
   function nextStep() {
@@ -835,12 +886,17 @@ export default function App() {
                     </div>
                   </div>
 
+                  {checkUserMsg && (
+                    <div className="alert alert-warning mt-3 mb-0 small">{checkUserMsg}</div>
+                  )}
+
                   <div className="mt-4">
                     <button
                       className="btn btn-outline-light w-100"
-                      onClick={startQuiz}
+                      onClick={handleContinue}
+                      disabled={isCheckingUser}
                     >
-                      Continue →
+                      {isCheckingUser ? <Spinner label="Checking…" /> : "Continue →"}
                     </button>
                   </div>
                 </div>

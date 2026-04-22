@@ -1,3 +1,4 @@
+import json
 from sqlalchemy import create_engine, text
 from pathlib import Path
 
@@ -21,6 +22,20 @@ CREATE TABLE IF NOT EXISTS bandit_arm (
     arm TEXT,
     pulls INTEGER DEFAULT 0,
     reward_sum REAL DEFAULT 0.0
+);
+CREATE TABLE IF NOT EXISTS users (
+    user_id TEXT PRIMARY KEY,
+    profile TEXT,
+    goal TEXT,
+    quiz_data TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS user_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    plan TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 '''
 
@@ -55,3 +70,51 @@ def upsert_arm(agent:str, arm:str, reward:float|None=None, pulled:bool=False):
                                 reward_sum = reward_sum + :r
                                 WHERE agent=:agent AND arm=:arm"""),
                          {"p":1 if pulled else 0, "r":(reward or 0.0), "agent":agent, "arm":arm})
+
+def upsert_user(user_id: str, profile: dict, goal: dict, quiz_data: dict = None):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO users(user_id, profile, goal, quiz_data, updated_at)
+            VALUES(:uid, :p, :g, :q, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                profile=excluded.profile,
+                goal=excluded.goal,
+                quiz_data=excluded.quiz_data,
+                updated_at=CURRENT_TIMESTAMP
+        """), {
+            "uid": user_id,
+            "p": json.dumps(profile or {}),
+            "g": json.dumps(goal or {}),
+            "q": json.dumps(quiz_data or {}),
+        })
+
+def get_user(user_id: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT profile, goal, quiz_data FROM users WHERE user_id=:uid"),
+            {"uid": user_id}
+        ).mappings().first()
+    if not row:
+        return None
+    return {
+        "profile": json.loads(row["profile"] or "{}"),
+        "goal": json.loads(row["goal"] or "{}"),
+        "quiz_data": json.loads(row["quiz_data"] or "{}"),
+    }
+
+def save_plan(user_id: str, plan: dict):
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO user_plans(user_id, plan) VALUES(:uid, :p)"),
+            {"uid": user_id, "p": json.dumps(plan or {})}
+        )
+
+def get_latest_plan(user_id: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT plan FROM user_plans WHERE user_id=:uid ORDER BY created_at DESC LIMIT 1"),
+            {"uid": user_id}
+        ).mappings().first()
+    if not row:
+        return None
+    return json.loads(row["plan"])

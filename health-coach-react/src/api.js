@@ -185,6 +185,17 @@ export const api = {
     });
   },
 
+  async checkUser(userId) {
+    return await fetchJSON(`/user/${encodeURIComponent(userId)}`, { method: "GET" });
+  },
+
+  async saveUserProfile(userId, { profile, goal, quizData = {} }) {
+    return await fetchJSON(`/user/${encodeURIComponent(userId)}/profile`, {
+      method: "POST",
+      body: JSON.stringify({ profile, goal, quiz_data: quizData }),
+    });
+  },
+
   async dietChat({ message, current_plan, profile, goal, chat_history = [] }) {
     const body = withUserId({
       message,

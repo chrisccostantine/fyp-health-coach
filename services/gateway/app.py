@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import requests, os
 from pydantic import ValidationError
 from services.common.models import UserProfile, Goal, DayPlan, PlanMeal, PlanWorkout
+from services.common.storage import init_db, upsert_user, get_user, save_plan, get_latest_plan
 from services.common.storage import init_db
 from flask_cors import CORS
 
@@ -68,6 +69,7 @@ def plan_today():
         meals=[PlanMeal(**m) for m in diet["meals"]],
         workouts=[PlanWorkout(**w) for w in work["workouts"]],
     )
+    save_plan(user_id, plan.model_dump())
     return jsonify(plan.model_dump())
 
 
@@ -88,6 +90,25 @@ def nudge_send():
     body = request.get_json(force=True)
     res = requests.post(f"{MOTIVATION_URL}/nudge/send", json=body)
     return jsonify(res.json()), res.status_code
+
+@app.get("/user/<user_id>")
+def get_user_route(user_id):
+    data = get_user(user_id)
+    if not data:
+        return jsonify({"exists": False})
+    plan = get_latest_plan(user_id)
+    return jsonify({"exists": True, **data, "plan": plan})
+
+@app.post("/user/<user_id>/profile")
+def save_user_profile(user_id):
+    body = request.get_json(force=True)
+    upsert_user(
+        user_id,
+        profile=body.get("profile", {}),
+        goal=body.get("goal", {}),
+        quiz_data=body.get("quiz_data", {}),
+    )
+    return jsonify({"ok": True})
 
 @app.post("/feedback")
 def feedback():
