@@ -36,10 +36,6 @@ function safeArray(v) {
   return Array.isArray(v) ? v : [];
 }
 
-function fmtTimeHHMM(t) {
-  return t ? String(t).slice(0, 5) : "—";
-}
-
 function fmtIso(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -195,6 +191,11 @@ function QuickStat({ label, value }) {
     </div>
   );
 }
+
+function FieldNote({ children }) {
+  return <div className="field-note">{children}</div>;
+}
+
 function OptionCard({ title, subtitle, active, onClick }) {
   return (
     <button
@@ -222,6 +223,23 @@ function LongSelect({ title, subtitle, active, onClick, right }) {
     </button>
   );
 }
+
+function OptionGrid({ children }) {
+  return <div className="option-grid">{children}</div>;
+}
+
+function toMetricHeight(value, unit) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return unit === "ft" ? Math.round(numeric * 30.48) : numeric;
+}
+
+function toMetricWeight(value, unit) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return unit === "lb" ? Math.round(numeric * 0.453592 * 10) / 10 : numeric;
+}
+
 function ProgressCurve({ startWeight, endWeight, unit }) {
   const width = 760;
   const height = 250;
@@ -276,7 +294,7 @@ function ProgressCurve({ startWeight, endWeight, unit }) {
       <div className="trend-chart-header">
         <div className="trend-label">{trendText}</div>
         <div className="trend-range">
-          {startWeight.toFixed(1)} {unit} → {endWeight.toFixed(1)} {unit}
+          {startWeight.toFixed(1)} {unit} to {endWeight.toFixed(1)} {unit}
         </div>
       </div>
 
@@ -334,7 +352,7 @@ function ProgressCurve({ startWeight, endWeight, unit }) {
 /* -------------------- App -------------------- */
 export default function App() {
   // ------- Settings -------
-  const [gatewayUrl, setGatewayUrl] = useState(getSettings().gatewayUrl);
+  const [gatewayUrl] = useState(getSettings().gatewayUrl);
   const [userId, setUserId] = useState(getSettings().userId);
   const [ping, setPing] = useState(null);
   // Extra quiz answers (MadMuscles style)
@@ -391,7 +409,7 @@ export default function App() {
     stored?.goalType ?? "general_health",
   );
   const [deficit, setDeficit] = useState(stored?.deficit ?? 400);
-  const [equipment, setEquipment] = useState(
+  const [equipment] = useState(
     stored?.equipment ?? "dumbbells,pullup_bar",
   );
   const [gender, setGender] = useState(sex || "M"); // keep in sync with your existing sex
@@ -434,6 +452,14 @@ export default function App() {
   const [leadDob, setLeadDob] = useState("");
   const [leadEmail, setLeadEmail] = useState("");
   const [fitnessAge, setFitnessAge] = useState(null);
+  const ageBand =
+    Number(age) < 25
+      ? "under_25"
+      : Number(age) < 35
+        ? "25_34"
+        : Number(age) < 50
+          ? "35_49"
+          : "50_plus";
   useEffect(() => {
     if (step === ACTIVE_QUIZ_STEPS[ACTIVE_QUIZ_STEPS.length - 1]) {
       setFitnessAge(calcFitnessAge());
@@ -442,8 +468,10 @@ export default function App() {
   }, [step]);
 
   useEffect(() => {
-    if (heightUnit === "cm") setHeight(+heightValue || height);
-    if (weightUnit === "kg") setWeight(+currentWeight || weight);
+    const metricHeight = toMetricHeight(heightValue, heightUnit);
+    const metricWeight = toMetricWeight(currentWeight, weightUnit);
+    if (metricHeight > 0) setHeight(metricHeight);
+    if (metricWeight > 0) setWeight(metricWeight);
   }, [heightValue, currentWeight, heightUnit, weightUnit]);
 
   useEffect(() => {
@@ -482,9 +510,9 @@ export default function App() {
       const payload = {
         profile: {
           age: +age,
-          sex,
-          height_cm: +height,
-          weight_kg: +weight,
+          sex: gender || sex,
+          height_cm: toMetricHeight(heightValue || height, heightUnit),
+          weight_kg: toMetricWeight(currentWeight || weight, weightUnit),
           activity_level: activity,
         },
         goal: { type: goalType, deficit_kcal: +deficit },
@@ -782,10 +810,6 @@ export default function App() {
     });
   }
 
-  function goResults() {
-    setStage("results");
-  }
-
   return (
     <div className="app-shell">
       {/* Top Bar */}
@@ -814,11 +838,11 @@ export default function App() {
                 <div className="card-body p-4 p-md-5">
                   <div className="hero-kicker">AI-Powered Daily Plan</div>
                   <h1 className="hero-title">
-                    Build your plan for today — meals + workouts + schedule.
+                    Build a plan that fits your body, meals, and day.
                   </h1>
                   <p className="hero-sub text-muted">
-                    Answer a quick quiz and get a plan that matches your goal,
-                    body, and equipment.
+                    Health Coach turns your goal, schedule, and training level
+                    into a practical daily nutrition and workout plan.
                   </p>
 
                   <div className="d-flex flex-wrap gap-3 mt-4">
@@ -839,9 +863,18 @@ export default function App() {
                   </div>
 
                   <div className="mt-4 hero-stats">
-                    <QuickStat label="Time" value="~60 sec" />
-                    <QuickStat label="Workouts" value="Home / Gym" />
-                    <QuickStat label="Nutrition" value="Daily meals" />
+                    <QuickStat label="Quiz time" value="~60 sec" />
+                    <QuickStat label="Training" value="Home or gym" />
+                    <QuickStat label="Output" value="Meals + schedule" />
+                  </div>
+
+                  <div className="hero-visual" aria-hidden="true">
+                    <div className="hero-visual-copy">
+                      <span>Today</span>
+                      <strong>2 workouts</strong>
+                      <small>3 meals planned</small>
+                    </div>
+                    <img src="/images/average-body-male.png" alt="" />
                   </div>
                 </div>
               </div>
@@ -858,10 +891,10 @@ export default function App() {
                     onChange={(e) => setUserId(e.target.value)}
                     placeholder="demo-user"
                   />
-                  <div className="text-muted small mt-2">
+                  <FieldNote>
                     This ID is used for planning, scheduling, nudges, and
                     feedback.
-                  </div>
+                  </FieldNote>
 
                   {/* Optional: keep gateway hidden */}
                   {/* <div className="mt-3">
@@ -874,15 +907,13 @@ export default function App() {
                   </div> */}
 
                   <div className="mt-4">
-                    <div className="card card-soft">
-                      <div className="card-body">
-                        <div className="fw-semibold mb-1">What you’ll get</div>
-                        <ul className="mb-0 small text-muted">
-                          <li>Daily calorie & macro summary (if available)</li>
-                          <li>Meal + workout timing suggestions</li>
-                          <li>One-click scheduling + motivational nudges</li>
-                        </ul>
-                      </div>
+                    <div className="account-benefits">
+                      <div className="fw-semibold mb-1">What you will get</div>
+                      <ul className="mb-0 small text-muted">
+                        <li>Daily calorie and macro summary when available</li>
+                        <li>Meal and workout timing suggestions</li>
+                        <li>One-click scheduling and motivational nudges</li>
+                      </ul>
                     </div>
                   </div>
 
@@ -896,7 +927,7 @@ export default function App() {
                       onClick={handleContinue}
                       disabled={isCheckingUser}
                     >
-                      {isCheckingUser ? <Spinner label="Checking…" /> : "Continue →"}
+                      {isCheckingUser ? <Spinner label="Checking..." /> : "Continue"}
                     </button>
                   </div>
                 </div>
@@ -974,6 +1005,7 @@ export default function App() {
                         active={gender === "M"}
                         onClick={() => {
                           setGender("M");
+                          setSex("M");
                           nextStep();
                         }}
                         right={
@@ -991,6 +1023,7 @@ export default function App() {
                         active={gender === "F"}
                         onClick={() => {
                           setGender("F");
+                          setSex("F");
                           nextStep();
                         }}
                         right={
@@ -1243,7 +1276,7 @@ export default function App() {
                             setDietPref(x.k);
                             nextStep();
                           }}
-                          right={<span className="icon-ph">◦</span>}
+                          right={<span className="icon-ph">Diet</span>}
                         />
                       ))}
                     </div>
@@ -1264,7 +1297,7 @@ export default function App() {
                           setSugarFreq("not_often");
                           nextStep();
                         }}
-                        right={<span className="icon-ph">🙂</span>}
+                        right={<span className="icon-ph">Low</span>}
                       />
                       <LongSelect
                         title="3–5 times a week"
@@ -1273,7 +1306,7 @@ export default function App() {
                           setSugarFreq("3_5_week");
                           nextStep();
                         }}
-                        right={<span className="icon-ph">🍦</span>}
+                        right={<span className="icon-ph">Mid</span>}
                       />
                       <LongSelect
                         title="Pretty much every day"
@@ -1282,7 +1315,7 @@ export default function App() {
                           setSugarFreq("daily");
                           nextStep();
                         }}
-                        right={<span className="icon-ph">🧁</span>}
+                        right={<span className="icon-ph">High</span>}
                       />
                     </div>
                   </>
@@ -1338,7 +1371,7 @@ export default function App() {
                       ))}
                     </div>
 
-                    <button className="btn btn-primary ..." onClick={nextStep}>
+                    <button className="btn btn-primary w-100 mt-4" onClick={nextStep}>
                       Continue
                     </button>
                   </>
@@ -1370,7 +1403,11 @@ export default function App() {
                       onChange={(e) => setHeightValue(e.target.value)}
                     />
 
-                    <button className="btn btn-primary ..." onClick={nextStep}>
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                      disabled={!heightValue || toMetricHeight(heightValue, heightUnit) <= 0}
+                    >
                       Continue
                     </button>
                   </>
@@ -1626,7 +1663,7 @@ export default function App() {
                       })}
                     </div>
 
-                    <button className="btn btn-primary ..." onClick={nextStep}>
+                    <button className="btn btn-primary w-100 mt-4" onClick={nextStep}>
                       Continue
                     </button>
                   </>
@@ -1671,7 +1708,7 @@ export default function App() {
                         <span className="long-card-title">
                           None of the above
                         </span>
-                        <span className="xMark">✕</span>
+                        <span className="xMark">x</span>
                       </button>
                     </div>
 
@@ -1908,7 +1945,7 @@ export default function App() {
                 {step === 24 && (
                   <>
                     <div className="ready-banner">
-                      ✅ Your personalized workout plan is ready!
+                      Your personalized workout plan is ready.
                     </div>
 
                     <h3 className="quiz-title mt-4">What’s your name?</h3>
@@ -1933,7 +1970,7 @@ export default function App() {
                 {step === 25 && (
                   <>
                     <div className="ready-banner">
-                      ✅ Your personalized workout plan is ready!
+                      Your personalized workout plan is ready.
                     </div>
 
                     <h3 className="quiz-title mt-4">
@@ -1960,7 +1997,7 @@ export default function App() {
                 {step === 26 && (
                   <>
                     <div className="ready-banner">
-                      ✅ Your personalized workout plan is ready!
+                      Your personalized workout plan is ready.
                     </div>
 
                     <h3 className="quiz-title mt-4">Enter your email</h3>
@@ -1974,8 +2011,8 @@ export default function App() {
                     />
 
                     <div className="privacy-row">
-                      🔒 We respect your privacy and take protecting it very
-                      seriously — no spam
+                      We respect your privacy and take protecting it seriously.
+                      No spam.
                     </div>
 
                     <button
@@ -1992,7 +2029,7 @@ export default function App() {
                   <>
                     <h3 className="quiz-title">Your current fitness score</h3>
                     <div className="age-pill">
-                      {fitnessAge ?? Number(age) ?? 24} years{" "}
+                      {fitnessAge || Number(age) || 24} years{" "}
                     </div>
 
                     <div className="fitness-copy">
@@ -2041,7 +2078,7 @@ export default function App() {
                       step === 0 ? setStage("landing") : prevStep()
                     }
                   >
-                    ← Back
+                    Back
                   </button>
 
                   {/* {step < TOTAL_STEPS - 1 ? (
@@ -2049,7 +2086,7 @@ export default function App() {
                       className="btn btn-primary fw-bold"
                       onClick={nextStep}
                     >
-                      Continue →
+                      Continue
                     </button>
                   ) : (
                     <button

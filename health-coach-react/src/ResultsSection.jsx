@@ -78,6 +78,11 @@ export default function ResultsSection({
 }) {
   if (stage !== "results") return null;
 
+  const Schedule = ScheduleView;
+  const Nudge = NudgeView;
+  const Loading = Spinner;
+  const StatusAlert = Alert;
+
   const meals = Array.isArray(plan?.meals) ? plan.meals : [];
   const workouts = Array.isArray(plan?.workouts) ? plan.workouts : [];
   const chatMessages = Array.isArray(dietChatMessages) ? dietChatMessages : [];
@@ -91,10 +96,10 @@ export default function ResultsSection({
           <div className="card-body p-4 p-md-5">
             <div className="results-header">
               <div>
-                <div className="results-kicker">Daily Plan Dashboard</div>
+                <div className="results-kicker">Daily plan dashboard</div>
                 <h1 className="results-title">Your plan for today</h1>
                 <div className="text-muted">
-                  Clean overview of nutrition, training, and actions.
+                  Nutrition, training, scheduling, and coaching in one view.
                 </div>
               </div>
 
@@ -114,7 +119,7 @@ export default function ResultsSection({
                   disabled={isPlanning}
                 >
                   {isPlanning ? (
-                    <Spinner label="Refreshing..." />
+                    <Loading label="Refreshing..." />
                   ) : (
                     "Regenerate"
                   )}
@@ -182,7 +187,7 @@ export default function ResultsSection({
                         <div key={idx} className="result-item">
                           <div className="result-left">
                             <div className="result-icon" aria-hidden="true">
-                              🍽️
+                              Meal
                             </div>
                             <div>
                               <div className="result-title">
@@ -257,7 +262,7 @@ export default function ResultsSection({
 
                 {/* Diet Chat */}
                 <div className="mt-4">
-                  <h2 className="section-title mb-2">Diet Chat</h2>
+                  <h2 className="section-h mb-2">Diet Chat</h2>
 
                   <div className="list-group list-group-soft mb-3">
                     {chatMessages.length === 0 ? (
@@ -292,11 +297,11 @@ export default function ResultsSection({
                       onClick={handleDietChat}
                       disabled={isDietChatting}
                     >
-                      {isDietChatting ? <Spinner label="Sending..." /> : "Send"}
+                      {isDietChatting ? <Loading label="Sending..." /> : "Send"}
                     </button>
                   </div>
 
-                  <Alert variant="warning">{dietChatMsg}</Alert>
+                  <StatusAlert variant="warning">{dietChatMsg}</StatusAlert>
                 </div>
               </>
             )}
@@ -366,7 +371,7 @@ export default function ResultsSection({
                     onClick={handleFeedback}
                     disabled={isFeedback}
                   >
-                    {isFeedback ? <Spinner label="Submitting..." /> : "Submit"}
+                    {isFeedback ? <Loading label="Submitting..." /> : "Submit"}
                   </button>
 
                   <button
@@ -393,8 +398,8 @@ export default function ResultsSection({
       <div className="col-lg-4">
         <div className="card card-soft">
           <div className="card-body p-4">
-            <h2 className="h5 section-title mb-2">Schedule</h2>
-            <p className="text-muted mb-3">Commit items to the scheduler.</p>
+            <h2 className="h5 panel-title mb-2">Schedule</h2>
+            <p className="text-muted mb-3">Choose when meals and workouts land.</p>
             <div className="mb-3">
               <label className="form-label">
                 Meal Times (HH:MM, comma-separated)
@@ -427,20 +432,20 @@ export default function ResultsSection({
               disabled={isScheduling}
             >
               {isScheduling ? (
-                <Spinner label="Committing..." />
+                <Loading label="Committing..." />
               ) : (
                 "Commit Schedule"
               )}
             </button>
 
-            <Alert variant="warning">{scheduleMsg}</Alert>
-            {schedule ? <ScheduleView result={schedule} /> : null}
+            <StatusAlert variant="warning">{scheduleMsg}</StatusAlert>
+            {schedule ? <Schedule result={schedule} /> : null}
           </div>
         </div>
 
         <div className="card card-soft mt-4">
           <div className="card-body p-4">
-            <h2 className="h5 section-title mb-3">Motivation</h2>
+            <h2 className="h5 panel-title mb-3">Motivation</h2>
 
             <div className="row g-3">
               <div className="col-12">
@@ -472,12 +477,12 @@ export default function ResultsSection({
               onClick={handleNudge}
               disabled={isNudging}
             >
-              {isNudging ? <Spinner label="Sending..." /> : "Send Nudge"}
+              {isNudging ? <Loading label="Sending..." /> : "Send Nudge"}
             </button>
 
-            <Alert variant="warning">{nudgeMsg}</Alert>
+            <StatusAlert variant="warning">{nudgeMsg}</StatusAlert>
             {nudge ? (
-              <NudgeView result={nudge} tone={tone} goal={goalText} />
+              <Nudge result={nudge} tone={tone} goal={goalText} />
             ) : null}
           </div>
         </div>
