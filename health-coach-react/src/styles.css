@@ -765,14 +765,85 @@ pre.out {
   color: #fff;
 }
 
-/* ===== Charts placeholder (optional) ===== */
-.chart-placeholder {
-  height: 220px;
+/* ===== Trend chart ===== */
+.trend-chart {
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 77, 0, 0.18), rgba(0, 0, 0, 0.65));
-  display: grid;
-  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(255, 77, 0, 0.14), rgba(4, 6, 14, 0.9));
+  padding: 14px 14px 10px;
   color: #fff;
+}
+
+.trend-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.trend-label {
+  color: #fff;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.trend-range {
+  color: rgba(255, 255, 255, 0.78);
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.trend-svg {
+  width: 100%;
+  height: 220px;
+  display: block;
+}
+
+.trend-grid {
+  stroke: rgba(255, 255, 255, 0.13);
+  stroke-width: 1;
+  stroke-dasharray: 5 6;
+}
+
+.trend-area {
+  fill: url(#trendFill);
+}
+
+.trend-line {
+  fill: none;
+  stroke: url(#trendStroke);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1200;
+  stroke-dashoffset: 1200;
+  animation: drawCurve 1.4s ease-out forwards;
+}
+
+.trend-node {
+  fill: #ffd0ba;
+  opacity: 0.9;
+}
+
+.trend-dot {
+  fill: #fff;
+  filter: drop-shadow(0 0 6px rgba(255, 110, 59, 0.95));
+}
+
+.trend-axis {
+  margin-top: 2px;
+  display: flex;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+@keyframes drawCurve {
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 /* ===== Reactions row ===== */
@@ -1006,6 +1077,11 @@ pre.out {
 }
 .results-shell{
   border-radius: 22px;
+  background: linear-gradient(180deg, rgba(32,32,32,.98), rgba(20,20,20,.98)) !important;
+}
+
+.results-shell .text-muted {
+  color: rgba(255,255,255,.84) !important;
 }
 
 .results-header{
@@ -1016,8 +1092,9 @@ pre.out {
 }
 
 .results-kicker{
-  color: rgba(255,255,255,.55);
-  font-size:.9rem;
+   color: rgba(255,255,255,.88);
+  font-size:.95rem;
+  font-weight: 700;
 }
 
 .results-title{
@@ -1026,6 +1103,8 @@ pre.out {
   letter-spacing: .6px;
   text-transform: uppercase;
   font-size: clamp(2rem, 4vw, 3.2rem);
+  color: #fff;
+  text-shadow: 0 4px 14px rgba(0,0,0,.45);
 }
 
 .results-actions{
@@ -1055,8 +1134,8 @@ pre.out {
 }
 
 .summary-label{
-  color: rgba(255,255,255,.60);
-  font-size:.9rem;
+  color: rgba(255,255,255,.86);
+  font-size:.95rem;
   font-weight:700;
 }
 
@@ -1140,15 +1219,15 @@ pre.out {
 
 .result-sub{
   margin-top: 2px;
-  color: rgba(255,255,255,.65);
-  font-size: .95rem;
+  color: rgba(255,255,255,.9);
+  font-size: 1rem;
 }
 
 .time-pill{
-  padding: 6px 10px;
+  padding: 6px 12px;
   border-radius: 12px;
-  background: rgba(255,255,255,.10);
-  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.28);
   font-weight: 900;
   color:#fff;
   white-space: nowrap;
@@ -1207,3 +1286,5 @@ pre.out {
   font-weight: 800;
   color: #fff;
 }
+
+

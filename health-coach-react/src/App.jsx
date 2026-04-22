@@ -222,9 +222,113 @@ function LongSelect({ title, subtitle, active, onClick, right }) {
     </button>
   );
 }
+function ProgressCurve({ startWeight, endWeight, unit }) {
+  const width = 760;
+  const height = 250;
+  const padX = 36;
+  const padY = 24;
 
-function OptionGrid({ children }) {
-  return <div className="option-grid">{children}</div>;
+  const isSame = Math.abs(endWeight - startWeight) < 0.01;
+  const trendText = isSame
+    ? "Maintenance trend"
+    : endWeight < startWeight
+      ? "Downward trend"
+      : "Upward trend";
+
+  const points = Array.from({ length: 8 }).map((_, idx) => {
+    const t = idx / 7;
+    const eased = 1 - (1 - t) ** 1.7;
+    const base = startWeight + (endWeight - startWeight) * eased;
+    const wave =
+      Math.sin(t * Math.PI * 1.15) *
+      Math.max(Math.abs(startWeight - endWeight) * 0.06, 0.25);
+    return base + (idx === 0 || idx === 7 ? 0 : wave);
+  });
+
+  const minY = Math.min(...points);
+  const maxY = Math.max(...points);
+  const spread = Math.max(maxY - minY, 1);
+  const yMin = minY - spread * 0.18;
+  const yMax = maxY + spread * 0.18;
+
+  const toXY = (value, idx) => {
+    const x = padX + ((width - padX * 2) * idx) / (points.length - 1);
+    const y = padY + ((value - yMin) / (yMax - yMin)) * (height - padY * 2);
+    return [x, height - y];
+  };
+
+  const mapped = points.map((v, i) => toXY(v, i));
+
+  const linePath = mapped
+    .map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`)
+    .join(" ");
+
+  const areaPath = `${linePath} L ${mapped[mapped.length - 1][0].toFixed(1)},${(
+    height - padY
+  ).toFixed(1)} L ${mapped[0][0].toFixed(1)},${(height - padY).toFixed(1)} Z`;
+
+  return (
+    <div
+      className="trend-chart mt-4"
+      role="img"
+      aria-label="Predicted weight trend chart"
+    >
+      <div className="trend-chart-header">
+        <div className="trend-label">{trendText}</div>
+        <div className="trend-range">
+          {startWeight.toFixed(1)} {unit} → {endWeight.toFixed(1)} {unit}
+        </div>
+      </div>
+
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="trend-svg"
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id="trendStroke" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#ff8a4a" />
+            <stop offset="100%" stopColor="#ff4d00" />
+          </linearGradient>
+
+          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="rgba(255,77,0,0.35)" />
+            <stop offset="100%" stopColor="rgba(255,77,0,0.04)" />
+          </linearGradient>
+        </defs>
+
+        {[0.25, 0.5, 0.75].map((r) => {
+          const gy = padY + (height - padY * 2) * r;
+          return (
+            <line
+              key={r}
+              x1={padX}
+              x2={width - padX}
+              y1={gy}
+              y2={gy}
+              className="trend-grid"
+            />
+          );
+        })}
+
+        <path d={areaPath} className="trend-area" />
+        <path d={linePath} className="trend-line" />
+
+        <circle r="5" className="trend-dot">
+          <animateMotion dur="3.1s" repeatCount="indefinite" path={linePath} />
+        </circle>
+
+        {mapped.map(([x, y], idx) => (
+          <circle key={idx} cx={x} cy={y} r="2.6" className="trend-node" />
+        ))}
+      </svg>
+
+      <div className="trend-axis">
+        <span>Today</span>
+        <span>Goal date</span>
+      </div>
+    </div>
+  );
 }
 
 /* -------------------- App -------------------- */
@@ -266,7 +370,7 @@ export default function App() {
 
   // ------- Funnel state (NEW) -------
   const [stage, setStage] = useState("landing"); // landing | quiz | results
-  const ACTIVE_QUIZ_STEPS = [0, 1, 3, 7, 10, 11, 13, 20, 21, 22, 27];
+  const ACTIVE_QUIZ_STEPS = [0, 1, 3, 7, 10, 11, 12, 13, 20, 21, 22, 27];
   const [step, setStep] = useState(ACTIVE_QUIZ_STEPS[0]);
   const TOTAL_STEPS = ACTIVE_QUIZ_STEPS.length;
   const stepPosition = Math.max(0, ACTIVE_QUIZ_STEPS.indexOf(step));
@@ -287,7 +391,6 @@ export default function App() {
   const [equipment, setEquipment] = useState(
     stored?.equipment ?? "dumbbells,pullup_bar",
   );
-  const [ageBand, setAgeBand] = useState("18-29");
   const [gender, setGender] = useState(sex || "M"); // keep in sync with your existing sex
   const [bodyType, setBodyType] = useState("average"); // slim | average | big | heavy
   const [goalPick, setGoalPick] = useState(goalType || "fat_loss"); // reuse your goalType
@@ -764,42 +867,43 @@ export default function App() {
                 {/* Step 0 */}
                 {step === 0 && (
                   <>
-                    <h3 className="quiz-title">BUILD YOUR PERFECT BODY</h3>
+                    <h3 className="quiz-title">How old are you?</h3>{" "}
                     <div className="quiz-sub">
-                      According to your age and BMI
+                      We only ask your age once to personalize calorie and
+                      workout targets.{" "}
                     </div>
-
-                    <div className="age-grid mt-4">
-                      {[
-                        { k: "18-29", t: "Age: 18–29" },
-                        { k: "30-39", t: "Age: 30–39" },
-                        { k: "40-49", t: "Age: 40–49" },
-                        { k: "50+", t: "Age: 50+" },
-                      ].map((x) => (
+                    <div className="mt-4">
+                      <input
+                        type="number"
+                        min={14}
+                        max={90}
+                        className="line-input"
+                        value={age}
+                        onChange={(e) => setAge(e.target.value)}
+                        placeholder="Enter your age"
+                      />
+                    </div>
+                    <div className="d-flex flex-wrap gap-2 mt-3">
+                      {[20, 25, 30, 35, 40, 50].map((presetAge) => (
                         <button
-                          key={x.k}
+                          key={presetAge}
                           type="button"
-                          className={`age-card ${ageBand === x.k ? "active" : ""}`}
-                          onClick={() => {
-                            setAgeBand(x.k);
-                            // Optional: set a reasonable default age
-                            const midpoint =
-                              x.k === "18-29"
-                                ? 24
-                                : x.k === "30-39"
-                                  ? 35
-                                  : x.k === "40-49"
-                                    ? 45
-                                    : 55;
-                            setAge(midpoint);
-                            nextStep();
-                          }}
+                          className={`btn btn-outline-light btn-sm ${+age === presetAge ? "active" : ""}`}
+                          onClick={() => setAge(presetAge)}
                         >
-                          <div className="age-card-label">{x.t}</div>
-                          <div className="age-card-arrow">›</div>
+                          {presetAge}
                         </button>
                       ))}
                     </div>
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                      disabled={
+                        !Number(age) || Number(age) < 14 || Number(age) > 90
+                      }
+                    >
+                      Continue
+                    </button>
                   </>
                 )}
 
@@ -1309,9 +1413,18 @@ export default function App() {
                       {new Date(Date.now() + 50 * 86400000).toDateString()}
                     </h4>
 
-                    <div className="chart-placeholder mt-4">
-                      📉 Progress Curve
-                    </div>
+                    <ProgressCurve
+                      startWeight={
+                        Number(currentWeight) || Number(weight) || 70
+                      }
+                      endWeight={
+                        Number(targetWeight) ||
+                        Number(currentWeight) ||
+                        Number(weight) ||
+                        70
+                      }
+                      unit={weightUnit}
+                    />
 
                     <button
                       className="btn btn-primary w-100 mt-4"
@@ -1821,10 +1934,9 @@ export default function App() {
                 {/*Step 27*/}
                 {step === 27 && (
                   <>
-                    <h3 className="quiz-title">Your fitness age is</h3>
-
+                    <h3 className="quiz-title">Your current fitness score</h3>
                     <div className="age-pill">
-                      {fitnessAge ?? Number(age) ?? 24} years
+                      {fitnessAge ?? Number(age) ?? 24} years{" "}
                     </div>
 
                     <div className="fitness-copy">
@@ -1847,7 +1959,7 @@ export default function App() {
                         />
                       </div>
                       <div className="meter-text">
-                        Your body age is older than your actual age
+                        Your current fitness baseline can be improved{" "}
                       </div>
                     </div>
 

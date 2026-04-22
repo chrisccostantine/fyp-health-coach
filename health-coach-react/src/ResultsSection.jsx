@@ -394,8 +394,7 @@ export default function ResultsSection({
         <div className="card card-soft">
           <div className="card-body p-4">
             <h2 className="h5 section-title mb-2">Schedule</h2>
-            <p className="text-muted mb-3">Commit items to the Scheduler.</p>
-
+            <p className="text-muted mb-3">Commit items to the scheduler.</p>
             <div className="mb-3">
               <label className="form-label">
                 Meal Times (HH:MM, comma-separated)
