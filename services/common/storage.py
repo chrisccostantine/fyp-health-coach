@@ -44,6 +44,20 @@ CREATE TABLE IF NOT EXISTS user_plans (
     plan TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    source_key TEXT NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    ends_at TEXT,
+    status TEXT,
+    notes TEXT,
+    payload TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS auth_users (
     user_id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
@@ -139,6 +153,56 @@ def get_latest_plan(user_id: str):
     if not row:
         return None
     return json.loads(row["plan"])
+
+def replace_calendar_events(user_id: str, events: list[dict]):
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM calendar_events WHERE user_id = :uid"),
+            {"uid": user_id},
+        )
+        for event in events:
+            conn.execute(
+                text("""
+                    INSERT INTO calendar_events(
+                        id, user_id, source_key, type, title, starts_at, ends_at,
+                        status, notes, payload, updated_at
+                    ) VALUES(
+                        :id, :uid, :source_key, :type, :title, :starts_at, :ends_at,
+                        :status, :notes, :payload, CURRENT_TIMESTAMP
+                    )
+                """),
+                {
+                    "id": event["id"],
+                    "uid": user_id,
+                    "source_key": event["source_key"],
+                    "type": event["type"],
+                    "title": event["title"],
+                    "starts_at": event["starts_at"],
+                    "ends_at": event.get("ends_at"),
+                    "status": event.get("status"),
+                    "notes": event.get("notes"),
+                    "payload": json.dumps(event.get("payload") or {}),
+                },
+            )
+
+def get_calendar_events(user_id: str):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT id, user_id, source_key, type, title, starts_at, ends_at,
+                       status, notes, payload
+                FROM calendar_events
+                WHERE user_id = :uid
+                ORDER BY starts_at ASC, created_at ASC
+            """),
+            {"uid": user_id},
+        ).mappings().all()
+    events = []
+    for row in rows:
+        event = dict(row)
+        event["payload"] = json.loads(event.get("payload") or "{}")
+        events.append(event)
+    return events
 
 def create_auth_user(user_id: str, email: str, password_hash: str, display_name: str | None = None):
     with engine.begin() as conn:

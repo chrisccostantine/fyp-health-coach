@@ -3,17 +3,17 @@ import ResultsSection from "./ResultsSection";
 
 import {
   api,
+  cacheCalendar,
   cachePlan,
   clearAuthSession,
+  getCachedCalendar,
   getCachedPlan,
-  getCachedSchedule,
   getSettings,
-  isoTodayAt,
   saveAuthSession,
   saveSettings,
 } from "./api";
 /* -------------------- Exports -------------------- */
-export { App, NudgeView, ScheduleView };
+export { App, NudgeView, CalendarView };
 
 /* -------------------- small helpers -------------------- */
 function Spinner({ label = "Loading..." }) {
@@ -39,30 +39,30 @@ function safeArray(v) {
 }
 
 function fmtIso(iso) {
-  if (!iso) return "—";
+  if (!iso) return "--";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
   const date = d.toLocaleDateString();
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return `${date} • ${time}`;
+  return `${date} - ${time}`;
 }
 
-/* -------------------- ScheduleView -------------------- */
-function ScheduleView({ result }) {
+/* -------------------- CalendarView -------------------- */
+function CalendarView({ result }) {
   if (!result) return null;
 
   const events = safeArray(result.events || result.items || result.scheduled);
   return (
     <div className="mt-3">
       <div className="d-flex align-items-center justify-content-between mb-2">
-        <h3 className="h6 text-white mb-0">Scheduled Items</h3>
+        <h3 className="h6 text-white mb-0">Today's Calendar</h3>
         <span className="badge text-bg-dark">{events.length}</span>
       </div>
 
       {events.length === 0 ? (
         <div className="card card-soft">
           <div className="card-body py-3 text-muted">
-            No items were scheduled.
+            No calendar items yet.
           </div>
         </div>
       ) : (
@@ -83,19 +83,19 @@ function ScheduleView({ result }) {
                 </div>
                 <small className="text-muted">
                   {e.type ? `${e.type}` : "item"}
-                  {e.status ? ` · ${e.status}` : ""}
-                  {e.notes ? ` · ${e.notes}` : ""}
-                  {e.calories ? ` · ${e.calories} kcal` : ""}
+                  {e.status ? ` - ${e.status}` : ""}
+                  {e.notes ? ` - ${e.notes}` : ""}
+                  {e.payload?.calories ? ` - ${e.payload.calories} kcal` : ""}
                   {e.id && (
                     <>
                       {" "}
-                      · ID: <code className="code-soft">{e.id}</code>
+                      - ID: <code className="code-soft">{e.id}</code>
                     </>
                   )}
                 </small>
               </div>
               <span className="badge text-bg-secondary align-self-md-center mt-2 mt-md-0">
-                {fmtIso(e.when)}
+                {fmtIso(e.starts_at || e.when)}
               </span>
             </li>
           ))}
@@ -130,11 +130,11 @@ function NudgeView({ result, tone, goal }) {
         <div className="small text-muted">
           Tone: <span className="badge text-bg-secondary me-2">{tone}</span>
           Goal: <code className="code-soft">{goal}</code>
-          {channel ? <span className="ms-2">· via {channel}</span> : null}
-          {sentAt ? <span className="ms-2">· {fmtIso(sentAt)}</span> : null}
+          {channel ? <span className="ms-2">- via {channel}</span> : null}
+          {sentAt ? <span className="ms-2">- {fmtIso(sentAt)}</span> : null}
           {id ? (
             <span className="ms-2">
-              · ID: <code className="code-soft">{id}</code>
+              - ID: <code className="code-soft">{id}</code>
             </span>
           ) : null}
         </div>
@@ -546,6 +546,9 @@ export default function App() {
 
       const data = await api.planToday(payload);
       setPlan(data);
+      setCalendar(data?.calendar || null);
+      if (data?.calendar) cacheCalendar(data.calendar);
+      setCalendarMsg("");
       setDietChatMessages([
         {
           role: "assistant",
@@ -616,8 +619,12 @@ export default function App() {
       });
 
       const updatedPlan = exerciseData?.updated_plan || nextPlan;
+      const nextCalendar = exerciseData?.calendar || dietData?.calendar || null;
       setPlan(updatedPlan);
       cachePlan(updatedPlan);
+      setCalendar(nextCalendar);
+      if (nextCalendar) cacheCalendar(nextCalendar);
+      setCalendarMsg("");
 
       setDietChatMessages((prev) => [
         ...prev,
@@ -636,12 +643,9 @@ export default function App() {
     }
   }
 
-  // ------- Schedule -------
-  const [mealTimes, setMealTimes] = useState("08:00,13:00,19:00");
-  const [workoutTime, setWorkoutTime] = useState("18:00");
-  const [schedule, setSchedule] = useState(getCachedSchedule());
-  const [scheduleMsg, setScheduleMsg] = useState("");
-  const [isScheduling, setIsScheduling] = useState(false);
+  // ------- Calendar -------
+  const [calendar, setCalendar] = useState(getCachedCalendar());
+  const [calendarMsg, setCalendarMsg] = useState("");
   function calcFitnessAge() {
     // super simple placeholder logic (you can improve later)
     const base = Number(age) || 24;
@@ -668,55 +672,32 @@ export default function App() {
     nextStep();
   }
 
-  function parseTimes(csv) {
-    return (csv || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .filter((t) => /^\d{2}:\d{2}$/.test(t));
-  }
+  useEffect(() => {
+    if (stage !== "results" || !userId?.trim()) return;
 
-  async function handleSchedule() {
-    setIsScheduling(true);
-    setScheduleMsg("");
-    try {
-      const currentPlan = getCachedPlan();
-      const planMeals = safeArray(currentPlan?.meals);
-      const planWorkout = safeArray(currentPlan?.workouts)[0];
+    let cancelled = false;
+    api
+      .getCalendar()
+      .then(async (data) => {
+        if (cancelled) return;
+        const events = Array.isArray(data?.events) ? data.events : [];
+        const nextCalendar =
+          events.length === 0 && plan ? await api.syncCalendar(plan) : data;
+        if (cancelled) return;
+        setCalendar(nextCalendar);
+        cacheCalendar(nextCalendar);
+        setCalendarMsg("");
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setCalendar(null);
+        setCalendarMsg(`Error: ${e.message}`);
+      });
 
-      if (!currentPlan) throw new Error("Please generate a plan first.");
-      const times = parseTimes(mealTimes);
-      if (times.length === 0)
-        throw new Error("Enter meal times as HH:MM (comma-separated).");
-
-      const mealItems = times.map((t, idx) => ({
-        type: "meal",
-        when: isoTodayAt(t),
-        title:
-          planMeals[idx % Math.max(planMeals.length, 1)]?.name ||
-          `Meal ${idx + 1}`,
-      }));
-
-      const workoutItems =
-        workoutTime && /^\d{2}:\d{2}$/.test(workoutTime)
-          ? [
-              {
-                type: "workout",
-                when: isoTodayAt(workoutTime),
-                title: planWorkout?.name || "Workout",
-              },
-            ]
-          : [];
-
-      const data = await api.commitSchedule([...mealItems, ...workoutItems]);
-      setSchedule(data);
-    } catch (e) {
-      setSchedule(null);
-      setScheduleMsg(`Error: ${e.message}`);
-    } finally {
-      setIsScheduling(false);
-    }
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [stage, userId]);
 
   // ------- Nudge -------
   const [tone, setTone] = useState("coach");
@@ -827,6 +808,10 @@ export default function App() {
       cachePlan(data.plan);
     } else {
       setPlan(null);
+    }
+    if (data.calendar) {
+      setCalendar(data.calendar);
+      cacheCalendar(data.calendar);
     }
   }
 
@@ -1003,7 +988,7 @@ export default function App() {
                     Build a plan that fits your body, meals, and day.
                   </h1>
                   <p className="hero-sub text-muted">
-                    Health Coach turns your goal, schedule, and training level
+                    Health Coach turns your goal, calendar, and training level
                     into a practical daily nutrition and workout plan.
                   </p>
 
@@ -1034,7 +1019,7 @@ export default function App() {
                   <div className="mt-4 hero-stats">
                     <QuickStat label="Quiz time" value="~60 sec" />
                     <QuickStat label="Training" value="Home or gym" />
-                    <QuickStat label="Output" value="Meals + schedule" />
+                    <QuickStat label="Output" value="Meals + calendar" />
                   </div>
 
                   <div className="hero-visual" aria-hidden="true">
@@ -1860,10 +1845,10 @@ export default function App() {
                               }
                             >
                               {r === "dislike"
-                                ? "👎"
+                                ? "??"
                                 : r === "neutral"
-                                  ? "😐"
-                                  : "👍"}
+                                  ? "??"
+                                  : "??"}
                             </button>
                           ))}
                         </div>
@@ -2331,7 +2316,7 @@ export default function App() {
                     Back
                   </button>
 
-                  {/* {step < TOTAL_STEPS - 1 ? (
+                  {/* {step < TOTAL_STEPS - 1 - (
                     <button
                       className="btn btn-primary fw-bold"
                       onClick={nextStep}
@@ -2378,14 +2363,8 @@ export default function App() {
           handleFeedback={handleFeedback}
           feedbackOut={feedbackOut}
           copyFeedback={copyFeedback}
-          mealTimes={mealTimes}
-          setMealTimes={setMealTimes}
-          workoutTime={workoutTime}
-          setWorkoutTime={setWorkoutTime}
-          isScheduling={isScheduling}
-          handleSchedule={handleSchedule}
-          scheduleMsg={scheduleMsg}
-          schedule={schedule}
+          calendar={calendar}
+          calendarMsg={calendarMsg}
           tone={tone}
           setTone={setTone}
           goalText={goalText}
@@ -2400,7 +2379,7 @@ export default function App() {
           isDietChatting={isDietChatting}
           dietChatMsg={dietChatMsg}
           handleDietChat={handleDietChat}
-          ScheduleView={ScheduleView}
+          CalendarView={CalendarView}
           NudgeView={NudgeView}
           Spinner={Spinner}
           Alert={Alert}

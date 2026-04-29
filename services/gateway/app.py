@@ -62,6 +62,34 @@ def _require_auth():
     return session, None
 
 
+def _sync_calendar_for_plan(user_id: str, plan: dict):
+    try:
+        res = requests.post(
+            f"{SCHEDULER_URL}/calendar/sync",
+            json={"user_id": user_id, "plan": plan},
+            timeout=20,
+        )
+        if res.status_code == 200:
+            return res.json()
+    except requests.RequestException:
+        return None
+    return None
+
+
+def _list_calendar(user_id: str):
+    try:
+        res = requests.get(
+            f"{SCHEDULER_URL}/calendar/list",
+            params={"user_id": user_id},
+            timeout=10,
+        )
+        if res.status_code == 200:
+            return res.json()
+    except requests.RequestException:
+        return None
+    return None
+
+
 @app.get("/health")
 def health():
     return jsonify({"ok": True})
@@ -158,7 +186,7 @@ def chat():
         return jsonify({"reply": res["message"]})
     return jsonify(
         {
-            "reply": "Hi! I can plan meals/workouts, schedule, and log feedback. Try /plan/today."
+            "reply": "Hi! I can plan meals/workouts, keep your calendar in sync, and log feedback. Try /plan/today."
         }
     )
 
@@ -206,29 +234,69 @@ def plan_today():
         meals=[PlanMeal(**m) for m in diet["meals"]],
         workouts=[PlanWorkout(**w) for w in work["workouts"]],
     )
-    save_plan(user_id, plan.model_dump())
-    return jsonify(plan.model_dump())
+    plan_payload = plan.model_dump()
+    save_plan(user_id, plan_payload)
+    calendar = _sync_calendar_for_plan(user_id, plan_payload)
+    return jsonify({**plan_payload, "calendar": calendar})
 
 
 @app.post("/diet/chat")
 def diet_chat():
     body = request.get_json(force=True)
+    session = _get_current_session()
+    user_id = session["user_id"] if session else body.get("user_id", "anon")
     res = requests.post(f"{DIET_URL}/diet/chat", json=body, timeout=30)
-    return jsonify(res.json()), res.status_code
+    data = res.json()
+    updated_plan = data.get("updated_plan")
+    if res.status_code == 200 and isinstance(updated_plan, dict):
+        updated_plan["user_id"] = user_id
+        save_plan(user_id, updated_plan)
+        data["calendar"] = _sync_calendar_for_plan(user_id, updated_plan)
+    return jsonify(data), res.status_code
 
 
 @app.post("/exercise/chat")
 def exercise_chat():
     body = request.get_json(force=True)
+    session = _get_current_session()
+    user_id = session["user_id"] if session else body.get("user_id", "anon")
     res = requests.post(f"{EXERCISE_URL}/exercise/chat", json=body, timeout=30)
-    return jsonify(res.json()), res.status_code
+    data = res.json()
+    updated_plan = data.get("updated_plan")
+    if res.status_code == 200 and isinstance(updated_plan, dict):
+        updated_plan["user_id"] = user_id
+        save_plan(user_id, updated_plan)
+        data["calendar"] = _sync_calendar_for_plan(user_id, updated_plan)
+    return jsonify(data), res.status_code
 
 
-@app.post("/schedule/commit")
-def schedule_commit():
+@app.get("/calendar")
+def calendar_list():
+    session = _get_current_session()
+    requested_user_id = request.args.get("user_id", "anon")
+    user_id = session["user_id"] if session else requested_user_id
+    data = _list_calendar(user_id)
+    if data is None:
+        return jsonify({"error": "calendar service unavailable"}), 502
+    return jsonify(data)
+
+
+@app.post("/calendar/sync")
+def calendar_sync():
     body = request.get_json(force=True)
-    res = requests.post(f"{SCHEDULER_URL}/schedule/commit", json=body)
-    return jsonify(res.json()), res.status_code
+    session = _get_current_session()
+    user_id = session["user_id"] if session else body.get("user_id", "anon")
+    plan = body.get("plan")
+    if not isinstance(plan, dict):
+        plan = get_latest_plan(user_id)
+    if not isinstance(plan, dict):
+        return jsonify({"error": "No plan available to sync."}), 400
+
+    plan["user_id"] = user_id
+    data = _sync_calendar_for_plan(user_id, plan)
+    if data is None:
+        return jsonify({"error": "calendar service unavailable"}), 502
+    return jsonify(data)
 
 
 @app.post("/nudge/send")
@@ -248,7 +316,8 @@ def get_user_route(user_id):
     if not data:
         return jsonify({"exists": False})
     plan = get_latest_plan(user_id)
-    return jsonify({"exists": True, **data, "plan": plan})
+    calendar = _list_calendar(user_id)
+    return jsonify({"exists": True, **data, "plan": plan, "calendar": calendar})
 
 
 @app.post("/user/<user_id>/profile")

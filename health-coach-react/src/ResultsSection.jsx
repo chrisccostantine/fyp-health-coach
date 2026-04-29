@@ -55,15 +55,9 @@ export default function ResultsSection({
   feedbackOut,
   copyFeedback,
 
-  // schedule
-  mealTimes,
-  setMealTimes,
-  workoutTime,
-  setWorkoutTime,
-  isScheduling,
-  handleSchedule,
-  scheduleMsg,
-  schedule,
+  // calendar
+  calendar,
+  calendarMsg,
 
   // nudge
   tone,
@@ -84,14 +78,14 @@ export default function ResultsSection({
   handleDietChat,
 
   // views
-  ScheduleView,
+  CalendarView,
   NudgeView,
   Spinner,
   Alert,
 }) {
   if (stage !== "results") return null;
 
-  const Schedule = ScheduleView;
+  const Calendar = CalendarView;
   const Nudge = NudgeView;
   const Loading = Spinner;
   const StatusAlert = Alert;
@@ -112,7 +106,7 @@ export default function ResultsSection({
                 <div className="results-kicker">Daily plan dashboard</div>
                 <h1 className="results-title">Your plan for today</h1>
                 <div className="text-muted">
-                  Nutrition, training, scheduling, and coaching in one view.
+                  Nutrition, training, calendar, and coaching in one view.
                 </div>
               </div>
 
@@ -179,7 +173,7 @@ export default function ResultsSection({
                     <div className="summary-value summary-date">
                       {new Date().toLocaleDateString()}
                     </div>
-                    <div className="summary-meta">Ready to schedule</div>
+                    <div className="summary-meta">Calendar synced automatically</div>
                   </div>
                 </div>
 
@@ -317,7 +311,7 @@ export default function ResultsSection({
 
               <div className="mt-3">
                 <p className="text-muted mb-3">
-                  Use an event ID from schedule.
+                  Use an event ID from the calendar.
                 </p>
 
                 <div className="row g-3">
@@ -399,48 +393,13 @@ export default function ResultsSection({
       <div className="col-lg-4">
         <div className="card card-soft">
           <div className="card-body p-4">
-            <h2 className="h5 panel-title mb-2">Schedule</h2>
-            <p className="text-muted mb-3">Choose when meals and workouts land.</p>
-            <div className="mb-3">
-              <label className="form-label">
-                Meal Times (HH:MM, comma-separated)
-              </label>
-              <input
-                className="form-control"
-                value={mealTimes}
-                onChange={(e) => setMealTimes(e.target.value)}
-                placeholder="08:00,13:00,19:00"
-              />
-              <div className="text-muted small mt-1">
-                Example: <code className="code-soft">08:00,13:00,19:00</code>
-              </div>
-            </div>
+            <h2 className="h5 panel-title mb-2">Calendar</h2>
+            <p className="text-muted mb-3">
+              Meals and workouts are added, removed, and updated automatically when your plan changes.
+            </p>
 
-            <div className="mb-3">
-              <label className="form-label">Workout Time (HH:MM)</label>
-              <input
-                className="form-control"
-                value={workoutTime}
-                onChange={(e) => setWorkoutTime(e.target.value)}
-                placeholder="18:00"
-              />
-            </div>
-
-            <button
-              className="btn btn-primary fw-bold w-100"
-              type="button"
-              onClick={handleSchedule}
-              disabled={isScheduling}
-            >
-              {isScheduling ? (
-                <Loading label="Committing..." />
-              ) : (
-                "Commit Schedule"
-              )}
-            </button>
-
-            <StatusAlert variant="warning">{scheduleMsg}</StatusAlert>
-            {schedule ? <Schedule result={schedule} /> : null}
+            <StatusAlert variant="warning">{calendarMsg}</StatusAlert>
+            {calendar ? <Calendar result={calendar} /> : null}
           </div>
         </div>
 

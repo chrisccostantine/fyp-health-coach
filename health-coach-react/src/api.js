@@ -2,7 +2,7 @@
 
 const SETTINGS_KEY = "hc.settings.v1";
 const PLAN_KEY = "hc.lastPlan.v1";
-const SCHEDULE_KEY = "hc.lastSchedule.v1";
+const CALENDAR_KEY = "hc.calendar.v1";
 
 const DEFAULT_SETTINGS = {
   gatewayUrl: "http://127.0.0.1:8000",
@@ -101,11 +101,11 @@ export function getCachedPlan() {
   return safeJsonParse(localStorage.getItem(PLAN_KEY), null);
 }
 
-export function cacheSchedule(s) {
-  localStorage.setItem(SCHEDULE_KEY, JSON.stringify(s || {}));
+export function cacheCalendar(calendar) {
+  localStorage.setItem(CALENDAR_KEY, JSON.stringify(calendar || {}));
 }
-export function getCachedSchedule() {
-  return safeJsonParse(localStorage.getItem(SCHEDULE_KEY), {});
+export function getCachedCalendar() {
+  return safeJsonParse(localStorage.getItem(CALENDAR_KEY), {});
 }
 
 // ---------- HTTP helpers ----------
@@ -202,18 +202,25 @@ export const api = {
     });
 
     cachePlan(data);
+    if (data?.calendar) cacheCalendar(data.calendar);
     return data;
   },
 
-  async commitSchedule(events) {
-    const body = withUserId({ events });
+  async getCalendar() {
+    const data = await fetchJSON(`/calendar?user_id=${encodeURIComponent(getSettings().userId || "anon")}`, {
+      method: "GET",
+    });
+    cacheCalendar(data);
+    return data;
+  },
 
-    const data = await fetchJSON("/schedule/commit", {
+  async syncCalendar(plan = null) {
+    const body = withUserId(plan ? { plan } : {});
+    const data = await fetchJSON("/calendar/sync", {
       method: "POST",
       body: JSON.stringify(body),
     });
-
-    cacheSchedule(data);
+    cacheCalendar(data);
     return data;
   },
 
@@ -253,11 +260,14 @@ export const api = {
       goal,
       chat_history,
     });
-    return await fetchJSON("/diet/chat", {
+    const data = await fetchJSON("/diet/chat", {
       method: "POST",
       body: JSON.stringify(body),
       timeoutMs: 30000,
     });
+    if (data?.updated_plan) cachePlan(data.updated_plan);
+    if (data?.calendar) cacheCalendar(data.calendar);
+    return data;
   },
 
   async exerciseChat({ message, current_plan, profile, goal, chat_history = [] }) {
@@ -268,11 +278,14 @@ export const api = {
       goal,
       chat_history,
     });
-    return await fetchJSON("/exercise/chat", {
+    const data = await fetchJSON("/exercise/chat", {
       method: "POST",
       body: JSON.stringify(body),
       timeoutMs: 30000,
     });
+    if (data?.updated_plan) cachePlan(data.updated_plan);
+    if (data?.calendar) cacheCalendar(data.calendar);
+    return data;
   },
 };
 
