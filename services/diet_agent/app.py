@@ -255,4 +255,7 @@ def diet_chat():
 
 # -------------------- RUN --------------------
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8101, debug=True)
+    host = os.environ.get("DIET_HOST", "127.0.0.1")
+    port = int(os.environ.get("DIET_PORT", "8101"))
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
+    app.run(host=host, port=port, debug=debug)

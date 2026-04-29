@@ -47,4 +47,7 @@ def feedback():
     return jsonify({"ok": True, "logged": {"event_id":event_id, "rating":rating, "reason":reason, "arm":arm}})
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8105, debug=True)
+    host = os.environ.get("FEEDBACK_HOST", "127.0.0.1")
+    port = int(os.environ.get("FEEDBACK_PORT", "8105"))
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
+    app.run(host=host, port=port, debug=debug)

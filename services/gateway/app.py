@@ -217,6 +217,13 @@ def diet_chat():
     return jsonify(res.json()), res.status_code
 
 
+@app.post("/exercise/chat")
+def exercise_chat():
+    body = request.get_json(force=True)
+    res = requests.post(f"{EXERCISE_URL}/exercise/chat", json=body, timeout=30)
+    return jsonify(res.json()), res.status_code
+
+
 @app.post("/schedule/commit")
 def schedule_commit():
     body = request.get_json(force=True)
@@ -268,4 +275,7 @@ def feedback():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8000, debug=True)
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8000"))
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
+    app.run(host=host, port=port, debug=debug)

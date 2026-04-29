@@ -259,6 +259,21 @@ export const api = {
       timeoutMs: 30000,
     });
   },
+
+  async exerciseChat({ message, current_plan, profile, goal, chat_history = [] }) {
+    const body = withUserId({
+      message,
+      current_plan,
+      profile,
+      goal,
+      chat_history,
+    });
+    return await fetchJSON("/exercise/chat", {
+      method: "POST",
+      body: JSON.stringify(body),
+      timeoutMs: 30000,
+    });
+  },
 };
 
 // ---------- Shared utils ----------

@@ -1195,6 +1195,7 @@ pre.out {
   align-items:center;
   gap:12px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .result-icon{
@@ -1211,10 +1212,9 @@ pre.out {
 .result-title{
   font-weight: 900;
   color:#fff;
-  white-space: nowrap;
-  overflow:hidden;
-  text-overflow: ellipsis;
-  max-width: 520px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
 .result-sub{
@@ -1231,6 +1231,8 @@ pre.out {
   font-weight: 900;
   color:#fff;
   white-space: nowrap;
+  align-self: center;
+  flex-shrink: 0;
 }
 .summary-meta{
   margin-top: 4px;

@@ -21,6 +21,19 @@ function cleanTime(value) {
   return String(value);
 }
 
+function describeWorkout(workout) {
+  const parts = [];
+  const duration = workout?.duration ?? workout?.duration_min;
+  const focus = workout?.focus || workout?.type || workout?.category;
+  const intensity = workout?.intensity || workout?.level;
+
+  if (Number.isFinite(Number(duration))) parts.push(`${duration} min`);
+  if (focus) parts.push(String(focus));
+  if (intensity) parts.push(String(intensity));
+
+  return parts.length > 0 ? parts.join(" | ") : "Scheduled workout";
+}
+
 export default function ResultsSection({
   stage,
   plan,
@@ -195,9 +208,9 @@ export default function ResultsSection({
                               </div>
                               <div className="result-sub">
                                 Protein{" "}
-                                {meal.protein ?? meal.macros?.protein ?? 0}g •
-                                Carbs {meal.carbs ?? meal.macros?.carbs ?? 0}g •
-                                Fat {meal.fat ?? meal.macros?.fat ?? 0}g •{" "}
+                                {meal.protein ?? meal.macros?.protein ?? 0}g | Carbs{" "}
+                                {meal.carbs ?? meal.macros?.carbs ?? 0}g | Fat{" "}
+                                {meal.fat ?? meal.macros?.fat ?? 0}g |{" "}
                                 {meal.kcal ?? meal.calories ?? 0} kcal
                               </div>
                             </div>
@@ -213,61 +226,49 @@ export default function ResultsSection({
                 </section>
 
                 {/* Workouts */}
-                <div className="mt-4">
+                <section className="results-section">
                   <div className="section-head">
-                    <h2 className="section-title mb-0">Workout</h2>
-                    <span className="badge rounded-pill text-bg-dark-soft">
-                      {workouts.length}
-                    </span>
+                    <h2 className="section-h">Workout</h2>
+                    <span className="count-pill">{workouts.length}</span>
                   </div>
 
-                  <div className="list-stack mt-2">
+                  <div className="results-list">
                     {workouts.length === 0 ? (
-                      <div className="list-item result-empty">
+                      <div className="result-item result-empty">
                         No workouts in this plan.
                       </div>
                     ) : (
                       workouts.map((w, idx) => (
-                        <div key={idx} className="list-item">
-                          <div className="list-item-main">
-                            <div className="list-item-title">
-                              {w.title || w.name || `Workout ${idx + 1}`}
+                        <div key={idx} className="result-item">
+                          <div className="result-left">
+                            <div className="result-icon" aria-hidden="true">
+                              Move
                             </div>
-                            <div className="list-item-meta text-muted">
-                              {w.duration ?? w.duration_min ?? 0} min
+                            <div>
+                              <div className="result-title">
+                                {w.title || w.name || `Workout ${idx + 1}`}
+                              </div>
+                              <div className="result-sub">{describeWorkout(w)}</div>
                             </div>
                           </div>
 
-                          <div className="list-item-right">
-                            <span className="time-pill">
-                              {cleanTime(w.time || w.when)}
-                            </span>
-                          </div>
+                          <span className="time-pill">
+                            {cleanTime(w.time || w.when)}
+                          </span>
                         </div>
                       ))
                     )}
                   </div>
-                </div>
+                </section>
 
+                {/* Plan Chat */}
                 <div className="mt-4">
-                  <details className="details-soft">
-                    <summary className="details-summary">
-                      View full raw plan output
-                    </summary>
-                    <div className="mt-3">
-                      <pre className="out">{JSON.stringify(plan, null, 2)}</pre>
-                    </div>
-                  </details>
-                </div>
-
-                {/* Diet Chat */}
-                <div className="mt-4">
-                  <h2 className="section-h mb-2">Diet Chat</h2>
+                  <h2 className="section-h mb-2">Plan Chat</h2>
 
                   <div className="list-group list-group-soft mb-3">
                     {chatMessages.length === 0 ? (
                       <div className="list-group-item text-muted">
-                        Ask to swap meals, adjust calories, or explain macros.
+                        Ask to swap meals, modify workouts, adjust calories, or explain the plan.
                       </div>
                     ) : (
                       chatMessages.map((m, idx) => (
@@ -286,7 +287,7 @@ export default function ResultsSection({
                       className="form-control"
                       value={dietChatInput}
                       onChange={(e) => setDietChatInput(e.target.value)}
-                      placeholder="e.g. replace tuna with vegetarian lunch"
+                      placeholder="e.g. replace tuna lunch and make my workout lower impact"
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleDietChat();
                       }}

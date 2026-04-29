@@ -357,4 +357,7 @@ def exercise_chat():
 
 # -------------------- RUN --------------------
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=8102, debug=True)
+    host = os.environ.get("EXERCISE_HOST", "127.0.0.1")
+    port = int(os.environ.get("EXERCISE_PORT", "8102"))
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
+    app.run(host=host, port=port, debug=debug)

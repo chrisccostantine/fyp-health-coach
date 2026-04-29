@@ -199,6 +199,16 @@ function FieldNote({ children }) {
   return <div className="field-note">{children}</div>;
 }
 
+function combineAssistantReplies(...replies) {
+  const unique = replies
+    .map((reply) => (typeof reply === "string" ? reply.trim() : ""))
+    .filter(Boolean)
+    .filter((reply, index, arr) => arr.indexOf(reply) === index);
+
+  if (unique.length === 0) return "Plan updated.";
+  return unique.join(" ");
+}
+
 function OptionCard({ title, subtitle, active, onClick }) {
   return (
     <button
@@ -539,7 +549,7 @@ export default function App() {
       setDietChatMessages([
         {
           role: "assistant",
-          text: "Your plan is ready. Ask me to modify meals or explain anything in the plan.",
+          text: "Your plan is ready. Ask me to modify meals, swap workouts, or explain anything in the plan.",
         },
       ]);
       // Persist profile so the user is recognised on next visit
@@ -585,7 +595,7 @@ export default function App() {
         goal: { type: goalType, deficit_kcal: +deficit },
       };
 
-      const data = await api.dietChat({
+      const dietData = await api.dietChat({
         message,
         current_plan: plan,
         profile: payload.profile,
@@ -593,13 +603,31 @@ export default function App() {
         chat_history: dietChatMessages,
       });
 
-      if (data?.updated_plan) {
-        setPlan(data.updated_plan);
-        cachePlan(data.updated_plan);
-      }
+      const nextPlan = dietData?.updated_plan || plan;
+      const exerciseData = await api.exerciseChat({
+        message,
+        current_plan: nextPlan,
+        profile: payload.profile,
+        goal: payload.goal,
+        chat_history: [
+          ...dietChatMessages,
+          { role: "user", text: message },
+        ],
+      });
+
+      const updatedPlan = exerciseData?.updated_plan || nextPlan;
+      setPlan(updatedPlan);
+      cachePlan(updatedPlan);
+
       setDietChatMessages((prev) => [
         ...prev,
-        { role: "assistant", text: data?.assistant_reply || "Plan updated." },
+        {
+          role: "assistant",
+          text: combineAssistantReplies(
+            dietData?.assistant_reply,
+            exerciseData?.assistant_reply,
+          ),
+        },
       ]);
     } catch (e) {
       setDietChatMsg(`Error: ${e.message}`);
