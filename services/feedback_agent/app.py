@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask, request, jsonify
 import random
 from services.common.storage import init_db, get_arms, upsert_arm, record_feedback

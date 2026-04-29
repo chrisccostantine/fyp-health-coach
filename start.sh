@@ -2,7 +2,10 @@
 set -euo pipefail
 
 cleanup() {
-  jobs -p | xargs -r kill
+  pids="$(jobs -p || true)"
+  if [ -n "$pids" ]; then
+    kill $pids || true
+  fi
 }
 
 trap cleanup EXIT INT TERM
