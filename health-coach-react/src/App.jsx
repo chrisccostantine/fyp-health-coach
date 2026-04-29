@@ -4,10 +4,12 @@ import ResultsSection from "./ResultsSection";
 import {
   api,
   cachePlan,
+  clearAuthSession,
   getCachedPlan,
   getCachedSchedule,
   getSettings,
   isoTodayAt,
+  saveAuthSession,
   saveSettings,
 } from "./api";
 /* -------------------- Exports -------------------- */
@@ -149,6 +151,7 @@ function NudgeView({ result, tone, goal }) {
 }
 
 const PROFILE_KEY = "hc_profile_v1";
+const ACTIVE_QUIZ_STEPS = [0, 1, 3, 7, 10, 11, 12, 13, 20, 21, 22, 27];
 
 function loadProfileDefaults() {
   try {
@@ -352,9 +355,19 @@ function ProgressCurve({ startWeight, endWeight, unit }) {
 /* -------------------- App -------------------- */
 export default function App() {
   // ------- Settings -------
-  const [gatewayUrl] = useState(getSettings().gatewayUrl);
-  const [userId, setUserId] = useState(getSettings().userId);
+  const initialSettings = useMemo(() => getSettings(), []);
+  const [gatewayUrl] = useState(initialSettings.gatewayUrl);
+  const [userId, setUserId] = useState(initialSettings.userId || "");
+  const [currentUser, setCurrentUser] = useState(initialSettings.currentUser || null);
   const [ping, setPing] = useState(null);
+  const [authMode, setAuthMode] = useState("login");
+  const [authName, setAuthName] = useState(initialSettings.currentUser?.display_name || "");
+  const [authEmail, setAuthEmail] = useState(initialSettings.currentUser?.email || "");
+  const [authPassword, setAuthPassword] = useState("");
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isRestoringSession, setIsRestoringSession] = useState(
+    Boolean(initialSettings.authToken),
+  );
   // Extra quiz answers (MadMuscles style)
 
   useEffect(() => {
@@ -391,7 +404,6 @@ export default function App() {
 
   // ------- Funnel state (NEW) -------
   const [stage, setStage] = useState("landing"); // landing | quiz | results
-  const ACTIVE_QUIZ_STEPS = [0, 1, 3, 7, 10, 11, 12, 13, 20, 21, 22, 27];
   const [step, setStep] = useState(ACTIVE_QUIZ_STEPS[0]);
   const TOTAL_STEPS = ACTIVE_QUIZ_STEPS.length;
   const stepPosition = Math.max(0, ACTIVE_QUIZ_STEPS.indexOf(step));
@@ -750,40 +762,56 @@ export default function App() {
   }, [ping]);
 
   function startQuiz() {
+    if (!currentUser) {
+      setCheckUserMsg("Create an account or log in to continue.");
+      return;
+    }
     setStage("quiz");
     setStep(ACTIVE_QUIZ_STEPS[0]);
     setPlanMsg("");
     setCheckUserMsg("");
   }
 
-  async function handleContinue() {
-    const uid = userId?.trim();
-    if (!uid) {
-      setCheckUserMsg("Please enter a User ID.");
-      return;
+  function hydrateSavedUser(data) {
+    const p = data.profile || {};
+    const g = data.goal || {};
+    if (p.age) setAge(p.age);
+    if (p.sex) {
+      setSex(p.sex);
+      setGender(p.sex);
     }
-    saveSettings({ userId: uid });
+    if (p.height_cm) {
+      setHeight(p.height_cm);
+      setHeightValue(String(p.height_cm));
+    }
+    if (p.weight_kg) {
+      setWeight(p.weight_kg);
+      setCurrentWeight(String(p.weight_kg));
+    }
+    if (p.activity_level) setActivity(p.activity_level);
+    if (g.type) {
+      setGoalType(g.type);
+      setGoalPick(g.type);
+    }
+    if (g.deficit_kcal != null) setDeficit(g.deficit_kcal);
+    if (data.plan) {
+      setPlan(data.plan);
+      cachePlan(data.plan);
+    } else {
+      setPlan(null);
+    }
+  }
+
+  async function loadAccountData(uid, { quiet = false } = {}) {
+    if (!uid) return;
     setIsCheckingUser(true);
-    setCheckUserMsg("");
+    if (!quiet) setCheckUserMsg("");
     try {
+      saveSettings({ userId: uid });
       const data = await api.checkUser(uid);
       if (data.exists) {
-        // Restore profile state
-        const p = data.profile || {};
-        const g = data.goal || {};
-        if (p.age) setAge(p.age);
-        if (p.sex) { setSex(p.sex); setGender(p.sex); }
-        if (p.height_cm) { setHeight(p.height_cm); setHeightValue(String(p.height_cm)); }
-        if (p.weight_kg) { setWeight(p.weight_kg); setCurrentWeight(String(p.weight_kg)); }
-        if (p.activity_level) setActivity(p.activity_level);
-        if (g.type) { setGoalType(g.type); setGoalPick(g.type); }
-        if (g.deficit_kcal != null) setDeficit(g.deficit_kcal);
-        // Restore plan
-        if (data.plan) {
-          setPlan(data.plan);
-          cachePlan(data.plan);
-        }
-        setStage("results");
+        hydrateSavedUser(data);
+        setStage(data.plan ? "results" : "quiz");
       } else {
         startQuiz();
       }
@@ -810,6 +838,103 @@ export default function App() {
     });
   }
 
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    setIsAuthenticating(true);
+    setCheckUserMsg("");
+
+    try {
+      if (!authEmail.trim()) throw new Error("Email is required.");
+      if (!authPassword.trim()) throw new Error("Password is required.");
+      if (authMode === "signup" && authPassword.trim().length < 8) {
+        throw new Error("Password must be at least 8 characters.");
+      }
+
+      const response =
+        authMode === "signup"
+          ? await api.signup({
+              display_name: authName.trim(),
+              email: authEmail.trim(),
+              password: authPassword,
+            })
+          : await api.login({
+              email: authEmail.trim(),
+              password: authPassword,
+            });
+
+      saveAuthSession({ token: response.token, user: response.user });
+      setCurrentUser(response.user);
+      setUserId(response.user.user_id);
+      setAuthEmail(response.user.email || authEmail.trim());
+      setAuthName(response.user.display_name || authName.trim());
+      setAuthPassword("");
+      await loadAccountData(response.user.user_id, { quiet: true });
+    } catch (e) {
+      setCheckUserMsg(`Error: ${e.message}`);
+    } finally {
+      setIsAuthenticating(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await api.logout();
+    } catch {
+      // ignore logout network failures and clear local session anyway
+    }
+    clearAuthSession();
+    setCurrentUser(null);
+    setUserId("");
+    setAuthPassword("");
+    setPlan(null);
+    setStage("landing");
+    setCheckUserMsg("");
+  }
+
+  useEffect(() => {
+    const token = initialSettings.authToken;
+    if (!token) {
+      setIsRestoringSession(false);
+      return;
+    }
+
+    let cancelled = false;
+    api
+      .me()
+      .then(async (res) => {
+        if (cancelled) return;
+        saveAuthSession({ token, user: res.user });
+        setCurrentUser(res.user);
+        setUserId(res.user.user_id);
+        setAuthEmail(res.user.email || "");
+        setAuthName(res.user.display_name || "");
+        const data = await api.checkUser(res.user.user_id);
+        if (cancelled) return;
+        if (data.exists) {
+          hydrateSavedUser(data);
+          setStage(data.plan ? "results" : "quiz");
+        } else {
+          setStage("quiz");
+          setStep(ACTIVE_QUIZ_STEPS[0]);
+          setPlanMsg("");
+          setCheckUserMsg("");
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        clearAuthSession();
+        setCurrentUser(null);
+        setUserId("");
+      })
+      .finally(() => {
+        if (!cancelled) setIsRestoringSession(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialSettings.authToken]);
+
   return (
     <div className="app-shell">
       {/* Top Bar */}
@@ -824,6 +949,15 @@ export default function App() {
 
           <div className="d-flex align-items-center gap-2">
             {pingBadge}
+            {currentUser ? (
+              <button
+                className="btn btn-outline-light btn-sm"
+                type="button"
+                onClick={handleLogout}
+              >
+                Log Out
+              </button>
+            ) : null}
             <span className="badge text-bg-dark">User: {userId || "—"}</span>
           </div>
         </div>
@@ -849,14 +983,21 @@ export default function App() {
                     <button
                       className="btn btn-primary btn-lg fw-bold"
                       onClick={startQuiz}
+                      disabled={!currentUser || isRestoringSession}
                     >
-                      Start Quiz
+                      {currentUser ? "Start Quiz" : "Sign in to Start"}
                     </button>
                     <button
                       className="btn btn-outline-light btn-lg"
                       onClick={() => setStage("results")}
-                      disabled={!getCachedPlan()}
-                      title={!getCachedPlan() ? "Generate a plan first" : ""}
+                      disabled={!currentUser || !getCachedPlan()}
+                      title={
+                        !currentUser
+                          ? "Log in to access your plan"
+                          : !getCachedPlan()
+                            ? "Generate a plan first"
+                            : ""
+                      }
                     >
                       View My Plan
                     </button>
@@ -884,27 +1025,106 @@ export default function App() {
               <div className="card card-soft h-100">
                 <div className="card-body p-4">
                   <h2 className="h5 section-title mb-3">Your Account</h2>
-                  <label className="form-label">User ID</label>
-                  <input
-                    className="form-control"
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    placeholder="demo-user"
-                  />
-                  <FieldNote>
-                    This ID is used for planning, scheduling, nudges, and
-                    feedback.
-                  </FieldNote>
+                  {currentUser ? (
+                    <>
+                      <div className="account-summary">
+                        <div className="account-summary-label">Signed in as</div>
+                        <div className="account-summary-title">
+                          {currentUser.display_name || "Health Coach User"}
+                        </div>
+                        <div className="account-summary-meta">
+                          {currentUser.email}
+                        </div>
+                        <div className="account-summary-meta">
+                          ID: <code className="code-soft">{userId}</code>
+                        </div>
+                      </div>
 
-                  {/* Optional: keep gateway hidden */}
-                  {/* <div className="mt-3">
-                    <label className="form-label">Gateway URL</label>
-                    <input
-                      className="form-control"
-                      value={gatewayUrl}
-                      onChange={(e) => setGatewayUrl(e.target.value)}
-                    />
-                  </div> */}
+                      <FieldNote>
+                        Your account now holds your saved plan, profile answers,
+                        scheduling, nudges, and feedback.
+                      </FieldNote>
+                    </>
+                  ) : (
+                    <>
+                      <div className="auth-tabs mb-3">
+                        <button
+                          type="button"
+                          className={`auth-tab ${authMode === "login" ? "active" : ""}`}
+                          onClick={() => setAuthMode("login")}
+                        >
+                          Log In
+                        </button>
+                        <button
+                          type="button"
+                          className={`auth-tab ${authMode === "signup" ? "active" : ""}`}
+                          onClick={() => setAuthMode("signup")}
+                        >
+                          Sign Up
+                        </button>
+                      </div>
+
+                      <form onSubmit={handleAuthSubmit}>
+                        {authMode === "signup" ? (
+                          <div className="mb-3">
+                            <label className="form-label">Name</label>
+                            <input
+                              className="form-control"
+                              value={authName}
+                              onChange={(e) => setAuthName(e.target.value)}
+                              placeholder="Your name"
+                            />
+                          </div>
+                        ) : null}
+
+                        <div className="mb-3">
+                          <label className="form-label">Email</label>
+                          <input
+                            className="form-control"
+                            type="email"
+                            value={authEmail}
+                            onChange={(e) => setAuthEmail(e.target.value)}
+                            placeholder="name@example.com"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="form-label">Password</label>
+                          <input
+                            className="form-control"
+                            type="password"
+                            value={authPassword}
+                            onChange={(e) => setAuthPassword(e.target.value)}
+                            placeholder="At least 8 characters"
+                          />
+                        </div>
+
+                        <FieldNote>
+                          {authMode === "signup"
+                            ? "Create one account and your profile and plan stay attached to it."
+                            : "Log in to continue with your saved progress and latest plan."}
+                        </FieldNote>
+
+                        <div className="mt-4">
+                          <button
+                            className="btn btn-primary w-100"
+                            type="submit"
+                            disabled={isAuthenticating || isRestoringSession}
+                          >
+                            {isAuthenticating ? (
+                              <Spinner
+                                label={authMode === "signup" ? "Creating account..." : "Logging in..."}
+                              />
+                            ) : authMode === "signup" ? (
+                              "Create Account"
+                            ) : (
+                              "Log In"
+                            )}
+                          </button>
+                        </div>
+                      </form>
+                    </>
+                  )}
 
                   <div className="mt-4">
                     <div className="account-benefits">
@@ -921,15 +1141,17 @@ export default function App() {
                     <div className="alert alert-warning mt-3 mb-0 small">{checkUserMsg}</div>
                   )}
 
-                  <div className="mt-4">
-                    <button
-                      className="btn btn-outline-light w-100"
-                      onClick={handleContinue}
-                      disabled={isCheckingUser}
-                    >
-                      {isCheckingUser ? <Spinner label="Checking..." /> : "Continue"}
-                    </button>
-                  </div>
+                  {currentUser ? (
+                    <div className="mt-4">
+                      <button
+                        className="btn btn-outline-light w-100"
+                        onClick={() => loadAccountData(userId)}
+                        disabled={isCheckingUser || isRestoringSession}
+                      >
+                        {isCheckingUser ? <Spinner label="Loading account..." /> : "Continue to My Plan"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

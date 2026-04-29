@@ -1,10 +1,26 @@
-from flask import Flask, request, jsonify
-import requests, os
-from pydantic import ValidationError
-from services.common.models import UserProfile, Goal, DayPlan, PlanMeal, PlanWorkout
-from services.common.storage import init_db, upsert_user, get_user, save_plan, get_latest_plan
-from services.common.storage import init_db
+import os
+import uuid
+
+import requests
+from flask import Flask, jsonify, request
 from flask_cors import CORS
+from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
+from werkzeug.security import check_password_hash, generate_password_hash
+
+from services.common.models import DayPlan, Goal, PlanMeal, PlanWorkout, UserProfile
+from services.common.storage import (
+    create_auth_session,
+    create_auth_user,
+    delete_auth_session,
+    get_auth_session,
+    get_auth_user_by_email,
+    get_latest_plan,
+    get_user,
+    init_db,
+    save_plan,
+    upsert_user,
+)
 
 DIET_URL = os.environ.get("DIET_URL", "http://127.0.0.1:8101")
 EXERCISE_URL = os.environ.get("EXERCISE_URL", "http://127.0.0.1:8102")
@@ -16,39 +32,155 @@ app = Flask(__name__)
 CORS(app)
 init_db()
 
-# ✅ ADD THESE HERE (BEFORE app.run)
+
+def _serialize_auth_user(user: dict):
+    return {
+        "user_id": user["user_id"],
+        "email": user["email"],
+        "display_name": user.get("display_name") or "",
+    }
+
+
+def _get_token_from_request():
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+    return None
+
+
+def _get_current_session():
+    token = _get_token_from_request()
+    if not token:
+        return None
+    return get_auth_session(token)
+
+
+def _require_auth():
+    session = _get_current_session()
+    if not session:
+        return None, (jsonify({"error": "Authentication required"}), 401)
+    return session, None
+
+
 @app.get("/health")
 def health():
     return jsonify({"ok": True})
+
 
 @app.get("/")
 def home():
     return jsonify({"ok": True, "service": "gateway"})
 
+
+@app.post("/auth/signup")
+def signup():
+    data = request.get_json(force=True)
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    display_name = str(data.get("display_name", "")).strip() or None
+
+    if not email or "@" not in email:
+        return jsonify({"error": "A valid email is required."}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters."}), 400
+    if get_auth_user_by_email(email):
+        return jsonify({"error": "An account with this email already exists."}), 409
+
+    user_id = f"user-{uuid.uuid4().hex[:12]}"
+    password_hash = generate_password_hash(password)
+    try:
+        create_auth_user(user_id, email, password_hash, display_name)
+    except IntegrityError:
+        return jsonify({"error": "An account with this email already exists."}), 409
+
+    token = create_auth_session(user_id)
+    return jsonify(
+        {
+            "ok": True,
+            "token": token,
+            "user": {
+                "user_id": user_id,
+                "email": email,
+                "display_name": display_name or "",
+            },
+        }
+    ), 201
+
+
+@app.post("/auth/login")
+def login():
+    data = request.get_json(force=True)
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    user = get_auth_user_by_email(email)
+    if not user or not check_password_hash(user["password_hash"], password):
+        return jsonify({"error": "Invalid email or password."}), 401
+
+    token = create_auth_session(user["user_id"])
+    return jsonify({"ok": True, "token": token, "user": _serialize_auth_user(user)})
+
+
+@app.get("/auth/me")
+def me():
+    session, error = _require_auth()
+    if error:
+        return error
+    return jsonify({"ok": True, "user": _serialize_auth_user(session)})
+
+
+@app.post("/auth/logout")
+def logout():
+    token = _get_token_from_request()
+    if token:
+        delete_auth_session(token)
+    return jsonify({"ok": True})
+
+
 @app.post("/chat")
 def chat():
     data = request.get_json(force=True)
-    text = data.get("text","").lower()
+    text = data.get("text", "").lower()
     if "plan" in text:
-        return jsonify({"reply": "Sure, let's make today's plan. Call /plan/today with your profile & goal."})
-    elif "nudge" in text or "motivate" in text:
-        res = requests.post(f"{MOTIVATION_URL}/nudge/send", json={"user_id": data.get("user_id","anon"), "tone": "coach", "goal":"stay_consistent"}).json()
+        return jsonify(
+            {
+                "reply": "Sure, let's make today's plan. Call /plan/today with your profile & goal."
+            }
+        )
+    if "nudge" in text or "motivate" in text:
+        res = requests.post(
+            f"{MOTIVATION_URL}/nudge/send",
+            json={
+                "user_id": data.get("user_id", "anon"),
+                "tone": "coach",
+                "goal": "stay_consistent",
+            },
+        ).json()
         return jsonify({"reply": res["message"]})
-    return jsonify({"reply": "Hi! I can plan meals/workouts, schedule, and log feedback. Try /plan/today."})
+    return jsonify(
+        {
+            "reply": "Hi! I can plan meals/workouts, schedule, and log feedback. Try /plan/today."
+        }
+    )
+
 
 @app.post("/plan/today")
 def plan_today():
     payload = request.get_json(force=True)
     try:
-        user_id = payload.get("user_id","anon")
-        profile = UserProfile(**payload.get("profile",{}))
-        goal = Goal(**payload.get("goal",{}))
+        session = _get_current_session()
+        user_id = session["user_id"] if session else payload.get("user_id", "anon")
+        profile = UserProfile(**payload.get("profile", {}))
+        goal = Goal(**payload.get("goal", {}))
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
 
     diet_res = requests.post(
         f"{DIET_URL}/diet/suggest",
-        json={"user_id": user_id, "profile": profile.model_dump(), "goal": goal.model_dump()},
+        json={
+            "user_id": user_id,
+            "profile": profile.model_dump(),
+            "goal": goal.model_dump(),
+        },
         timeout=20,
     )
     if diet_res.status_code != 200:
@@ -57,7 +189,12 @@ def plan_today():
 
     work_res = requests.post(
         f"{EXERCISE_URL}/exercise/suggest",
-        json={"user_id": user_id, "profile": profile.model_dump(), "goal": goal.model_dump(), "equipment": payload.get("equipment", [])},
+        json={
+            "user_id": user_id,
+            "profile": profile.model_dump(),
+            "goal": goal.model_dump(),
+            "equipment": payload.get("equipment", []),
+        },
         timeout=20,
     )
     if work_res.status_code != 200:
@@ -79,11 +216,13 @@ def diet_chat():
     res = requests.post(f"{DIET_URL}/diet/chat", json=body, timeout=30)
     return jsonify(res.json()), res.status_code
 
+
 @app.post("/schedule/commit")
 def schedule_commit():
     body = request.get_json(force=True)
     res = requests.post(f"{SCHEDULER_URL}/schedule/commit", json=body)
     return jsonify(res.json()), res.status_code
+
 
 @app.post("/nudge/send")
 def nudge_send():
@@ -91,16 +230,26 @@ def nudge_send():
     res = requests.post(f"{MOTIVATION_URL}/nudge/send", json=body)
     return jsonify(res.json()), res.status_code
 
+
 @app.get("/user/<user_id>")
 def get_user_route(user_id):
+    session = _get_current_session()
+    if session and session["user_id"] != user_id:
+        return jsonify({"error": "Forbidden"}), 403
+
     data = get_user(user_id)
     if not data:
         return jsonify({"exists": False})
     plan = get_latest_plan(user_id)
     return jsonify({"exists": True, **data, "plan": plan})
 
+
 @app.post("/user/<user_id>/profile")
 def save_user_profile(user_id):
+    session = _get_current_session()
+    if session and session["user_id"] != user_id:
+        return jsonify({"error": "Forbidden"}), 403
+
     body = request.get_json(force=True)
     upsert_user(
         user_id,
@@ -110,11 +259,13 @@ def save_user_profile(user_id):
     )
     return jsonify({"ok": True})
 
+
 @app.post("/feedback")
 def feedback():
     body = request.get_json(force=True)
     res = requests.post(f"{FEEDBACK_URL}/feedback", json=body)
     return jsonify(res.json()), res.status_code
+
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8000, debug=True)

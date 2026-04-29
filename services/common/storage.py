@@ -1,8 +1,15 @@
 import json
+import os
+import secrets
 from sqlalchemy import create_engine, text
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parents[2] / "storage" / "app.db"
+DB_PATH = Path(
+    os.environ.get(
+        "STORAGE_DB_PATH",
+        Path(__file__).resolve().parents[2] / "storage" / "app.db",
+    )
+)
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 engine = create_engine(f"sqlite:///{DB_PATH}", future=True, echo=False)
@@ -36,6 +43,20 @@ CREATE TABLE IF NOT EXISTS user_plans (
     user_id TEXT,
     plan TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS auth_users (
+    user_id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    display_name TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP
 );
 '''
 
@@ -118,3 +139,71 @@ def get_latest_plan(user_id: str):
     if not row:
         return None
     return json.loads(row["plan"])
+
+def create_auth_user(user_id: str, email: str, password_hash: str, display_name: str | None = None):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO auth_users(user_id, email, password_hash, display_name, updated_at)
+                VALUES(:uid, :email, :password_hash, :display_name, CURRENT_TIMESTAMP)
+            """),
+            {
+                "uid": user_id,
+                "email": email,
+                "password_hash": password_hash,
+                "display_name": display_name,
+            },
+        )
+
+def get_auth_user_by_email(email: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT user_id, email, password_hash, display_name, created_at
+                FROM auth_users
+                WHERE lower(email) = lower(:email)
+            """),
+            {"email": email},
+        ).mappings().first()
+    return dict(row) if row else None
+
+def get_auth_user_by_id(user_id: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT user_id, email, password_hash, display_name, created_at
+                FROM auth_users
+                WHERE user_id = :uid
+            """),
+            {"uid": user_id},
+        ).mappings().first()
+    return dict(row) if row else None
+
+def create_auth_session(user_id: str):
+    token = secrets.token_urlsafe(32)
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO auth_sessions(token, user_id) VALUES(:token, :uid)"),
+            {"token": token, "uid": user_id},
+        )
+    return token
+
+def get_auth_session(token: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT s.token, s.user_id, u.email, u.display_name
+                FROM auth_sessions s
+                JOIN auth_users u ON u.user_id = s.user_id
+                WHERE s.token = :token
+            """),
+            {"token": token},
+        ).mappings().first()
+    return dict(row) if row else None
+
+def delete_auth_session(token: str):
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM auth_sessions WHERE token = :token"),
+            {"token": token},
+        )

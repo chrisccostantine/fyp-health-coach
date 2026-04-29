@@ -6,7 +6,9 @@ const SCHEDULE_KEY = "hc.lastSchedule.v1";
 
 const DEFAULT_SETTINGS = {
   gatewayUrl: "http://127.0.0.1:8000",
-  userId: "demo-user",
+  userId: "",
+  authToken: "",
+  currentUser: null,
 };
 
 // Toggle debug logs if needed
@@ -24,6 +26,10 @@ function safeJsonParse(raw, fallback) {
 function apiBase() {
   const { gatewayUrl } = getSettings();
   return String(gatewayUrl || "").replace(/\/+$/, "");
+}
+
+function getAuthToken() {
+  return getSettings().authToken || "";
 }
 
 function withUserId(body = {}) {
@@ -71,6 +77,22 @@ export function resetSettings() {
   return getSettings();
 }
 
+export function saveAuthSession({ token, user }) {
+  return saveSettings({
+    authToken: token || "",
+    currentUser: user || null,
+    userId: user?.user_id || "",
+  });
+}
+
+export function clearAuthSession() {
+  return saveSettings({
+    authToken: "",
+    currentUser: null,
+    userId: "",
+  });
+}
+
 // ---------- Local cache ----------
 export function cachePlan(plan) {
   localStorage.setItem(PLAN_KEY, JSON.stringify(plan || {}));
@@ -99,6 +121,8 @@ async function fetchJSON(path, options = {}) {
     "Content-Type": "application/json",
     ...(options.headers || {}),
   };
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   try {
     if (DEBUG) console.log("[fetchJSON]", url, options);
@@ -138,6 +162,31 @@ export const api = {
     } catch (e) {
       return { ok: false, error: e?.message || "Ping failed" };
     }
+  },
+
+  async signup({ display_name, email, password }) {
+    return await fetchJSON("/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ display_name, email, password }),
+    });
+  },
+
+  async login({ email, password }) {
+    return await fetchJSON("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+  },
+
+  async me() {
+    return await fetchJSON("/auth/me", { method: "GET" });
+  },
+
+  async logout() {
+    return await fetchJSON("/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
   },
 
   async planToday(payload) {

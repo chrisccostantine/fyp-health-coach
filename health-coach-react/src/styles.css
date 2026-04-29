@@ -1518,6 +1518,55 @@ body {
   background: rgba(255, 255, 255, 0.045);
 }
 
+.auth-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.auth-tab {
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-weight: 800;
+}
+
+.auth-tab.active {
+  background: rgba(255, 90, 31, 0.14);
+  border-color: rgba(255, 90, 31, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(255, 90, 31, 0.24);
+}
+
+.account-summary {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.account-summary-label {
+  color: var(--success);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.account-summary-title {
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 1.35rem;
+  font-weight: 850;
+}
+
+.account-summary-meta {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .account-benefits li + li {
   margin-top: 6px;
 }
