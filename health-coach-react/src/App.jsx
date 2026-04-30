@@ -209,6 +209,18 @@ function combineAssistantReplies(...replies) {
   return unique.join(" ");
 }
 
+function describeGoogleCalendarSync(syncResult) {
+  const google = syncResult?.google_calendar;
+  if (!google) return "";
+  if (google.error) return `Error: ${google.error}`;
+  if (Number.isFinite(google.created)) {
+    return google.created > 0
+      ? `Google Calendar synced ${google.created} event${google.created === 1 ? "" : "s"}.`
+      : "Google Calendar sync ran, but there were no events to add.";
+  }
+  return "";
+}
+
 function OptionCard({ title, subtitle, active, onClick }) {
   return (
     <button
@@ -741,17 +753,17 @@ export default function App() {
         setGoogleCalendar(nextStatus);
         if (nextStatus.connected) {
           setGoogleCalendarMsg("");
-          if (plan) {
-            try {
-              const nextCalendar = await api.syncCalendar(plan);
-              if (cancelled) return;
-              setCalendar(nextCalendar);
-              cacheCalendar(nextCalendar);
-              setCalendarMsg("");
-            } catch (e) {
-              if (cancelled) return;
-              setCalendarMsg(`Error: ${e.message}`);
-            }
+          try {
+            const nextCalendar = await api.syncCalendar(plan || null);
+            if (cancelled) return;
+            setCalendar(nextCalendar);
+            cacheCalendar(nextCalendar);
+            setCalendarMsg("");
+            const googleMsg = describeGoogleCalendarSync(nextCalendar);
+            if (googleMsg) setGoogleCalendarMsg(googleMsg);
+          } catch (e) {
+            if (cancelled) return;
+            setCalendarMsg(`Error: ${e.message}`);
           }
         }
       })
