@@ -345,52 +345,56 @@ export default function ResultsSection({
 
                 {/* Plan Chat */}
                 <div className="mt-4">
-                  <h2 className="section-h mb-2">Plan Chat</h2>
+                  <details className="details-soft compact-details">
+                    <summary className="details-summary">
+                      Plan Chat
+                    </summary>
 
-                  <div className="list-group list-group-soft mb-3">
-                    {chatMessages.length === 0 ? (
-                      <div className="list-group-item text-muted">
-                        Ask to swap meals, modify workouts, adjust calories, or explain the selected day.
-                      </div>
-                    ) : (
-                      chatMessages.map((m, idx) => (
-                        <div key={idx} className="list-group-item">
-                          <strong>
-                            {m.role === "user" ? "You" : "Coach"}:
-                          </strong>{" "}
-                          {m.text}
+                    <div className="list-group list-group-soft mb-3 mt-3">
+                      {chatMessages.length === 0 ? (
+                        <div className="list-group-item text-muted">
+                          Ask to swap meals, modify workouts, adjust calories, or explain the selected day.
                         </div>
-                      ))
-                    )}
-                  </div>
+                      ) : (
+                        chatMessages.map((m, idx) => (
+                          <div key={idx} className="list-group-item">
+                            <strong>
+                              {m.role === "user" ? "You" : "Coach"}:
+                            </strong>{" "}
+                            {m.text}
+                          </div>
+                        ))
+                      )}
+                    </div>
 
-                  <div className="d-flex gap-2">
-                    <input
-                      className="form-control"
-                      value={dietChatInput}
-                      onChange={(e) => setDietChatInput(e.target.value)}
-                      placeholder="e.g. replace tuna lunch and make my workout lower impact"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleDietChat();
-                      }}
-                      disabled={isReadOnlyClientView}
-                    />
-                    <button
-                      className="btn btn-primary fw-bold"
-                      type="button"
-                      onClick={handleDietChat}
-                      disabled={isDietChatting || isReadOnlyClientView}
-                    >
-                      {isDietChatting ? <Loading label="Sending..." /> : "Send"}
-                    </button>
-                  </div>
+                    <div className="d-flex gap-2 flex-wrap">
+                      <input
+                        className="form-control"
+                        value={dietChatInput}
+                        onChange={(e) => setDietChatInput(e.target.value)}
+                        placeholder="e.g. replace tuna lunch and make my workout lower impact"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleDietChat();
+                        }}
+                        disabled={isReadOnlyClientView}
+                      />
+                      <button
+                        className="btn btn-primary fw-bold"
+                        type="button"
+                        onClick={handleDietChat}
+                        disabled={isDietChatting || isReadOnlyClientView}
+                      >
+                        {isDietChatting ? <Loading label="Sending..." /> : "Send"}
+                      </button>
+                    </div>
 
-                  {isReadOnlyClientView ? (
-                    <StatusAlert variant="info">
-                      Dietitians can review client plans here, but only the client can change meals or workouts.
-                    </StatusAlert>
-                  ) : null}
-                  <StatusAlert variant="warning">{dietChatMsg}</StatusAlert>
+                    {isReadOnlyClientView ? (
+                      <StatusAlert variant="info">
+                        Dietitians can review client plans here, but only the client can change meals or workouts.
+                      </StatusAlert>
+                    ) : null}
+                    <StatusAlert variant="warning">{dietChatMsg}</StatusAlert>
+                  </details>
                 </div>
               </>
             )}
@@ -488,50 +492,53 @@ export default function ResultsSection({
       <div className="col-lg-4">
         <div className="card card-soft">
           <div className="card-body p-4">
-            <h2 className="h5 panel-title mb-2">Calendar</h2>
-            <p className="text-muted mb-3">
-              Meals and workouts are added, removed, and updated automatically when your plan changes.
-            </p>
+            <details className="details-soft compact-details">
+              <summary className="details-summary">Calendar</summary>
 
-            <div className="d-flex gap-2 mb-3">
-              <button
-                className="btn btn-primary fw-bold flex-grow-1"
-                type="button"
-                onClick={handleGoogleCalendarConnect}
-                disabled={isGoogleCalendarBusy || googleCalendar?.connected}
-              >
-                {isGoogleCalendarBusy && !googleCalendar?.connected ? (
-                  <Loading label="Connecting..." />
-                ) : googleCalendar?.connected ? (
-                  "Google Calendar Connected"
-                ) : (
-                  "Connect Google Calendar"
-                )}
-              </button>
+              <p className="text-muted mt-3 mb-3">
+                Meals and workouts are added, removed, and updated automatically when your plan changes.
+              </p>
 
-              {googleCalendar?.connected ? (
+              <div className="d-flex gap-2 mb-3 flex-wrap">
                 <button
-                  className="btn btn-outline-light"
+                  className="btn btn-primary fw-bold flex-grow-1"
                   type="button"
-                  onClick={handleGoogleCalendarDisconnect}
-                  disabled={isGoogleCalendarBusy}
+                  onClick={handleGoogleCalendarConnect}
+                  disabled={isGoogleCalendarBusy || googleCalendar?.connected}
                 >
-                  Disconnect
+                  {isGoogleCalendarBusy && !googleCalendar?.connected ? (
+                    <Loading label="Connecting..." />
+                  ) : googleCalendar?.connected ? (
+                    "Google Calendar Connected"
+                  ) : (
+                    "Connect Google Calendar"
+                  )}
                 </button>
-              ) : null}
-            </div>
 
-            <div className="text-muted small mb-3">
-              {googleCalendar?.connected
-                ? "Your plan changes will also sync to your Google Calendar."
-                : googleCalendar?.enabled
-                  ? "Connect Google Calendar to mirror these events in your personal calendar."
-                  : "Google Calendar is not configured for this environment yet."}
-            </div>
+                {googleCalendar?.connected ? (
+                  <button
+                    className="btn btn-outline-light"
+                    type="button"
+                    onClick={handleGoogleCalendarDisconnect}
+                    disabled={isGoogleCalendarBusy}
+                  >
+                    Disconnect
+                  </button>
+                ) : null}
+              </div>
 
-            <StatusAlert variant="warning">{calendarMsg}</StatusAlert>
-            <StatusAlert variant="info">{googleCalendarMsg}</StatusAlert>
-            {calendarForDisplay ? <Calendar result={calendarForDisplay} /> : null}
+              <div className="text-muted small mb-3">
+                {googleCalendar?.connected
+                  ? "Your plan changes will also sync to your Google Calendar."
+                  : googleCalendar?.enabled
+                    ? "Connect Google Calendar to mirror these events in your personal calendar."
+                    : "Google Calendar is not configured for this environment yet."}
+              </div>
+
+              <StatusAlert variant="warning">{calendarMsg}</StatusAlert>
+              <StatusAlert variant="info">{googleCalendarMsg}</StatusAlert>
+              {calendarForDisplay ? <Calendar result={calendarForDisplay} /> : null}
+            </details>
           </div>
         </div>
 

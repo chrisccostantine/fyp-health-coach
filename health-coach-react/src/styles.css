@@ -1271,7 +1271,20 @@ pre.out {
 @media (max-width: 768px){
   .results-header{ flex-direction: column; }
   .results-actions{ width:100%; }
-  .results-summary{ grid-template-columns: 1fr; }
+  .results-summary{ grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .results-title{ font-size: 1.75rem; line-height: 1.08; }
+  .summary-card{ padding: 10px; border-radius: 14px; }
+  .summary-label{ font-size: .78rem; }
+  .summary-value{ font-size: 1.05rem; }
+  .summary-meta{ font-size: .72rem; }
+  .results-section{ margin-top: 14px; }
+  .section-head{ margin-bottom: 10px; }
+  .result-item{ padding: 12px; border-radius: 16px; }
+  .result-icon{ width: 38px; height: 38px; font-size: .78rem; }
+  .result-title{ font-size: .96rem; }
+  .result-sub{ font-size: .82rem; }
+  .time-pill{ font-size: .78rem; padding: 5px 9px; }
+  .results-date-picker{ max-width: 100%; }
 }
 
 .summary-card{
@@ -1468,6 +1481,10 @@ pre.out {
 .results-date-picker .form-select option {
   background: #1a1f20 !important;
   color: #f7faf8 !important;
+}
+
+.compact-details {
+  margin: 0;
 }
 
 .empty-state-title{
