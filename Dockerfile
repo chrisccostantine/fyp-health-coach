@@ -16,6 +16,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services ./services
+COPY scripts ./scripts
 COPY start.sh ./start.sh
 
 RUN chmod +x ./start.sh && mkdir -p /app/storage
