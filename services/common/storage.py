@@ -1,20 +1,35 @@
 import json
 import os
 import secrets
-from sqlalchemy import create_engine, text
 from pathlib import Path
 
-DB_PATH = Path(
-    os.environ.get(
-        "STORAGE_DB_PATH",
-        Path(__file__).resolve().parents[2] / "storage" / "app.db",
+from sqlalchemy import create_engine, text
+
+
+def _database_url() -> str:
+    raw_url = os.environ.get("DATABASE_URL", "").strip()
+    if raw_url:
+        if raw_url.startswith("postgres://"):
+            return "postgresql+psycopg2://" + raw_url[len("postgres://") :]
+        if raw_url.startswith("postgresql://"):
+            return raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        return raw_url
+
+    db_path = Path(
+        os.environ.get(
+            "STORAGE_DB_PATH",
+            Path(__file__).resolve().parents[2] / "storage" / "app.db",
+        )
     )
-)
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    return f"sqlite:///{db_path}"
 
-engine = create_engine(f"sqlite:///{DB_PATH}", future=True, echo=False)
 
-SCHEMA = '''
+DATABASE_URL = _database_url()
+IS_POSTGRES = DATABASE_URL.startswith("postgresql+")
+engine = create_engine(DATABASE_URL, future=True, echo=False, pool_pre_ping=True)
+
+SCHEMA_SQLITE = '''
 CREATE TABLE IF NOT EXISTS feedback (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id TEXT,
@@ -73,6 +88,68 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     expires_at TIMESTAMP
 );
 '''
+
+SCHEMA_POSTGRES = '''
+CREATE TABLE IF NOT EXISTS feedback (
+    id SERIAL PRIMARY KEY,
+    event_id TEXT,
+    user_id TEXT,
+    rating INTEGER,
+    reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS bandit_arm (
+    id SERIAL PRIMARY KEY,
+    agent TEXT,
+    arm TEXT,
+    pulls INTEGER DEFAULT 0,
+    reward_sum REAL DEFAULT 0.0
+);
+CREATE TABLE IF NOT EXISTS users (
+    user_id TEXT PRIMARY KEY,
+    profile TEXT,
+    goal TEXT,
+    quiz_data TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS user_plans (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT,
+    plan TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS calendar_events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    source_key TEXT NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    ends_at TEXT,
+    status TEXT,
+    notes TEXT,
+    payload TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS auth_users (
+    user_id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    display_name TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP
+);
+'''
+
+SCHEMA = SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE
 
 def init_db():
     with engine.begin() as conn:
