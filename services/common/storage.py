@@ -210,6 +210,15 @@ SCHEMA = SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE
 MIGRATIONS = [
     "ALTER TABLE auth_users ADD COLUMN role TEXT DEFAULT 'user'",
     "ALTER TABLE auth_users ADD COLUMN managed_by_user_id TEXT",
+    "CREATE TABLE IF NOT EXISTS user_nudge_settings (user_id TEXT PRIMARY KEY)",
+    "ALTER TABLE user_nudge_settings ADD COLUMN enabled INTEGER DEFAULT 0",
+    "ALTER TABLE user_nudge_settings ADD COLUMN tone TEXT DEFAULT 'coach'",
+    "ALTER TABLE user_nudge_settings ADD COLUMN goal_text TEXT DEFAULT 'stay_consistent'",
+    "ALTER TABLE user_nudge_settings ADD COLUMN send_time TEXT DEFAULT '08:00'",
+    "ALTER TABLE user_nudge_settings ADD COLUMN timezone TEXT DEFAULT 'UTC'",
+    "ALTER TABLE user_nudge_settings ADD COLUMN last_sent_on TEXT",
+    "ALTER TABLE user_nudge_settings ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    "ALTER TABLE user_nudge_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
 ]
 
 def init_db():

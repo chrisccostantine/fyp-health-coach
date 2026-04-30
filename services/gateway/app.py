@@ -843,19 +843,23 @@ def nudge_settings_get():
     session, error = _require_auth()
     if error:
         return error
-    derived = _derive_nudge_context(session["user_id"])
-    settings = get_nudge_settings(session["user_id"]) or {
-        "user_id": session["user_id"],
-        "enabled": False,
-        "tone": derived["tone"],
-        "goal_text": derived["goal"],
-        "send_time": "08:00",
-        "timezone": APP_TIMEZONE,
-        "last_sent_on": None,
-    }
-    settings["tone"] = derived["tone"]
-    settings["goal_text"] = derived["goal"]
-    return jsonify({"ok": True, "settings": settings})
+    try:
+        derived = _derive_nudge_context(session["user_id"])
+        settings = get_nudge_settings(session["user_id"]) or {
+            "user_id": session["user_id"],
+            "enabled": False,
+            "tone": derived["tone"],
+            "goal_text": derived["goal"],
+            "send_time": "08:00",
+            "timezone": APP_TIMEZONE,
+            "last_sent_on": None,
+        }
+        settings["tone"] = derived["tone"]
+        settings["goal_text"] = derived["goal"]
+        return jsonify({"ok": True, "settings": settings})
+    except Exception as exc:
+        app.logger.exception("Failed to load nudge settings for user %s", session["user_id"])
+        return jsonify({"error": f"Failed to load nudge settings: {exc}"}), 500
 
 
 @app.post("/nudge/settings")
@@ -863,30 +867,34 @@ def nudge_settings_save():
     session, error = _require_auth()
     if error:
         return error
-    body = request.get_json(force=True)
-    enabled = bool(body.get("enabled"))
-    send_time = str(body.get("send_time", "08:00")).strip() or "08:00"
-    timezone_name = str(body.get("timezone", APP_TIMEZONE)).strip() or APP_TIMEZONE
+    try:
+        body = request.get_json(force=True)
+        enabled = bool(body.get("enabled"))
+        send_time = str(body.get("send_time", "08:00")).strip() or "08:00"
+        timezone_name = str(body.get("timezone", APP_TIMEZONE)).strip() or APP_TIMEZONE
 
-    if len(send_time) != 5 or send_time[2] != ":":
-        return jsonify({"error": "Send time must be in HH:MM format."}), 400
-    _safe_zoneinfo(timezone_name)
+        if len(send_time) != 5 or send_time[2] != ":":
+            return jsonify({"error": "Send time must be in HH:MM format."}), 400
+        _safe_zoneinfo(timezone_name)
 
-    derived = _derive_nudge_context(session["user_id"])
+        derived = _derive_nudge_context(session["user_id"])
 
-    upsert_nudge_settings(
-        session["user_id"],
-        enabled=enabled,
-        tone=derived["tone"],
-        goal_text=derived["goal"],
-        send_time=send_time,
-        timezone=timezone_name,
-    )
-    settings = get_nudge_settings(session["user_id"])
-    if settings:
-        settings["tone"] = derived["tone"]
-        settings["goal_text"] = derived["goal"]
-    return jsonify({"ok": True, "settings": settings})
+        upsert_nudge_settings(
+            session["user_id"],
+            enabled=enabled,
+            tone=derived["tone"],
+            goal_text=derived["goal"],
+            send_time=send_time,
+            timezone=timezone_name,
+        )
+        settings = get_nudge_settings(session["user_id"])
+        if settings:
+            settings["tone"] = derived["tone"]
+            settings["goal_text"] = derived["goal"]
+        return jsonify({"ok": True, "settings": settings})
+    except Exception as exc:
+        app.logger.exception("Failed to save nudge settings for user %s", session["user_id"])
+        return jsonify({"error": f"Failed to save nudge settings: {exc}"}), 500
 
 
 @app.post("/nudge/run-scheduled")
