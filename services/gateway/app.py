@@ -65,6 +65,7 @@ BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
 BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "").strip()
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "Health Coach").strip()
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
+PLAN_SPAN_DAYS = max(1, int(os.environ.get("PLAN_SPAN_DAYS", "30") or 30))
 
 app = Flask(__name__)
 CORS(app)
@@ -194,6 +195,146 @@ def _safe_zoneinfo(value: str | None) -> ZoneInfo:
         return ZoneInfo((value or APP_TIMEZONE or "UTC").strip() or "UTC")
     except Exception:
         return ZoneInfo("UTC")
+
+
+def _today_iso_date() -> str:
+    return datetime.now(_safe_zoneinfo(APP_TIMEZONE)).date().isoformat()
+
+
+def _copy_plan_items(items):
+    return [dict(item) for item in (items or [])]
+
+
+def _plan_days(plan: dict | None):
+    plan = plan or {}
+    plan_days = plan.get("plan_days")
+    return plan_days if isinstance(plan_days, list) else []
+
+
+def _find_plan_day(plan: dict | None, selected_date: str | None = None):
+    plan_days = _plan_days(plan)
+    if not plan_days:
+        return None
+
+    requested_date = (selected_date or plan.get("active_date") or _today_iso_date()).strip()
+    for day in plan_days:
+        if str(day.get("date", "")).strip() == requested_date:
+            return day
+    return plan_days[0]
+
+
+def _plan_view_for_date(plan: dict, selected_date: str | None = None):
+    active_day = _find_plan_day(plan, selected_date)
+    if not active_day:
+        return {
+            **plan,
+            "active_date": selected_date or plan.get("active_date") or _today_iso_date(),
+            "meals": plan.get("meals", []) or [],
+            "workouts": plan.get("workouts", []) or [],
+        }
+
+    return {
+        **plan,
+        "active_date": active_day.get("date") or selected_date or _today_iso_date(),
+        "meals": _copy_plan_items(active_day.get("meals", [])),
+        "workouts": _copy_plan_items(active_day.get("workouts", [])),
+    }
+
+
+def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], span_days: int = PLAN_SPAN_DAYS):
+    today = datetime.now(_safe_zoneinfo(APP_TIMEZONE)).date()
+    base_meals = _copy_plan_items(meals)
+    base_workouts = _copy_plan_items(workouts)
+    workout_pattern = [0, None, 1, None, 0, 1, None]
+    plan_days = []
+
+    for offset in range(max(1, span_days)):
+        current_date = (today + timedelta(days=offset)).isoformat()
+
+        if base_meals:
+            meal_rotation = offset % len(base_meals)
+            rotated_meals = base_meals[meal_rotation:] + base_meals[:meal_rotation]
+            day_meals = _copy_plan_items(rotated_meals)
+        else:
+            day_meals = []
+
+        day_workouts = []
+        if base_workouts:
+            chosen = workout_pattern[offset % len(workout_pattern)]
+            if chosen is not None:
+                template = base_workouts[chosen % len(base_workouts)]
+                day_workouts = [dict(template)]
+
+        plan_days.append(
+            {
+                "date": current_date,
+                "meals": day_meals,
+                "workouts": day_workouts,
+            }
+        )
+
+    month_plan = {
+        "user_id": user_id,
+        "plan_kind": "monthly",
+        "plan_span_days": len(plan_days),
+        "plan_start_date": plan_days[0]["date"],
+        "active_date": plan_days[0]["date"],
+        "plan_days": plan_days,
+    }
+    return _plan_view_for_date(month_plan, plan_days[0]["date"])
+
+
+def _merge_updated_day_into_plan(existing_plan: dict | None, selected_date: str | None, updated_day_plan: dict, user_id: str):
+    existing_plan = existing_plan or {}
+    plan_days = _plan_days(existing_plan)
+    target_date = (selected_date or existing_plan.get("active_date") or _today_iso_date()).strip()
+    meals = _copy_plan_items(updated_day_plan.get("meals", []))
+    workouts = _copy_plan_items(updated_day_plan.get("workouts", []))
+
+    if not plan_days:
+        return {
+            "user_id": user_id,
+            "meals": meals,
+            "workouts": workouts,
+            "active_date": target_date,
+        }
+
+    next_days = []
+    replaced = False
+    for day in plan_days:
+        day_date = str(day.get("date", "")).strip()
+        if day_date == target_date:
+            next_days.append(
+                {
+                    "date": day_date or target_date,
+                    "meals": meals,
+                    "workouts": workouts,
+                }
+            )
+            replaced = True
+        else:
+            next_days.append(
+                {
+                    "date": day.get("date"),
+                    "meals": _copy_plan_items(day.get("meals", [])),
+                    "workouts": _copy_plan_items(day.get("workouts", [])),
+                }
+            )
+
+    if not replaced:
+        next_days.append({"date": target_date, "meals": meals, "workouts": workouts})
+        next_days.sort(key=lambda day: str(day.get("date", "")))
+
+    merged = {
+        **existing_plan,
+        "user_id": user_id,
+        "plan_kind": existing_plan.get("plan_kind") or "monthly",
+        "plan_span_days": len(next_days),
+        "plan_start_date": next_days[0]["date"] if next_days else target_date,
+        "active_date": target_date,
+        "plan_days": next_days,
+    }
+    return _plan_view_for_date(merged, target_date)
 
 
 def _parse_hhmm_to_minutes(value: str | None) -> int | None:
@@ -1008,12 +1149,16 @@ def plan_today():
         return jsonify({"error": "exercise agent failed", "detail": work_res.text}), 502
     work = work_res.json()
 
-    plan = DayPlan(
+    daily_plan = DayPlan(
         user_id=user_id,
         meals=[PlanMeal(**m) for m in diet["meals"]],
         workouts=[PlanWorkout(**w) for w in work["workouts"]],
     )
-    plan_payload = plan.model_dump()
+    plan_payload = _build_month_plan(
+        user_id,
+        daily_plan.model_dump().get("meals", []),
+        daily_plan.model_dump().get("workouts", []),
+    )
     save_plan(user_id, plan_payload)
     calendar = _sync_calendar_for_plan(user_id, plan_payload)
     return jsonify({**plan_payload, "calendar": calendar})
@@ -1026,13 +1171,17 @@ def diet_chat():
     user_id = _resolve_write_user_id(session, body.get("user_id", "anon"))
     if user_id is None:
         return jsonify({"error": "Only the client can update this plan."}), 403
+    selected_date = str(body.get("selected_date") or "").strip() or None
     res = requests.post(f"{DIET_URL}/diet/chat", json=body, timeout=30)
     data = res.json()
     updated_plan = data.get("updated_plan")
     if res.status_code == 200 and isinstance(updated_plan, dict):
         updated_plan["user_id"] = user_id
-        save_plan(user_id, updated_plan)
-        data["calendar"] = _sync_calendar_for_plan(user_id, updated_plan)
+        existing_plan = get_latest_plan(user_id)
+        next_plan = _merge_updated_day_into_plan(existing_plan, selected_date, updated_plan, user_id)
+        save_plan(user_id, next_plan)
+        data["updated_plan"] = next_plan
+        data["calendar"] = _sync_calendar_for_plan(user_id, next_plan)
     return jsonify(data), res.status_code
 
 
@@ -1043,13 +1192,17 @@ def exercise_chat():
     user_id = _resolve_write_user_id(session, body.get("user_id", "anon"))
     if user_id is None:
         return jsonify({"error": "Only the client can update this plan."}), 403
+    selected_date = str(body.get("selected_date") or "").strip() or None
     res = requests.post(f"{EXERCISE_URL}/exercise/chat", json=body, timeout=30)
     data = res.json()
     updated_plan = data.get("updated_plan")
     if res.status_code == 200 and isinstance(updated_plan, dict):
         updated_plan["user_id"] = user_id
-        save_plan(user_id, updated_plan)
-        data["calendar"] = _sync_calendar_for_plan(user_id, updated_plan)
+        existing_plan = get_latest_plan(user_id)
+        next_plan = _merge_updated_day_into_plan(existing_plan, selected_date, updated_plan, user_id)
+        save_plan(user_id, next_plan)
+        data["updated_plan"] = next_plan
+        data["calendar"] = _sync_calendar_for_plan(user_id, next_plan)
     return jsonify(data), res.status_code
 
 
@@ -1079,7 +1232,7 @@ def calendar_sync():
     if not isinstance(plan, dict):
         return jsonify({"error": "No plan available to sync."}), 400
 
-    plan["user_id"] = user_id
+    plan = _plan_view_for_date({**plan, "user_id": user_id}, body.get("selected_date"))
     try:
         data = _sync_calendar_for_plan(user_id, plan)
         if data is None:

@@ -37,6 +37,8 @@ function describeWorkout(workout) {
 export default function ResultsSection({
   stage,
   plan,
+  selectedPlanDate,
+  setSelectedPlanDate,
   setStage,
   handleGoHome,
   isPlanning,
@@ -99,11 +101,41 @@ export default function ResultsSection({
   const Loading = Spinner;
   const StatusAlert = Alert;
 
-  const meals = Array.isArray(plan?.meals) ? plan.meals : [];
-  const workouts = Array.isArray(plan?.workouts) ? plan.workouts : [];
+  const planDays = Array.isArray(plan?.plan_days) ? plan.plan_days : [];
+  const availableDates = planDays
+    .map((day) => String(day?.date || "").trim())
+    .filter(Boolean);
+  const activeDate =
+    availableDates.includes(selectedPlanDate) ? selectedPlanDate : availableDates[0] || "";
+  const activeDay =
+    planDays.find((day) => String(day?.date || "").trim() === activeDate) || null;
+  const meals = activeDay
+    ? Array.isArray(activeDay?.meals) ? activeDay.meals : []
+    : Array.isArray(plan?.meals) ? plan.meals : [];
+  const workouts = activeDay
+    ? Array.isArray(activeDay?.workouts) ? activeDay.workouts : []
+    : Array.isArray(plan?.workouts) ? plan.workouts : [];
   const chatMessages = Array.isArray(dietChatMessages) ? dietChatMessages : [];
   const totalMealCalories = sumBy(meals, ["kcal", "calories"]);
   const totalWorkoutMinutes = sumBy(workouts, ["duration", "duration_min"]);
+  const activeDateLabel = activeDate
+    ? new Date(`${activeDate}T00:00:00`).toLocaleDateString([], {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+      })
+    : new Date().toLocaleDateString();
+  const calendarForDisplay =
+    calendar && activeDate
+      ? {
+          ...calendar,
+          events: Array.isArray(calendar?.events)
+            ? calendar.events.filter((event) =>
+                String(event?.starts_at || "").startsWith(activeDate),
+              )
+            : [],
+        }
+      : calendar;
 
   return (
     <div className="row g-4">
@@ -112,10 +144,16 @@ export default function ResultsSection({
           <div className="card-body p-4 p-md-5">
             <div className="results-header">
               <div>
-                <div className="results-kicker">Daily plan dashboard</div>
-                <h1 className="results-title">Your plan for today</h1>
+                <div className="results-kicker">
+                  {planDays.length > 0 ? "Monthly plan dashboard" : "Daily plan dashboard"}
+                </div>
+                <h1 className="results-title">
+                  {planDays.length > 0 ? `Your plan for ${activeDateLabel}` : "Your plan for today"}
+                </h1>
                 <div className="text-muted">
-                  Nutrition, training, calendar, and coaching in one view.
+                  {planDays.length > 0
+                    ? "Your month is generated once. Pick a day and review only that day's meals and workout."
+                    : "Nutrition, training, calendar, and coaching in one view."}
                 </div>
                 {isReadOnlyClientView && viewedAccount ? (
                   <div className="alert alert-info mt-3 mb-0 small">
@@ -186,13 +224,46 @@ export default function ResultsSection({
                   </div>
 
                   <div className="summary-card">
-                    <div className="summary-label">Generated</div>
+                    <div className="summary-label">{planDays.length > 0 ? "Selected Day" : "Generated"}</div>
                     <div className="summary-value summary-date">
-                      {new Date().toLocaleDateString()}
+                      {planDays.length > 0 ? activeDateLabel : new Date().toLocaleDateString()}
                     </div>
-                    <div className="summary-meta">Calendar synced automatically</div>
+                    <div className="summary-meta">
+                      {planDays.length > 0 ? `${planDays.length} days planned` : "Calendar synced automatically"}
+                    </div>
                   </div>
                 </div>
+
+                {planDays.length > 0 ? (
+                  <section className="results-section">
+                    <div className="section-head">
+                      <h2 className="section-h">Plan Day</h2>
+                      <span className="count-pill">{planDays.length}</span>
+                    </div>
+
+                    <div className="results-date-picker">
+                      <select
+                        className="form-select"
+                        value={activeDate}
+                        onChange={(e) => setSelectedPlanDate?.(e.target.value)}
+                      >
+                        {planDays.map((day) => {
+                          const value = String(day?.date || "");
+                          const label = new Date(`${value}T00:00:00`).toLocaleDateString([], {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          });
+                          return (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  </section>
+                ) : null}
 
                 {/* Meals */}
                 <section className="results-section">
@@ -279,7 +350,7 @@ export default function ResultsSection({
                   <div className="list-group list-group-soft mb-3">
                     {chatMessages.length === 0 ? (
                       <div className="list-group-item text-muted">
-                        Ask to swap meals, modify workouts, adjust calories, or explain the plan.
+                        Ask to swap meals, modify workouts, adjust calories, or explain the selected day.
                       </div>
                     ) : (
                       chatMessages.map((m, idx) => (
@@ -460,7 +531,7 @@ export default function ResultsSection({
 
             <StatusAlert variant="warning">{calendarMsg}</StatusAlert>
             <StatusAlert variant="info">{googleCalendarMsg}</StatusAlert>
-            {calendar ? <Calendar result={calendar} /> : null}
+            {calendarForDisplay ? <Calendar result={calendarForDisplay} /> : null}
           </div>
         </div>
 

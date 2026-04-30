@@ -33,6 +33,23 @@ def _to_iso_datetime(value: str | None, fallback_time: str) -> str:
         return f"{_today_iso_date()}T{fallback_time}:00"
 
 
+def _to_iso_datetime_for_date(plan_date: str, value: str | None, fallback_time: str) -> str:
+    if not value:
+        return f"{plan_date}T{fallback_time}:00"
+
+    raw = str(value).strip()
+    if len(raw) == 5 and raw[2] == ":":
+        return f"{plan_date}T{raw}:00"
+
+    try:
+        parsed = datetime.fromisoformat(raw)
+        if "T" not in raw:
+            return f"{plan_date}T{fallback_time}:00"
+        return parsed.replace(microsecond=0).isoformat()
+    except ValueError:
+        return f"{plan_date}T{fallback_time}:00"
+
+
 def _parse_duration_minutes(value, fallback: int = 30) -> int:
     if value is None:
         return fallback
@@ -72,51 +89,105 @@ def _build_event(source_key: str, item_type: str, title: str, starts_at: str, du
 
 
 def _calendar_from_plan(user_id: str, plan: dict):
-    meals = plan.get("meals", []) or []
-    workouts = plan.get("workouts", []) or []
     events = []
 
-    for idx, meal in enumerate(meals):
-        starts_at = _to_iso_datetime(
-            meal.get("when") or meal.get("time"),
-            DEFAULT_MEAL_TIMES[idx % len(DEFAULT_MEAL_TIMES)],
-        )
-        events.append(
-            _build_event(
-                source_key=f"meal:{idx}",
-                item_type="meal",
-                title=meal.get("name") or meal.get("title") or f"Meal {idx + 1}",
-                starts_at=starts_at,
-                duration_min=30,
-                payload={
-                    "calories": meal.get("calories", meal.get("kcal")),
-                    "macros": meal.get("macros", {}),
-                },
-            )
-        )
+    plan_days = plan.get("plan_days")
+    if isinstance(plan_days, list) and plan_days:
+        for day in plan_days:
+            plan_date = str(day.get("date") or _today_iso_date())
+            meals = day.get("meals", []) or []
+            workouts = day.get("workouts", []) or []
 
-    for idx, workout in enumerate(workouts):
-        duration = _parse_duration_minutes(
-            workout.get("duration_min", workout.get("duration", 30)),
-            fallback=30,
-        )
-        starts_at = _to_iso_datetime(
-            workout.get("when") or workout.get("time"),
-            DEFAULT_WORKOUT_TIME,
-        )
-        events.append(
-            _build_event(
-                source_key=f"workout:{idx}",
-                item_type="workout",
-                title=workout.get("name") or workout.get("title") or f"Workout {idx + 1}",
-                starts_at=starts_at,
-                duration_min=duration,
-                payload={
-                    "duration_min": duration,
-                    "intensity": workout.get("intensity"),
-                },
+            for idx, meal in enumerate(meals):
+                starts_at = _to_iso_datetime_for_date(
+                    plan_date,
+                    meal.get("when") or meal.get("time"),
+                    DEFAULT_MEAL_TIMES[idx % len(DEFAULT_MEAL_TIMES)],
+                )
+                events.append(
+                    _build_event(
+                        source_key=f"{plan_date}:meal:{idx}",
+                        item_type="meal",
+                        title=meal.get("name") or meal.get("title") or f"Meal {idx + 1}",
+                        starts_at=starts_at,
+                        duration_min=30,
+                        payload={
+                            "calories": meal.get("calories", meal.get("kcal")),
+                            "macros": meal.get("macros", {}),
+                            "plan_date": plan_date,
+                        },
+                    )
+                )
+
+            for idx, workout in enumerate(workouts):
+                duration = _parse_duration_minutes(
+                    workout.get("duration_min", workout.get("duration", 30)),
+                    fallback=30,
+                )
+                starts_at = _to_iso_datetime_for_date(
+                    plan_date,
+                    workout.get("when") or workout.get("time"),
+                    DEFAULT_WORKOUT_TIME,
+                )
+                events.append(
+                    _build_event(
+                        source_key=f"{plan_date}:workout:{idx}",
+                        item_type="workout",
+                        title=workout.get("name") or workout.get("title") or f"Workout {idx + 1}",
+                        starts_at=starts_at,
+                        duration_min=duration,
+                        payload={
+                            "duration_min": duration,
+                            "intensity": workout.get("intensity"),
+                            "plan_date": plan_date,
+                        },
+                    )
+                )
+    else:
+        meals = plan.get("meals", []) or []
+        workouts = plan.get("workouts", []) or []
+
+        for idx, meal in enumerate(meals):
+            starts_at = _to_iso_datetime(
+                meal.get("when") or meal.get("time"),
+                DEFAULT_MEAL_TIMES[idx % len(DEFAULT_MEAL_TIMES)],
             )
-        )
+            events.append(
+                _build_event(
+                    source_key=f"meal:{idx}",
+                    item_type="meal",
+                    title=meal.get("name") or meal.get("title") or f"Meal {idx + 1}",
+                    starts_at=starts_at,
+                    duration_min=30,
+                    payload={
+                        "calories": meal.get("calories", meal.get("kcal")),
+                        "macros": meal.get("macros", {}),
+                    },
+                )
+            )
+
+        for idx, workout in enumerate(workouts):
+            duration = _parse_duration_minutes(
+                workout.get("duration_min", workout.get("duration", 30)),
+                fallback=30,
+            )
+            starts_at = _to_iso_datetime(
+                workout.get("when") or workout.get("time"),
+                DEFAULT_WORKOUT_TIME,
+            )
+            events.append(
+                _build_event(
+                    source_key=f"workout:{idx}",
+                    item_type="workout",
+                    title=workout.get("name") or workout.get("title") or f"Workout {idx + 1}",
+                    starts_at=starts_at,
+                    duration_min=duration,
+                    payload={
+                        "duration_min": duration,
+                        "intensity": workout.get("intensity"),
+                    },
+                )
+            )
 
     replace_calendar_events(user_id, events)
     return events

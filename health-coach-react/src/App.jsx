@@ -47,6 +47,49 @@ function fmtIso(iso) {
   return `${date} - ${time}`;
 }
 
+function todayIsoLocal() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getPlanDays(plan) {
+  return Array.isArray(plan?.plan_days) ? plan.plan_days : [];
+}
+
+function getActivePlanDate(plan, selectedDate) {
+  const planDays = getPlanDays(plan);
+  if (!planDays.length) return "";
+  const availableDates = planDays.map((day) => String(day?.date || "").trim()).filter(Boolean);
+  if (selectedDate && availableDates.includes(selectedDate)) return selectedDate;
+  const today = todayIsoLocal();
+  if (availableDates.includes(today)) return today;
+  return availableDates[0] || "";
+}
+
+function getPlanSliceForDate(plan, selectedDate) {
+  const planDays = getPlanDays(plan);
+  if (!planDays.length) {
+    return {
+      activeDate: "",
+      meals: Array.isArray(plan?.meals) ? plan.meals : [],
+      workouts: Array.isArray(plan?.workouts) ? plan.workouts : [],
+    };
+  }
+
+  const activeDate = getActivePlanDate(plan, selectedDate);
+  const activeDay =
+    planDays.find((day) => String(day?.date || "").trim() === activeDate) || planDays[0] || {};
+
+  return {
+    activeDate,
+    meals: Array.isArray(activeDay?.meals) ? activeDay.meals : [],
+    workouts: Array.isArray(activeDay?.workouts) ? activeDay.workouts : [],
+  };
+}
+
 /* -------------------- CalendarView -------------------- */
 function CalendarView({ result }) {
   if (!result) return null;
@@ -55,7 +98,7 @@ function CalendarView({ result }) {
   return (
     <div className="mt-3">
       <div className="d-flex align-items-center justify-content-between mb-2">
-        <h3 className="h6 text-white mb-0">Today's Calendar</h3>
+        <h3 className="h6 text-white mb-0">Calendar Schedule</h3>
         <span className="badge text-bg-dark">{events.length}</span>
       </div>
 
@@ -595,6 +638,7 @@ export default function App() {
 
   // ------- Plan -------
   const [plan, setPlan] = useState(null);
+  const [selectedPlanDate, setSelectedPlanDate] = useState("");
   const [planMsg, setPlanMsg] = useState("");
   const [isPlanning, setIsPlanning] = useState(false);
   const [dietChatInput, setDietChatInput] = useState("");
@@ -605,6 +649,15 @@ export default function App() {
     const cached = getCachedPlan();
     if (cached) setPlan(cached);
   }, []);
+
+  useEffect(() => {
+    if (!plan) {
+      setSelectedPlanDate("");
+      return;
+    }
+    setSelectedPlanDate((current) => getActivePlanDate(plan, current));
+  }, [plan]);
+
   async function handlePlanToday({ autoGoResults = true } = {}) {
     setIsPlanning(true);
     setPlanMsg("");
@@ -630,13 +683,14 @@ export default function App() {
 
       const data = await api.planToday(payload);
       setPlan(data);
+      setSelectedPlanDate(getActivePlanDate(data, ""));
       setCalendar(data?.calendar || null);
       if (data?.calendar) cacheCalendar(data.calendar);
       setCalendarMsg("");
       setDietChatMessages([
         {
           role: "assistant",
-          text: "Your plan is ready. Ask me to modify meals, swap workouts, or explain anything in the plan.",
+          text: "Your 30-day plan is ready. Ask me to modify meals, swap workouts, or explain the selected day.",
         },
       ]);
       // Persist profile so the user is recognised on next visit
@@ -665,6 +719,8 @@ export default function App() {
       return;
     }
 
+    const activePlanSlice = getPlanSliceForDate(plan, selectedPlanDate);
+
     setIsDietChatting(true);
     setDietChatMsg("");
     setDietChatMessages((prev) => [...prev, { role: "user", text: message }]);
@@ -684,7 +740,12 @@ export default function App() {
 
       const dietData = await api.dietChat({
         message,
-        current_plan: plan,
+        current_plan: {
+          user_id: plan?.user_id || userId || "anon",
+          meals: activePlanSlice.meals,
+          workouts: activePlanSlice.workouts,
+        },
+        selected_date: activePlanSlice.activeDate || selectedPlanDate || undefined,
         profile: payload.profile,
         goal: payload.goal,
         chat_history: dietChatMessages,
@@ -693,7 +754,12 @@ export default function App() {
       const nextPlan = dietData?.updated_plan || plan;
       const exerciseData = await api.exerciseChat({
         message,
-        current_plan: nextPlan,
+        current_plan: {
+          user_id: nextPlan?.user_id || userId || "anon",
+          meals: getPlanSliceForDate(nextPlan, activePlanSlice.activeDate || selectedPlanDate).meals,
+          workouts: getPlanSliceForDate(nextPlan, activePlanSlice.activeDate || selectedPlanDate).workouts,
+        },
+        selected_date: activePlanSlice.activeDate || selectedPlanDate || undefined,
         profile: payload.profile,
         goal: payload.goal,
         chat_history: [
@@ -705,6 +771,7 @@ export default function App() {
       const updatedPlan = exerciseData?.updated_plan || nextPlan;
       const nextCalendar = exerciseData?.calendar || dietData?.calendar || null;
       setPlan(updatedPlan);
+      setSelectedPlanDate(getActivePlanDate(updatedPlan, activePlanSlice.activeDate || selectedPlanDate));
       cachePlan(updatedPlan);
       setCalendar(nextCalendar);
       if (nextCalendar) cacheCalendar(nextCalendar);
@@ -902,7 +969,13 @@ export default function App() {
 
   const coachToolFeedbackItems = useMemo(() => {
     const events = Array.isArray(calendar?.events) ? calendar.events : [];
-    return events.filter((item) => item?.id && (item?.type === "meal" || item?.type === "workout"));
+    const today = todayIsoLocal();
+    return events.filter(
+      (item) =>
+        item?.id &&
+        (item?.type === "meal" || item?.type === "workout") &&
+        String(item?.starts_at || "").startsWith(today),
+    );
   }, [calendar]);
 
   const selectedFeedbackItem = useMemo(
@@ -3561,6 +3634,8 @@ export default function App() {
         <ResultsSection
           stage={stage}
           plan={plan}
+          selectedPlanDate={selectedPlanDate}
+          setSelectedPlanDate={setSelectedPlanDate}
           setStage={setStage}
           handleGoHome={() => setStage(isReadOnlyClientView ? "dietitianClients" : defaultHomeStage)}
           isPlanning={isPlanning}
