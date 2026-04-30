@@ -1632,6 +1632,9 @@ export default function App() {
               <div className="card card-soft">
                 <div className="card-body p-4">
                   <h2 className="h5 panel-title mb-3">Motivation</h2>
+                  <p className="text-muted mb-3">
+                    Send a motivation nudge to your account email.
+                  </p>
 
                   <div className="row g-3">
                     <div className="col-12">

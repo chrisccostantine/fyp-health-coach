@@ -769,7 +769,13 @@ def calendar_sync():
 @app.post("/nudge/send")
 def nudge_send():
     body = request.get_json(force=True)
-    res = requests.post(f"{MOTIVATION_URL}/nudge/send", json=body)
+    session = _get_current_session()
+    nudge_payload = dict(body or {})
+    if session:
+        nudge_payload["email"] = session.get("email")
+        nudge_payload["name"] = session.get("display_name") or session.get("email", "")
+        nudge_payload["user_id"] = session["user_id"]
+    res = requests.post(f"{MOTIVATION_URL}/nudge/send", json=nudge_payload)
     return jsonify(res.json()), res.status_code
 
 
