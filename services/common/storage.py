@@ -87,6 +87,21 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS google_calendar_tokens (
+    user_id TEXT PRIMARY KEY,
+    access_token TEXT,
+    refresh_token TEXT,
+    token_type TEXT,
+    scope TEXT,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS google_oauth_states (
+    state TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 '''
 
 SCHEMA_POSTGRES = '''
@@ -146,6 +161,21 @@ CREATE TABLE IF NOT EXISTS auth_sessions (
     user_id TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS google_calendar_tokens (
+    user_id TEXT PRIMARY KEY,
+    access_token TEXT,
+    refresh_token TEXT,
+    token_type TEXT,
+    scope TEXT,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS google_oauth_states (
+    state TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 '''
 
@@ -348,3 +378,71 @@ def delete_auth_session(token: str):
             text("DELETE FROM auth_sessions WHERE token = :token"),
             {"token": token},
         )
+
+def upsert_google_calendar_token(user_id: str, token_data: dict):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO google_calendar_tokens(
+                    user_id, access_token, refresh_token, token_type, scope, expires_at, updated_at
+                ) VALUES(
+                    :uid, :access_token, :refresh_token, :token_type, :scope, :expires_at, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT(user_id) DO UPDATE SET
+                    access_token=excluded.access_token,
+                    refresh_token=COALESCE(excluded.refresh_token, google_calendar_tokens.refresh_token),
+                    token_type=excluded.token_type,
+                    scope=excluded.scope,
+                    expires_at=excluded.expires_at,
+                    updated_at=CURRENT_TIMESTAMP
+            """),
+            {
+                "uid": user_id,
+                "access_token": token_data.get("access_token"),
+                "refresh_token": token_data.get("refresh_token"),
+                "token_type": token_data.get("token_type"),
+                "scope": token_data.get("scope"),
+                "expires_at": token_data.get("expires_at"),
+            },
+        )
+
+def get_google_calendar_token(user_id: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT user_id, access_token, refresh_token, token_type, scope, expires_at
+                FROM google_calendar_tokens
+                WHERE user_id = :uid
+            """),
+            {"uid": user_id},
+        ).mappings().first()
+    return dict(row) if row else None
+
+def delete_google_calendar_token(user_id: str):
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM google_calendar_tokens WHERE user_id = :uid"),
+            {"uid": user_id},
+        )
+
+def create_google_oauth_state(user_id: str):
+    state = secrets.token_urlsafe(32)
+    with engine.begin() as conn:
+        conn.execute(
+            text("INSERT INTO google_oauth_states(state, user_id) VALUES(:state, :uid)"),
+            {"state": state, "uid": user_id},
+        )
+    return state
+
+def consume_google_oauth_state(state: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT state, user_id FROM google_oauth_states WHERE state = :state"),
+            {"state": state},
+        ).mappings().first()
+        if row:
+            conn.execute(
+                text("DELETE FROM google_oauth_states WHERE state = :state"),
+                {"state": state},
+            )
+    return dict(row) if row else None

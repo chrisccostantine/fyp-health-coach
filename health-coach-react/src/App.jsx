@@ -378,11 +378,38 @@ export default function App() {
   const [isRestoringSession, setIsRestoringSession] = useState(
     Boolean(initialSettings.authToken),
   );
+  const [googleCalendar, setGoogleCalendar] = useState({
+    enabled: false,
+    connected: false,
+  });
+  const [googleCalendarMsg, setGoogleCalendarMsg] = useState("");
+  const [isGoogleCalendarBusy, setIsGoogleCalendarBusy] = useState(false);
   // Extra quiz answers (MadMuscles style)
 
   useEffect(() => {
     saveSettings({ gatewayUrl, userId });
   }, [gatewayUrl, userId]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const googleState = params.get("google_calendar");
+    if (!googleState) return;
+
+    if (googleState === "connected") {
+      setGoogleCalendarMsg("Google Calendar connected successfully.");
+    } else if (googleState === "missing_code") {
+      setGoogleCalendarMsg("Google Calendar connection was cancelled or incomplete.");
+    } else if (googleState === "token_error") {
+      setGoogleCalendarMsg("Google Calendar token exchange failed.");
+    } else if (googleState === "invalid_state") {
+      setGoogleCalendarMsg("Google Calendar state validation failed.");
+    } else if (googleState === "not_configured") {
+      setGoogleCalendarMsg("Google Calendar is not configured on the backend yet.");
+    }
+
+    const nextUrl = `${window.location.pathname}${window.location.hash || ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -698,6 +725,59 @@ export default function App() {
       cancelled = true;
     };
   }, [stage, userId]);
+
+  useEffect(() => {
+    if (stage !== "results" || !currentUser) return;
+
+    let cancelled = false;
+    api
+      .getGoogleCalendarStatus()
+      .then((data) => {
+        if (cancelled) return;
+        setGoogleCalendar({
+          enabled: Boolean(data?.enabled),
+          connected: Boolean(data?.connected),
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setGoogleCalendar({ enabled: false, connected: false });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stage, currentUser]);
+
+  async function handleGoogleCalendarConnect() {
+    if (!currentUser) {
+      setGoogleCalendarMsg("Log in first to connect Google Calendar.");
+      return;
+    }
+
+    setIsGoogleCalendarBusy(true);
+    try {
+      const data = await api.startGoogleCalendarConnect();
+      if (!data?.auth_url) throw new Error("Missing Google auth URL.");
+      window.location.href = data.auth_url;
+    } catch (e) {
+      setGoogleCalendarMsg(`Error: ${e.message}`);
+      setIsGoogleCalendarBusy(false);
+    }
+  }
+
+  async function handleGoogleCalendarDisconnect() {
+    setIsGoogleCalendarBusy(true);
+    try {
+      await api.disconnectGoogleCalendar();
+      setGoogleCalendar({ enabled: true, connected: false });
+      setGoogleCalendarMsg("Google Calendar disconnected.");
+    } catch (e) {
+      setGoogleCalendarMsg(`Error: ${e.message}`);
+    } finally {
+      setIsGoogleCalendarBusy(false);
+    }
+  }
 
   // ------- Nudge -------
   const [tone, setTone] = useState("coach");
@@ -2365,6 +2445,11 @@ export default function App() {
           copyFeedback={copyFeedback}
           calendar={calendar}
           calendarMsg={calendarMsg}
+          googleCalendar={googleCalendar}
+          googleCalendarMsg={googleCalendarMsg}
+          isGoogleCalendarBusy={isGoogleCalendarBusy}
+          handleGoogleCalendarConnect={handleGoogleCalendarConnect}
+          handleGoogleCalendarDisconnect={handleGoogleCalendarDisconnect}
           tone={tone}
           setTone={setTone}
           goalText={goalText}

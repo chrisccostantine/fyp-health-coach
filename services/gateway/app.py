@@ -1,8 +1,10 @@
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, redirect, request
 from flask_cors import CORS
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
@@ -12,14 +14,19 @@ from services.common.models import DayPlan, Goal, PlanMeal, PlanWorkout, UserPro
 from services.common.storage import (
     create_auth_session,
     create_auth_user,
+    create_google_oauth_state,
+    delete_google_calendar_token,
     delete_auth_session,
+    get_google_calendar_token,
     get_auth_session,
     get_auth_user_by_email,
     get_latest_plan,
     get_user,
     init_db,
     save_plan,
+    upsert_google_calendar_token,
     upsert_user,
+    consume_google_oauth_state,
 )
 
 DIET_URL = os.environ.get("DIET_URL", "http://127.0.0.1:8101")
@@ -27,6 +34,15 @@ EXERCISE_URL = os.environ.get("EXERCISE_URL", "http://127.0.0.1:8102")
 MOTIVATION_URL = os.environ.get("MOTIVATION_URL", "http://127.0.0.1:8103")
 SCHEDULER_URL = os.environ.get("SCHEDULER_URL", "http://127.0.0.1:8104")
 FEEDBACK_URL = os.environ.get("FEEDBACK_URL", "http://127.0.0.1:8105")
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "").strip()
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "").strip()
+APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "UTC")
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_CALENDAR_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
 
 app = Flask(__name__)
 CORS(app)
@@ -62,6 +78,191 @@ def _require_auth():
     return session, None
 
 
+def _google_calendar_enabled() -> bool:
+    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI and FRONTEND_URL)
+
+
+def _frontend_redirect(status: str) -> str:
+    base = FRONTEND_URL.rstrip("/") if FRONTEND_URL else "/"
+    return f"{base}?google_calendar={status}"
+
+
+def _google_auth_url_for_user(user_id: str) -> str:
+    state = create_google_oauth_state(user_id)
+    query = urlencode(
+        {
+            "client_id": GOOGLE_CLIENT_ID,
+            "redirect_uri": GOOGLE_REDIRECT_URI,
+            "response_type": "code",
+            "scope": GOOGLE_CALENDAR_SCOPE,
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": state,
+            "include_granted_scopes": "true",
+        }
+    )
+    return f"{GOOGLE_AUTH_URL}?{query}"
+
+
+def _token_expiry(expires_in) -> str | None:
+    try:
+        seconds = int(expires_in or 0)
+    except (TypeError, ValueError):
+        return None
+    if seconds <= 0:
+        return None
+    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
+
+
+def _google_token_payload(payload: dict, existing: dict | None = None) -> dict:
+    existing = existing or {}
+    return {
+        "access_token": payload.get("access_token"),
+        "refresh_token": payload.get("refresh_token") or existing.get("refresh_token"),
+        "token_type": payload.get("token_type") or existing.get("token_type"),
+        "scope": payload.get("scope") or existing.get("scope"),
+        "expires_at": _token_expiry(payload.get("expires_in")),
+    }
+
+
+def _google_access_token_for_user(user_id: str) -> str | None:
+    token = get_google_calendar_token(user_id)
+    if not token:
+        return None
+
+    expires_at = token.get("expires_at")
+    if expires_at:
+        try:
+            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            if expiry > datetime.now(timezone.utc) + timedelta(seconds=60):
+                return token.get("access_token")
+        except ValueError:
+            pass
+
+    refresh_token = token.get("refresh_token")
+    if not refresh_token or not _google_calendar_enabled():
+        return token.get("access_token")
+
+    res = requests.post(
+        GOOGLE_TOKEN_URL,
+        data={
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        },
+        timeout=20,
+    )
+    if res.status_code != 200:
+        return token.get("access_token")
+
+    refreshed = _google_token_payload(res.json(), existing=token)
+    upsert_google_calendar_token(user_id, refreshed)
+    return refreshed.get("access_token")
+
+
+def _google_calendar_sync_status(user_id: str):
+    token = get_google_calendar_token(user_id)
+    return {
+        "enabled": _google_calendar_enabled(),
+        "connected": bool(token and token.get("refresh_token")),
+    }
+
+
+def _google_headers(user_id: str):
+    access_token = _google_access_token_for_user(user_id)
+    if not access_token:
+        return None
+    return {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+
+def _google_event_body(user_id: str, event: dict):
+    payload = event.get("payload") or {}
+    description_parts = []
+    if payload.get("calories") is not None:
+        description_parts.append(f"Calories: {payload['calories']}")
+    if payload.get("duration_min") is not None:
+        description_parts.append(f"Duration: {payload['duration_min']} min")
+    if payload.get("intensity"):
+        description_parts.append(f"Intensity: {payload['intensity']}")
+    if payload.get("macros"):
+        macros = payload["macros"]
+        description_parts.append(
+            "Macros: "
+            f"P {macros.get('protein', 0)}g | "
+            f"C {macros.get('carbs', 0)}g | "
+            f"F {macros.get('fat', 0)}g"
+        )
+    notes = event.get("notes")
+    if notes:
+        description_parts.append(str(notes))
+
+    starts_at = event.get("starts_at")
+    ends_at = event.get("ends_at") or starts_at
+    return {
+        "summary": event.get("title") or "Health Coach Event",
+        "description": "\n".join(
+            [
+                part
+                for part in [
+                    f"Synced from Health Coach ({event.get('type', 'event')}).",
+                    *description_parts,
+                ]
+                if part
+            ]
+        ),
+        "start": {"dateTime": starts_at, "timeZone": APP_TIMEZONE},
+        "end": {"dateTime": ends_at, "timeZone": APP_TIMEZONE},
+        "extendedProperties": {
+            "private": {
+                "healthCoachUserId": user_id,
+                "healthCoachSourceKey": event.get("source_key", ""),
+            }
+        },
+    }
+
+
+def _sync_google_calendar_for_user(user_id: str, events: list[dict]):
+    headers = _google_headers(user_id)
+    if not headers:
+        return None
+
+    res = requests.get(
+        GOOGLE_CALENDAR_EVENTS_URL,
+        headers=headers,
+        params={
+            "privateExtendedProperty": f"healthCoachUserId={user_id}",
+            "singleEvents": "true",
+            "maxResults": 250,
+        },
+        timeout=20,
+    )
+    if res.status_code == 200:
+        for item in res.json().get("items", []):
+            event_id = item.get("id")
+            if event_id:
+                requests.delete(
+                    f"{GOOGLE_CALENDAR_EVENTS_URL}/{event_id}",
+                    headers=headers,
+                    timeout=20,
+                )
+
+    created = []
+    for event in events:
+        insert_res = requests.post(
+            GOOGLE_CALENDAR_EVENTS_URL,
+            headers=headers,
+            json=_google_event_body(user_id, event),
+            timeout=20,
+        )
+        if insert_res.status_code in {200, 201}:
+            created.append(insert_res.json().get("id"))
+    return {"connected": True, "created": len(created)}
+
+
 def _sync_calendar_for_plan(user_id: str, plan: dict):
     try:
         res = requests.post(
@@ -70,7 +271,11 @@ def _sync_calendar_for_plan(user_id: str, plan: dict):
             timeout=20,
         )
         if res.status_code == 200:
-            return res.json()
+            data = res.json()
+            google = _sync_google_calendar_for_user(user_id, data.get("events", []))
+            if google is not None:
+                data["google_calendar"] = google
+            return data
     except requests.RequestException:
         return None
     return None
@@ -88,6 +293,69 @@ def _list_calendar(user_id: str):
     except requests.RequestException:
         return None
     return None
+
+
+@app.post("/google/calendar/connect")
+def google_calendar_connect():
+    session, error = _require_auth()
+    if error:
+        return error
+    if not _google_calendar_enabled():
+        return jsonify({"error": "Google Calendar is not configured."}), 503
+    return jsonify({"ok": True, "auth_url": _google_auth_url_for_user(session["user_id"])})
+
+
+@app.get("/google/calendar/status")
+def google_calendar_status():
+    session, error = _require_auth()
+    if error:
+        return error
+    return jsonify(_google_calendar_sync_status(session["user_id"]))
+
+
+@app.post("/google/calendar/disconnect")
+def google_calendar_disconnect():
+    session, error = _require_auth()
+    if error:
+        return error
+    delete_google_calendar_token(session["user_id"])
+    return jsonify({"ok": True, "connected": False})
+
+
+@app.get("/auth/google/callback")
+def google_oauth_callback():
+    if not _google_calendar_enabled():
+        return redirect(_frontend_redirect("not_configured"))
+
+    code = request.args.get("code", "").strip()
+    state = request.args.get("state", "").strip()
+    if not code or not state:
+        return redirect(_frontend_redirect("missing_code"))
+
+    oauth_state = consume_google_oauth_state(state)
+    if not oauth_state:
+        return redirect(_frontend_redirect("invalid_state"))
+
+    token_res = requests.post(
+        GOOGLE_TOKEN_URL,
+        data={
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": GOOGLE_REDIRECT_URI,
+            "grant_type": "authorization_code",
+        },
+        timeout=20,
+    )
+    if token_res.status_code != 200:
+        return redirect(_frontend_redirect("token_error"))
+
+    user_id = oauth_state["user_id"]
+    upsert_google_calendar_token(user_id, _google_token_payload(token_res.json()))
+    plan = get_latest_plan(user_id)
+    if isinstance(plan, dict):
+        _sync_calendar_for_plan(user_id, plan)
+    return redirect(_frontend_redirect("connected"))
 
 
 @app.get("/health")

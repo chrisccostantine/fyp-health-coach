@@ -58,6 +58,11 @@ export default function ResultsSection({
   // calendar
   calendar,
   calendarMsg,
+  googleCalendar,
+  googleCalendarMsg,
+  isGoogleCalendarBusy,
+  handleGoogleCalendarConnect,
+  handleGoogleCalendarDisconnect,
 
   // nudge
   tone,
@@ -398,7 +403,44 @@ export default function ResultsSection({
               Meals and workouts are added, removed, and updated automatically when your plan changes.
             </p>
 
+            <div className="d-flex gap-2 mb-3">
+              <button
+                className="btn btn-primary fw-bold flex-grow-1"
+                type="button"
+                onClick={handleGoogleCalendarConnect}
+                disabled={isGoogleCalendarBusy || googleCalendar?.connected}
+              >
+                {isGoogleCalendarBusy && !googleCalendar?.connected ? (
+                  <Loading label="Connecting..." />
+                ) : googleCalendar?.connected ? (
+                  "Google Calendar Connected"
+                ) : (
+                  "Connect Google Calendar"
+                )}
+              </button>
+
+              {googleCalendar?.connected ? (
+                <button
+                  className="btn btn-outline-light"
+                  type="button"
+                  onClick={handleGoogleCalendarDisconnect}
+                  disabled={isGoogleCalendarBusy}
+                >
+                  Disconnect
+                </button>
+              ) : null}
+            </div>
+
+            <div className="text-muted small mb-3">
+              {googleCalendar?.connected
+                ? "Your plan changes will also sync to your Google Calendar."
+                : googleCalendar?.enabled
+                  ? "Connect Google Calendar to mirror these events in your personal calendar."
+                  : "Google Calendar is not configured for this environment yet."}
+            </div>
+
             <StatusAlert variant="warning">{calendarMsg}</StatusAlert>
+            <StatusAlert variant="info">{googleCalendarMsg}</StatusAlert>
             {calendar ? <Calendar result={calendar} /> : null}
           </div>
         </div>

@@ -242,6 +242,24 @@ export const api = {
     return data;
   },
 
+  async getGoogleCalendarStatus() {
+    return await fetchJSON("/google/calendar/status", { method: "GET" });
+  },
+
+  async startGoogleCalendarConnect() {
+    return await fetchJSON("/google/calendar/connect", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
+
+  async disconnectGoogleCalendar() {
+    return await fetchJSON("/google/calendar/disconnect", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
+
   async sendNudge({ tone, goal }) {
     return await fetchJSON("/nudge/send", {
       method: "POST",
