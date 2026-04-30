@@ -134,7 +134,12 @@ def _google_access_token_for_user(user_id: str) -> str | None:
     expires_at = token.get("expires_at")
     if expires_at:
         try:
-            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            if isinstance(expires_at, datetime):
+                expiry = expires_at
+                if expiry.tzinfo is None:
+                    expiry = expiry.replace(tzinfo=timezone.utc)
+            else:
+                expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
             if expiry > datetime.now(timezone.utc) + timedelta(seconds=60):
                 return token.get("access_token")
         except ValueError:
