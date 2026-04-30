@@ -392,6 +392,7 @@ export default function App() {
     Boolean(initialSettings.authToken),
   );
   const [managedClients, setManagedClients] = useState([]);
+  const [viewedAccount, setViewedAccount] = useState(initialSettings.currentUser || null);
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientPassword, setClientPassword] = useState("");
@@ -942,7 +943,10 @@ export default function App() {
       const data = await api.checkUser(uid);
       if (data.exists) {
         hydrateSavedUser(data);
-        setStage(data.plan ? "results" : "quiz");
+        setViewedAccount(data.account || null);
+        const isManagedClientView =
+          currentUser?.role === "dietitian" && uid !== currentUser.user_id;
+        setStage(isManagedClientView ? "results" : data.plan ? "results" : "quiz");
       } else {
         startQuiz();
       }
@@ -1011,6 +1015,7 @@ export default function App() {
 
       saveAuthSession({ token: response.token, user: response.user });
       setCurrentUser(response.user);
+      setViewedAccount(response.user);
       setUserId(response.user.user_id);
       setAuthEmail(response.user.email || authEmail.trim());
       setAuthName(response.user.display_name || authName.trim());
@@ -1037,6 +1042,7 @@ export default function App() {
     }
     clearAuthSession();
     setCurrentUser(null);
+    setViewedAccount(null);
     setUserId("");
     setAuthPassword("");
     setManagedClients([]);
@@ -1060,6 +1066,7 @@ export default function App() {
         if (cancelled) return;
         saveAuthSession({ token, user: res.user });
         setCurrentUser(res.user);
+        setViewedAccount(res.user);
         setUserId(res.user.user_id);
         setAuthEmail(res.user.email || "");
         setAuthName(res.user.display_name || "");
@@ -1130,6 +1137,11 @@ export default function App() {
     await loadAccountData(currentUser.user_id);
   }
 
+  const isReadOnlyClientView =
+    currentUser?.role === "dietitian" &&
+    viewedAccount?.user_id &&
+    viewedAccount.user_id !== currentUser.user_id;
+
   return (
     <div className="app-shell">
       {/* Top Bar */}
@@ -1178,9 +1190,13 @@ export default function App() {
                     <button
                       className="btn btn-primary btn-lg fw-bold"
                       onClick={startQuiz}
-                      disabled={!currentUser || isRestoringSession}
+                      disabled={!currentUser || isRestoringSession || isReadOnlyClientView}
                     >
-                      {currentUser ? "Start Quiz" : "Sign in to Start"}
+                      {!currentUser
+                        ? "Sign in to Start"
+                        : isReadOnlyClientView
+                          ? "Client Must Log In"
+                          : "Start Quiz"}
                     </button>
                     <button
                       className="btn btn-outline-light btn-lg"
@@ -1233,12 +1249,18 @@ export default function App() {
                         <div className="account-summary-meta text-capitalize">
                           Role: {currentUser.role || "user"}
                         </div>
+                        {currentUser.role === "user" && currentUser.managed_by ? (
+                          <div className="account-summary-meta">
+                            Under dietitian:{" "}
+                            {currentUser.managed_by.display_name || currentUser.managed_by.email}
+                          </div>
+                        ) : null}
                         <div className="account-summary-meta">
                           ID: <code className="code-soft">{userId}</code>
                         </div>
                         {currentUser.role === "dietitian" && userId !== currentUser.user_id ? (
                           <div className="account-summary-meta">
-                            Planning for client account
+                            Viewing client account: {viewedAccount?.display_name || viewedAccount?.email || userId}
                           </div>
                         ) : null}
                       </div>
@@ -2642,6 +2664,8 @@ export default function App() {
           setStage={setStage}
           isPlanning={isPlanning}
           handlePlanToday={handlePlanToday}
+          isReadOnlyClientView={isReadOnlyClientView}
+          viewedAccount={viewedAccount}
           eventId={eventId}
           setEventId={setEventId}
           rating={rating}

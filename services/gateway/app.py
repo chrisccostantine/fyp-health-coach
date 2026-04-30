@@ -21,6 +21,7 @@ from services.common.storage import (
     get_google_calendar_token,
     get_auth_session,
     get_auth_user_by_email,
+    get_auth_user_by_id,
     is_managed_by,
     get_latest_plan,
     list_managed_auth_users,
@@ -53,13 +54,23 @@ init_db()
 
 
 def _serialize_auth_user(user: dict):
-    return {
+    payload = {
         "user_id": user["user_id"],
         "email": user["email"],
         "display_name": user.get("display_name") or "",
         "role": user.get("role") or "user",
         "managed_by_user_id": user.get("managed_by_user_id"),
     }
+    manager_user_id = user.get("managed_by_user_id")
+    if manager_user_id:
+        manager = get_auth_user_by_id(manager_user_id)
+        if manager:
+            payload["managed_by"] = {
+                "user_id": manager["user_id"],
+                "email": manager["email"],
+                "display_name": manager.get("display_name") or "",
+            }
+    return payload
 
 
 def _get_token_from_request():
@@ -101,6 +112,20 @@ def _resolve_target_user_id(session: dict | None, requested_user_id: str | None)
     if (session.get("role") or "user") == "dietitian" and is_managed_by(own_user_id, target_user_id):
         return target_user_id
 
+    return None
+
+
+def _resolve_view_user_id(session: dict | None, requested_user_id: str | None):
+    return _resolve_target_user_id(session, requested_user_id)
+
+
+def _resolve_write_user_id(session: dict | None, requested_user_id: str | None):
+    if not session:
+        return requested_user_id or "anon"
+    own_user_id = session["user_id"]
+    target_user_id = (requested_user_id or own_user_id or "").strip() or own_user_id
+    if target_user_id == own_user_id:
+        return target_user_id
     return None
 
 
@@ -608,9 +633,9 @@ def plan_today():
     payload = request.get_json(force=True)
     try:
         session = _get_current_session()
-        user_id = _resolve_target_user_id(session, payload.get("user_id", "anon"))
+        user_id = _resolve_write_user_id(session, payload.get("user_id", "anon"))
         if user_id is None:
-            return jsonify({"error": "Forbidden"}), 403
+            return jsonify({"error": "Only the client can generate or update this plan."}), 403
         profile = UserProfile(**payload.get("profile", {}))
         goal = Goal(**payload.get("goal", {}))
     except ValidationError as e:
@@ -658,9 +683,9 @@ def plan_today():
 def diet_chat():
     body = request.get_json(force=True)
     session = _get_current_session()
-    user_id = _resolve_target_user_id(session, body.get("user_id", "anon"))
+    user_id = _resolve_write_user_id(session, body.get("user_id", "anon"))
     if user_id is None:
-        return jsonify({"error": "Forbidden"}), 403
+        return jsonify({"error": "Only the client can update this plan."}), 403
     res = requests.post(f"{DIET_URL}/diet/chat", json=body, timeout=30)
     data = res.json()
     updated_plan = data.get("updated_plan")
@@ -675,9 +700,9 @@ def diet_chat():
 def exercise_chat():
     body = request.get_json(force=True)
     session = _get_current_session()
-    user_id = _resolve_target_user_id(session, body.get("user_id", "anon"))
+    user_id = _resolve_write_user_id(session, body.get("user_id", "anon"))
     if user_id is None:
-        return jsonify({"error": "Forbidden"}), 403
+        return jsonify({"error": "Only the client can update this plan."}), 403
     res = requests.post(f"{EXERCISE_URL}/exercise/chat", json=body, timeout=30)
     data = res.json()
     updated_plan = data.get("updated_plan")
@@ -692,7 +717,7 @@ def exercise_chat():
 def calendar_list():
     session = _get_current_session()
     requested_user_id = request.args.get("user_id", "anon")
-    user_id = _resolve_target_user_id(session, requested_user_id)
+    user_id = _resolve_view_user_id(session, requested_user_id)
     if user_id is None:
         return jsonify({"error": "Forbidden"}), 403
     data = _list_calendar(user_id)
@@ -705,9 +730,9 @@ def calendar_list():
 def calendar_sync():
     body = request.get_json(force=True)
     session = _get_current_session()
-    user_id = _resolve_target_user_id(session, body.get("user_id", "anon"))
+    user_id = _resolve_write_user_id(session, body.get("user_id", "anon"))
     if user_id is None:
-        return jsonify({"error": "Forbidden"}), 403
+        return jsonify({"error": "Only the client can sync or update this calendar."}), 403
     plan = body.get("plan")
     if not isinstance(plan, dict):
         plan = get_latest_plan(user_id)
@@ -735,7 +760,7 @@ def nudge_send():
 @app.get("/user/<user_id>")
 def get_user_route(user_id):
     session = _get_current_session()
-    target_user_id = _resolve_target_user_id(session, user_id)
+    target_user_id = _resolve_view_user_id(session, user_id)
     if session and target_user_id is None:
         return jsonify({"error": "Forbidden"}), 403
 
@@ -744,15 +769,25 @@ def get_user_route(user_id):
         return jsonify({"exists": False})
     plan = get_latest_plan(target_user_id or user_id)
     calendar = _list_calendar(target_user_id or user_id)
-    return jsonify({"exists": True, **data, "plan": plan, "calendar": calendar, "user_id": target_user_id or user_id})
+    target_auth_user = get_auth_user_by_id(target_user_id or user_id)
+    return jsonify(
+        {
+            "exists": True,
+            **data,
+            "plan": plan,
+            "calendar": calendar,
+            "user_id": target_user_id or user_id,
+            "account": _serialize_auth_user(target_auth_user) if target_auth_user else None,
+        }
+    )
 
 
 @app.post("/user/<user_id>/profile")
 def save_user_profile(user_id):
     session = _get_current_session()
-    target_user_id = _resolve_target_user_id(session, user_id)
+    target_user_id = _resolve_write_user_id(session, user_id)
     if session and target_user_id is None:
-        return jsonify({"error": "Forbidden"}), 403
+        return jsonify({"error": "Only the client can update this profile."}), 403
 
     body = request.get_json(force=True)
     upsert_user(

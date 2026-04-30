@@ -40,6 +40,8 @@ export default function ResultsSection({
   setStage,
   isPlanning,
   handlePlanToday,
+  isReadOnlyClientView,
+  viewedAccount,
 
   // feedback
   eventId,
@@ -113,6 +115,12 @@ export default function ResultsSection({
                 <div className="text-muted">
                   Nutrition, training, calendar, and coaching in one view.
                 </div>
+                {isReadOnlyClientView && viewedAccount ? (
+                  <div className="alert alert-info mt-3 mb-0 small">
+                    Viewing {viewedAccount.display_name || viewedAccount.email}'s plan in read-only mode.
+                    Only the client account can generate or change this plan.
+                  </div>
+                ) : null}
               </div>
 
               <div className="results-actions">
@@ -120,6 +128,7 @@ export default function ResultsSection({
                   className="btn btn-outline-light"
                   type="button"
                   onClick={() => setStage("quiz")}
+                  disabled={isReadOnlyClientView}
                 >
                   Edit Quiz
                 </button>
@@ -128,7 +137,7 @@ export default function ResultsSection({
                   className="btn btn-primary fw-bold"
                   type="button"
                   onClick={() => handlePlanToday({ autoGoResults: false })}
-                  disabled={isPlanning}
+                  disabled={isPlanning || isReadOnlyClientView}
                 >
                   {isPlanning ? (
                     <Loading label="Refreshing..." />
@@ -150,8 +159,9 @@ export default function ResultsSection({
                   className="btn btn-primary fw-bold"
                   type="button"
                   onClick={() => setStage("quiz")}
+                  disabled={isReadOnlyClientView}
                 >
-                  Start Quiz
+                  {isReadOnlyClientView ? "Client Must Log In" : "Start Quiz"}
                 </button>
               </div>
             ) : (
@@ -290,17 +300,23 @@ export default function ResultsSection({
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleDietChat();
                       }}
+                      disabled={isReadOnlyClientView}
                     />
                     <button
                       className="btn btn-primary fw-bold"
                       type="button"
                       onClick={handleDietChat}
-                      disabled={isDietChatting}
+                      disabled={isDietChatting || isReadOnlyClientView}
                     >
                       {isDietChatting ? <Loading label="Sending..." /> : "Send"}
                     </button>
                   </div>
 
+                  {isReadOnlyClientView ? (
+                    <StatusAlert variant="info">
+                      Dietitians can review client plans here, but only the client can change meals or workouts.
+                    </StatusAlert>
+                  ) : null}
                   <StatusAlert variant="warning">{dietChatMsg}</StatusAlert>
                 </div>
               </>
