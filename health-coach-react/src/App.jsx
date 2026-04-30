@@ -732,7 +732,7 @@ export default function App() {
     let cancelled = false;
     api
       .getGoogleCalendarStatus()
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return;
         const nextStatus = {
           enabled: Boolean(data?.enabled),
@@ -741,6 +741,18 @@ export default function App() {
         setGoogleCalendar(nextStatus);
         if (nextStatus.connected) {
           setGoogleCalendarMsg("");
+          if (plan) {
+            try {
+              const nextCalendar = await api.syncCalendar(plan);
+              if (cancelled) return;
+              setCalendar(nextCalendar);
+              cacheCalendar(nextCalendar);
+              setCalendarMsg("");
+            } catch (e) {
+              if (cancelled) return;
+              setCalendarMsg(`Error: ${e.message}`);
+            }
+          }
         }
       })
       .catch(() => {
@@ -751,7 +763,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [stage, currentUser]);
+  }, [stage, currentUser, plan]);
 
   async function handleGoogleCalendarConnect() {
     if (!currentUser) {
