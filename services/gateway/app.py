@@ -245,7 +245,6 @@ def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], spa
     today = datetime.now(_safe_zoneinfo(APP_TIMEZONE)).date()
     base_meals = _copy_plan_items(meals)
     base_workouts = _copy_plan_items(workouts)
-    workout_pattern = [0, None, 1, None, 0, 1, None]
     plan_days = []
 
     for offset in range(max(1, span_days)):
@@ -260,10 +259,8 @@ def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], spa
 
         day_workouts = []
         if base_workouts:
-            chosen = workout_pattern[offset % len(workout_pattern)]
-            if chosen is not None:
-                template = base_workouts[chosen % len(base_workouts)]
-                day_workouts = [dict(template)]
+            template = base_workouts[offset % len(base_workouts)]
+            day_workouts = [dict(template)]
 
         plan_days.append(
             {
