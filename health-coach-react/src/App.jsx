@@ -1404,6 +1404,43 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (stage !== "privateChat" || !currentUser || !activeChatPartner?.user_id) return;
+
+    let cancelled = false;
+
+    const refreshMessages = async ({ quiet = false } = {}) => {
+      if (!quiet) setPrivateChatMsg("");
+      try {
+        const data = await api.getPrivateMessages(activeChatPartner.user_id);
+        if (cancelled) return;
+        setActiveChatPartner(data?.partner || activeChatPartner);
+        setPrivateMessages(Array.isArray(data?.messages) ? data.messages : []);
+      } catch (e) {
+        if (cancelled || quiet) return;
+        setPrivateChatMsg(`Error: ${e.message}`);
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      refreshMessages({ quiet: true });
+    }, 3000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshMessages({ quiet: true });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [stage, currentUser, activeChatPartner?.user_id]);
+
   async function handleSelectManagedClient(client) {
     if (!client?.user_id) return;
     await loadAccountData(client.user_id, { targetStage: "results" });
