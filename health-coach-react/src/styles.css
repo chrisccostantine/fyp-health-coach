@@ -1246,6 +1246,19 @@ pre.out {
   display:flex;
   gap:10px;
   align-items:center;
+  flex-wrap: wrap;
+}
+
+.results-action-btn{
+  min-height: 56px;
+  min-width: 178px;
+  padding: 0.85rem 1.2rem !important;
+  border-radius: 16px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .results-summary{

@@ -165,7 +165,7 @@ export default function ResultsSection({
 
               <div className="results-actions">
                 <button
-                  className="btn btn-outline-light"
+                  className="btn btn-outline-light results-action-btn"
                   type="button"
                   onClick={() => setStage("quiz")}
                   disabled={isReadOnlyClientView}
@@ -174,7 +174,7 @@ export default function ResultsSection({
                 </button>
 
                 <button
-                  className="btn btn-primary fw-bold"
+                  className="btn btn-primary fw-bold results-action-btn"
                   type="button"
                   onClick={() => handlePlanToday({ autoGoResults: false })}
                   disabled={isPlanning || isReadOnlyClientView}
