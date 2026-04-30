@@ -2472,9 +2472,33 @@ export default function App() {
       </div>
 
       <footer className="text-center pb-4 pt-4">
-        <small className="text-muted">
-          Done By: Anthony, Chris, Omar, Zaed
-        </small>
+        <div className="d-flex justify-content-center flex-wrap gap-3 mb-2">
+          <a
+            className="text-decoration-none text-muted"
+            href="/privacy.html"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Privacy Policy
+          </a>
+          <a
+            className="text-decoration-none text-muted"
+            href="/terms.html"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Terms of Service
+          </a>
+          <a
+            className="text-decoration-none text-muted"
+            href="/support.html"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Support
+          </a>
+        </div>
+        <small className="text-muted">Done By: Anthony, Chris, Omar, Zaed</small>
       </footer>
     </div>
   );
