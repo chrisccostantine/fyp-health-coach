@@ -1,4 +1,5 @@
 import os
+import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
@@ -179,7 +180,7 @@ def _google_headers(user_id: str):
     }
 
 
-def _google_error_payload(prefix: str, response=None, detail: str | None = None):
+def _google_error_payload(prefix: str, response=None, detail: str | None = None, debug: str | None = None):
     message = prefix
     if detail:
         message = f"{prefix}: {detail}"
@@ -195,7 +196,10 @@ def _google_error_payload(prefix: str, response=None, detail: str | None = None)
             detail = response.text.strip() or response.reason
         if detail:
             message = f"{prefix}: {detail}"
-    return {"connected": False, "error": message}
+    payload = {"connected": False, "error": message}
+    if debug:
+        payload["debug"] = debug
+    return payload
 
 
 def _google_event_body(user_id: str, event: dict):
@@ -278,26 +282,43 @@ def _sync_google_calendar_for_user(user_id: str, events: list[dict]):
                     )
 
         created = []
-        for event in events:
+        for idx, event in enumerate(events):
+            try:
+                google_event = _google_event_body(user_id, event)
+            except Exception as exc:
+                return _google_error_payload(
+                    f"Google Calendar event build failed for event {idx + 1}",
+                    detail=str(exc),
+                    debug=traceback.format_exc(limit=3),
+                )
+
             insert_res = requests.post(
                 GOOGLE_CALENDAR_EVENTS_URL,
                 headers=headers,
-                json=_google_event_body(user_id, event),
+                json=google_event,
                 timeout=20,
             )
             if insert_res.status_code not in {200, 201}:
                 return _google_error_payload(
-                    "Google Calendar event creation failed",
+                    f"Google Calendar event creation failed for event {idx + 1}",
                     response=insert_res,
                 )
             created.append(insert_res.json().get("id"))
         return {"connected": True, "created": len(created)}
     except requests.RequestException as exc:
         app.logger.exception("Google Calendar sync request failed for user %s", user_id)
-        return _google_error_payload("Google Calendar sync request failed", detail=str(exc))
+        return _google_error_payload(
+            "Google Calendar sync request failed",
+            detail=str(exc),
+            debug=traceback.format_exc(limit=3),
+        )
     except Exception as exc:
         app.logger.exception("Unexpected Google Calendar sync failure for user %s", user_id)
-        return _google_error_payload("Google Calendar sync failed", detail=str(exc))
+        return _google_error_payload(
+            "Google Calendar sync failed",
+            detail=str(exc),
+            debug=traceback.format_exc(limit=5),
+        )
 
 
 def _sync_calendar_for_plan(user_id: str, plan: dict):
