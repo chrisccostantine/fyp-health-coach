@@ -893,6 +893,10 @@ export default function App() {
       setCheckUserMsg("Create an account or log in to continue.");
       return;
     }
+    if (isReadOnlyClientView) {
+      setCheckUserMsg("Only the client can edit their profile or generate a plan.");
+      return;
+    }
     setStage("quiz");
     setStep(ACTIVE_QUIZ_STEPS[0]);
     setPlanMsg("");
@@ -941,14 +945,22 @@ export default function App() {
       setUserId(uid);
       saveSettings({ userId: uid });
       const data = await api.checkUser(uid);
+      const isManagedClientView =
+        currentUser?.role === "dietitian" && uid !== currentUser.user_id;
       if (data.exists) {
         hydrateSavedUser(data);
         setViewedAccount(data.account || null);
-        const isManagedClientView =
-          currentUser?.role === "dietitian" && uid !== currentUser.user_id;
         setStage(isManagedClientView ? "results" : data.plan ? "results" : "quiz");
       } else {
-        startQuiz();
+        setViewedAccount(data.account || null);
+        setPlan(null);
+        setCalendar(null);
+        if (isManagedClientView) {
+          setStage("results");
+          setCheckUserMsg("This client has not created a profile or plan yet. Only the client can do that from their own account.");
+        } else {
+          startQuiz();
+        }
       }
     } catch (e) {
       setCheckUserMsg(`Error: ${e.message}`);
