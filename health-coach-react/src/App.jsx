@@ -221,6 +221,32 @@ function describeGoogleCalendarSync(syncResult) {
   return "";
 }
 
+function feedbackRatingForStatus(status) {
+  switch (status) {
+    case "completed":
+      return 5;
+    case "partial":
+      return 3;
+    case "skipped":
+      return 1;
+    default:
+      return 4;
+  }
+}
+
+function feedbackReasonPrefix(status) {
+  switch (status) {
+    case "completed":
+      return "completed";
+    case "partial":
+      return "partly completed";
+    case "skipped":
+      return "skipped";
+    default:
+      return "checked in";
+  }
+}
+
 function OptionCard({ title, subtitle, active, onClick }) {
   return (
     <button
@@ -834,8 +860,8 @@ export default function App() {
   // ------- Feedback -------
   const [eventId, setEventId] = useState("");
   const [rating, setRating] = useState(5);
-  const [reason, setReason] = useState("felt great");
-  const [banditArm, setBanditArm] = useState("");
+  const [reason, setReason] = useState("");
+  const [feedbackStatus, setFeedbackStatus] = useState("completed");
   const [feedbackOut, setFeedbackOut] = useState("");
   const [isFeedback, setIsFeedback] = useState(false);
 
@@ -844,16 +870,23 @@ export default function App() {
     setFeedbackOut("");
     try {
       if (!eventId.trim()) throw new Error("Event ID is required.");
-      const r = Math.max(1, Math.min(5, +rating || 5));
+      const r = feedbackRatingForStatus(feedbackStatus);
+      const reasonPrefix = feedbackReasonPrefix(feedbackStatus);
+      const cleanReason = reason?.trim();
+      const finalReason = cleanReason ? `${reasonPrefix}: ${cleanReason}` : reasonPrefix;
 
       const data = await api.submitFeedback({
         event_id: eventId.trim(),
         rating: r,
-        reason: reason?.trim() || "ok",
-        bandit_arm: banditArm || undefined,
+        reason: finalReason,
       });
 
-      setFeedbackOut(JSON.stringify(data, null, 2));
+      setRating(r);
+      setFeedbackOut(
+        data?.ok
+          ? "Check-in saved. We will use this to improve future plans and reminders."
+          : "Feedback submitted.",
+      );
     } catch (e) {
       setFeedbackOut(`Error: ${e.message}`);
     } finally {
@@ -861,13 +894,15 @@ export default function App() {
     }
   }
 
-  async function copyFeedback() {
-    try {
-      await navigator.clipboard.writeText(feedbackOut || "");
-    } catch {
-      // ignore
-    }
-  }
+  const coachToolFeedbackItems = useMemo(() => {
+    const events = Array.isArray(calendar?.events) ? calendar.events : [];
+    return events.filter((item) => item?.id && (item?.type === "meal" || item?.type === "workout"));
+  }, [calendar]);
+
+  const selectedFeedbackItem = useMemo(
+    () => coachToolFeedbackItems.find((item) => item.id === eventId) || null,
+    [coachToolFeedbackItems, eventId],
+  );
 
   const pingBadge = useMemo(() => {
     if (ping == null)
@@ -1726,73 +1761,96 @@ export default function App() {
               <div className="card card-soft">
                 <div className="card-body p-4">
                   <h2 className="h5 panel-title mb-3">Feedback</h2>
-                  <p className="text-muted mb-3">Use an event ID from the calendar to submit feedback.</p>
+                  <p className="text-muted mb-3">
+                    Check in on today&apos;s meals and workouts so the system can adapt future plans around what actually works for you.
+                  </p>
 
-                  <div className="row g-3">
-                    <div className="col-md-12">
-                      <label className="form-label">Event ID</label>
-                      <input
-                        className="form-control"
-                        value={eventId}
-                        onChange={(e) => setEventId(e.target.value)}
-                      />
+                  {coachToolFeedbackItems.length === 0 ? (
+                    <div className="feedback-empty">
+                      No meal or workout items are available yet. Generate a plan first, then come back here to log how the day went.
                     </div>
+                  ) : (
+                    <>
+                      <div className="feedback-section-label">Choose an item</div>
+                      <div className="feedback-item-list mb-3">
+                        {coachToolFeedbackItems.map((item) => {
+                          const selected = eventId === item.id;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className={`feedback-item-card ${selected ? "active" : ""}`}
+                              onClick={() => setEventId(item.id)}
+                            >
+                              <div className="feedback-item-top">
+                                <span className="feedback-item-type">
+                                  {item.type === "meal" ? "Meal" : "Workout"}
+                                </span>
+                                <span className="feedback-item-time">
+                                  {fmtIso(item.starts_at || item.when)}
+                                </span>
+                              </div>
+                              <div className="feedback-item-title">
+                                {item.title || (item.type === "meal" ? "Meal" : "Workout")}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                    <div className="col-md-4">
-                      <label className="form-label">Rating</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={5}
-                        className="form-control"
-                        value={rating}
-                        onChange={(e) => setRating(e.target.value)}
-                      />
-                    </div>
+                      <div className="feedback-section-label">How did it go?</div>
+                      <div className="feedback-status-grid mb-3">
+                        {[
+                          ["completed", "Completed", "I followed the plan"],
+                          ["partial", "Partly completed", "I only did some of it"],
+                          ["skipped", "Skipped", "I could not do it today"],
+                        ].map(([key, title, subtitle]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            className={`feedback-status-card ${feedbackStatus === key ? "active" : ""}`}
+                            onClick={() => setFeedbackStatus(key)}
+                          >
+                            <div className="feedback-status-title">{title}</div>
+                            <div className="feedback-status-sub">{subtitle}</div>
+                          </button>
+                        ))}
+                      </div>
 
-                    <div className="col-md-8">
-                      <label className="form-label">Reason</label>
-                      <input
-                        className="form-control"
-                        value={reason}
-                        onChange={(e) => setReason(e.target.value)}
-                      />
-                    </div>
+                      <div className="row g-3">
+                        <div className="col-12">
+                          <label className="form-label">Optional note</label>
+                          <input
+                            className="form-control"
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            placeholder="Too busy, felt strong, wanted a different meal, prefer a later workout..."
+                          />
+                        </div>
+                      </div>
 
-                    <div className="col-md-12">
-                      <label className="form-label">Bandit Arm (optional)</label>
-                      <select
-                        className="form-select"
-                        value={banditArm}
-                        onChange={(e) => setBanditArm(e.target.value)}
-                      >
-                        <option value="">(none)</option>
-                        <option value="coach">coach</option>
-                        <option value="friendly">friendly</option>
-                      </select>
-                    </div>
-                  </div>
+                      {selectedFeedbackItem ? (
+                        <div className="feedback-selected-note mt-3">
+                          You are checking in for <strong>{selectedFeedbackItem.title || "this item"}</strong>.
+                        </div>
+                      ) : null}
+                    </>
+                  )}
 
                   <div className="d-flex gap-2 mt-3">
                     <button
                       className="btn btn-primary fw-bold"
                       type="button"
                       onClick={handleFeedback}
-                      disabled={isFeedback}
+                      disabled={isFeedback || coachToolFeedbackItems.length === 0 || !eventId}
                     >
-                      {isFeedback ? <Spinner label="Submitting..." /> : "Submit"}
-                    </button>
-                    <button
-                      className="btn btn-outline-light"
-                      type="button"
-                      onClick={copyFeedback}
-                      disabled={!feedbackOut || String(feedbackOut).startsWith("Submitting")}
-                    >
-                      Copy Output
+                      {isFeedback ? <Spinner label="Saving..." /> : "Save Check-In"}
                     </button>
                   </div>
 
-                  <pre className="out mt-3">{feedbackOut}</pre>
+                  <Alert variant={String(feedbackOut).startsWith("Error:") ? "warning" : "success"}>
+                    {feedbackOut}
+                  </Alert>
                 </div>
               </div>
             </div>
@@ -2994,12 +3052,9 @@ export default function App() {
           setRating={setRating}
           reason={reason}
           setReason={setReason}
-          banditArm={banditArm}
-          setBanditArm={setBanditArm}
           isFeedback={isFeedback}
           handleFeedback={handleFeedback}
           feedbackOut={feedbackOut}
-          copyFeedback={copyFeedback}
           calendar={calendar}
           calendarMsg={calendarMsg}
           googleCalendar={googleCalendar}
