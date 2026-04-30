@@ -828,6 +828,12 @@ export default function App() {
   const [nudge, setNudge] = useState(null);
   const [nudgeMsg, setNudgeMsg] = useState("");
   const [isNudging, setIsNudging] = useState(false);
+  const [nudgeAutomationEnabled, setNudgeAutomationEnabled] = useState(false);
+  const [nudgeSendTime, setNudgeSendTime] = useState("08:00");
+  const [nudgeTimezone, setNudgeTimezone] = useState(
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  );
+  const [isSavingNudgeSettings, setIsSavingNudgeSettings] = useState(false);
 
   async function handleNudge() {
     setIsNudging(true);
@@ -994,6 +1000,55 @@ export default function App() {
       setManagedClients(Array.isArray(data?.clients) ? data.clients : []);
     } catch (e) {
       if (!quiet) setClientMsg(`Error: ${e.message}`);
+    }
+  }
+
+  useEffect(() => {
+    if (stage !== "coachTools" || !currentUser || currentUser.role === "dietitian") return;
+    let cancelled = false;
+    api
+      .getNudgeSettings()
+      .then((data) => {
+        if (cancelled) return;
+        const settings = data?.settings || {};
+        setNudgeAutomationEnabled(Boolean(settings.enabled));
+        setTone(settings.tone || "coach");
+        setGoalText(settings.goal_text || "stay_consistent");
+        setNudgeSendTime(settings.send_time || "08:00");
+        setNudgeTimezone(settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [stage, currentUser]);
+
+  async function handleSaveNudgeAutomation() {
+    setIsSavingNudgeSettings(true);
+    setNudgeMsg("");
+    try {
+      const data = await api.saveNudgeSettings({
+        enabled: nudgeAutomationEnabled,
+        tone,
+        goal_text: goalText.trim() || "stay_consistent",
+        send_time: nudgeSendTime,
+        timezone: nudgeTimezone,
+      });
+      const settings = data?.settings || {};
+      setNudgeAutomationEnabled(Boolean(settings.enabled));
+      setTone(settings.tone || "coach");
+      setGoalText(settings.goal_text || "stay_consistent");
+      setNudgeSendTime(settings.send_time || "08:00");
+      setNudgeTimezone(settings.timezone || nudgeTimezone);
+      setNudgeMsg(
+        settings.enabled
+          ? `Automatic email nudges are enabled for ${settings.send_time} (${settings.timezone}).`
+          : "Automatic email nudges are disabled.",
+      );
+    } catch (e) {
+      setNudgeMsg(`Error: ${e.message}`);
+    } finally {
+      setIsSavingNudgeSettings(false);
     }
   }
 
@@ -1638,6 +1693,21 @@ export default function App() {
 
                   <div className="row g-3">
                     <div className="col-12">
+                      <div className="form-check form-switch">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          id="auto-nudge-toggle"
+                          checked={nudgeAutomationEnabled}
+                          onChange={(e) => setNudgeAutomationEnabled(e.target.checked)}
+                        />
+                        <label className="form-check-label ms-2" htmlFor="auto-nudge-toggle">
+                          Enable automatic daily email nudges
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="col-12">
                       <label className="form-label">Tone</label>
                       <select
                         className="form-select"
@@ -1658,16 +1728,46 @@ export default function App() {
                         placeholder="stay_consistent"
                       />
                     </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label">Send Time</label>
+                      <input
+                        className="form-control"
+                        type="time"
+                        value={nudgeSendTime}
+                        onChange={(e) => setNudgeSendTime(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="col-md-6">
+                      <label className="form-label">Timezone</label>
+                      <input
+                        className="form-control"
+                        value={nudgeTimezone}
+                        onChange={(e) => setNudgeTimezone(e.target.value)}
+                        placeholder="Asia/Beirut"
+                      />
+                    </div>
                   </div>
 
-                  <button
-                    className="btn btn-primary fw-bold w-100 mt-3"
-                    type="button"
-                    onClick={handleNudge}
-                    disabled={isNudging}
-                  >
-                    {isNudging ? <Spinner label="Sending..." /> : "Send Nudge"}
-                  </button>
+                  <div className="d-flex gap-2 mt-3">
+                    <button
+                      className="btn btn-primary fw-bold flex-grow-1"
+                      type="button"
+                      onClick={handleNudge}
+                      disabled={isNudging}
+                    >
+                      {isNudging ? <Spinner label="Sending..." /> : "Send Nudge Now"}
+                    </button>
+                    <button
+                      className="btn btn-outline-light"
+                      type="button"
+                      onClick={handleSaveNudgeAutomation}
+                      disabled={isSavingNudgeSettings}
+                    >
+                      {isSavingNudgeSettings ? <Spinner label="Saving..." /> : "Save Automation"}
+                    </button>
+                  </div>
 
                   <Alert variant="warning">{nudgeMsg}</Alert>
                   {nudge ? <NudgeView result={nudge} tone={tone} goal={goalText} /> : null}

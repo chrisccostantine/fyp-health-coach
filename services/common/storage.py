@@ -104,6 +104,17 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
     user_id TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS user_nudge_settings (
+    user_id TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 0,
+    tone TEXT DEFAULT 'coach',
+    goal_text TEXT DEFAULT 'stay_consistent',
+    send_time TEXT DEFAULT '08:00',
+    timezone TEXT DEFAULT 'UTC',
+    last_sent_on TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 '''
 
 SCHEMA_POSTGRES = '''
@@ -180,6 +191,17 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
     state TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS user_nudge_settings (
+    user_id TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 0,
+    tone TEXT DEFAULT 'coach',
+    goal_text TEXT DEFAULT 'stay_consistent',
+    send_time TEXT DEFAULT '08:00',
+    timezone TEXT DEFAULT 'UTC',
+    last_sent_on TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 '''
 
@@ -515,3 +537,83 @@ def consume_google_oauth_state(state: str):
                 {"state": state},
             )
     return dict(row) if row else None
+
+def upsert_nudge_settings(
+    user_id: str,
+    *,
+    enabled: bool,
+    tone: str,
+    goal_text: str,
+    send_time: str,
+    timezone: str,
+):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO user_nudge_settings(
+                    user_id, enabled, tone, goal_text, send_time, timezone, updated_at
+                ) VALUES(
+                    :uid, :enabled, :tone, :goal_text, :send_time, :timezone, CURRENT_TIMESTAMP
+                )
+                ON CONFLICT(user_id) DO UPDATE SET
+                    enabled=excluded.enabled,
+                    tone=excluded.tone,
+                    goal_text=excluded.goal_text,
+                    send_time=excluded.send_time,
+                    timezone=excluded.timezone,
+                    updated_at=CURRENT_TIMESTAMP
+            """),
+            {
+                "uid": user_id,
+                "enabled": 1 if enabled else 0,
+                "tone": tone,
+                "goal_text": goal_text,
+                "send_time": send_time,
+                "timezone": timezone,
+            },
+        )
+
+def get_nudge_settings(user_id: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT user_id, enabled, tone, goal_text, send_time, timezone, last_sent_on
+                FROM user_nudge_settings
+                WHERE user_id = :uid
+            """),
+            {"uid": user_id},
+        ).mappings().first()
+    if not row:
+        return None
+    payload = dict(row)
+    payload["enabled"] = bool(payload.get("enabled"))
+    return payload
+
+def list_all_nudge_settings():
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT user_id, enabled, tone, goal_text, send_time, timezone, last_sent_on
+                FROM user_nudge_settings
+                WHERE enabled = 1
+                ORDER BY updated_at ASC, user_id ASC
+            """)
+        ).mappings().all()
+    payloads = []
+    for row in rows:
+        payload = dict(row)
+        payload["enabled"] = bool(payload.get("enabled"))
+        payloads.append(payload)
+    return payloads
+
+def mark_nudge_sent(user_id: str, sent_on: str):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                UPDATE user_nudge_settings
+                SET last_sent_on = :sent_on,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = :uid
+            """),
+            {"uid": user_id, "sent_on": sent_on},
+        )

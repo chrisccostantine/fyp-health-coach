@@ -3,6 +3,7 @@ import traceback
 import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import requests
 from flask import Flask, jsonify, redirect, request
@@ -22,14 +23,18 @@ from services.common.storage import (
     get_auth_session,
     get_auth_user_by_email,
     get_auth_user_by_id,
+    get_nudge_settings,
     is_managed_by,
     get_latest_plan,
     list_managed_auth_users,
+    list_all_nudge_settings,
+    mark_nudge_sent,
     remove_managed_auth_user,
     get_user,
     init_db,
     save_plan,
     upsert_google_calendar_token,
+    upsert_nudge_settings,
     upsert_user,
     consume_google_oauth_state,
 )
@@ -44,6 +49,7 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
 GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "").strip()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").strip()
 APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "UTC")
+NUDGE_CRON_SECRET = os.environ.get("NUDGE_CRON_SECRET", "").strip()
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_CALENDAR_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
@@ -132,6 +138,25 @@ def _resolve_write_user_id(session: dict | None, requested_user_id: str | None):
 
 def _google_calendar_enabled() -> bool:
     return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI and FRONTEND_URL)
+
+
+def _safe_zoneinfo(value: str | None) -> ZoneInfo:
+    try:
+        return ZoneInfo((value or APP_TIMEZONE or "UTC").strip() or "UTC")
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _send_nudge_via_motivation_service(*, user_id: str, email: str, name: str, tone: str, goal: str):
+    payload = {
+        "user_id": user_id,
+        "email": email,
+        "name": name,
+        "tone": tone,
+        "goal": goal,
+    }
+    res = requests.post(f"{MOTIVATION_URL}/nudge/send", json=payload, timeout=20)
+    return res
 
 
 def _frontend_redirect(status: str) -> str:
@@ -777,6 +802,101 @@ def nudge_send():
         nudge_payload["user_id"] = session["user_id"]
     res = requests.post(f"{MOTIVATION_URL}/nudge/send", json=nudge_payload)
     return jsonify(res.json()), res.status_code
+
+
+@app.get("/nudge/settings")
+def nudge_settings_get():
+    session, error = _require_auth()
+    if error:
+        return error
+    settings = get_nudge_settings(session["user_id"]) or {
+        "user_id": session["user_id"],
+        "enabled": False,
+        "tone": "coach",
+        "goal_text": "stay_consistent",
+        "send_time": "08:00",
+        "timezone": APP_TIMEZONE,
+        "last_sent_on": None,
+    }
+    return jsonify({"ok": True, "settings": settings})
+
+
+@app.post("/nudge/settings")
+def nudge_settings_save():
+    session, error = _require_auth()
+    if error:
+        return error
+    body = request.get_json(force=True)
+    enabled = bool(body.get("enabled"))
+    tone = str(body.get("tone", "coach")).strip().lower() or "coach"
+    goal_text = str(body.get("goal_text", "stay_consistent")).strip() or "stay_consistent"
+    send_time = str(body.get("send_time", "08:00")).strip() or "08:00"
+    timezone_name = str(body.get("timezone", APP_TIMEZONE)).strip() or APP_TIMEZONE
+
+    if tone not in {"coach", "friendly"}:
+        return jsonify({"error": "Tone must be 'coach' or 'friendly'."}), 400
+    if len(send_time) != 5 or send_time[2] != ":":
+        return jsonify({"error": "Send time must be in HH:MM format."}), 400
+    _safe_zoneinfo(timezone_name)
+
+    upsert_nudge_settings(
+        session["user_id"],
+        enabled=enabled,
+        tone=tone,
+        goal_text=goal_text,
+        send_time=send_time,
+        timezone=timezone_name,
+    )
+    settings = get_nudge_settings(session["user_id"])
+    return jsonify({"ok": True, "settings": settings})
+
+
+@app.post("/nudge/run-scheduled")
+def nudge_run_scheduled():
+    auth_header = request.headers.get("Authorization", "")
+    bearer = auth_header.split(" ", 1)[1].strip() if auth_header.startswith("Bearer ") else ""
+    if not NUDGE_CRON_SECRET or bearer != NUDGE_CRON_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    sent = []
+    skipped = []
+    failures = []
+    now_utc = datetime.now(timezone.utc)
+
+    for settings in list_all_nudge_settings():
+        user = get_auth_user_by_id(settings["user_id"])
+        if not user or not user.get("email"):
+            skipped.append({"user_id": settings["user_id"], "reason": "missing_user_or_email"})
+            continue
+
+        user_now = now_utc.astimezone(_safe_zoneinfo(settings.get("timezone")))
+        current_hhmm = user_now.strftime("%H:%M")
+        today = user_now.date().isoformat()
+        if settings.get("last_sent_on") == today:
+            skipped.append({"user_id": settings["user_id"], "reason": "already_sent_today"})
+            continue
+        if settings.get("send_time") != current_hhmm:
+            skipped.append({"user_id": settings["user_id"], "reason": "not_due_yet"})
+            continue
+
+        try:
+            res = _send_nudge_via_motivation_service(
+                user_id=user["user_id"],
+                email=user["email"],
+                name=user.get("display_name") or user["email"],
+                tone=settings.get("tone") or "coach",
+                goal=settings.get("goal_text") or "stay_consistent",
+            )
+            payload = res.json()
+            if res.status_code >= 400:
+                failures.append({"user_id": user["user_id"], "error": payload.get("error", res.text)})
+                continue
+            mark_nudge_sent(user["user_id"], today)
+            sent.append({"user_id": user["user_id"], "recipient": user["email"]})
+        except Exception as exc:
+            failures.append({"user_id": user["user_id"], "error": str(exc)})
+
+    return jsonify({"ok": True, "sent": sent, "skipped": skipped, "failures": failures})
 
 
 @app.get("/user/<user_id>")

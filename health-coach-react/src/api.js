@@ -285,6 +285,17 @@ export const api = {
     });
   },
 
+  async getNudgeSettings() {
+    return await fetchJSON("/nudge/settings", { method: "GET" });
+  },
+
+  async saveNudgeSettings({ enabled, tone, goal_text, send_time, timezone }) {
+    return await fetchJSON("/nudge/settings", {
+      method: "POST",
+      body: JSON.stringify({ enabled, tone, goal_text, send_time, timezone }),
+    });
+  },
+
   async submitFeedback({ event_id, rating, reason, bandit_arm }) {
     const body = withUserId({ event_id, rating, reason });
     if (bandit_arm) body.bandit_arm = bandit_arm;
