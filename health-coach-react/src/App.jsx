@@ -1219,69 +1219,12 @@ export default function App() {
       <div className="container py-4">
         {/* AUTH */}
         {stage === "auth" && (
-          <div className="row g-4 align-items-stretch">
-            <div className="col-lg-7">
-              <div className="hero card card-soft">
-                <div className="card-body p-4 p-md-5">
-                  <div className="hero-kicker">AI-Powered Daily Plan</div>
-                  <h1 className="hero-title">
-                    Build a plan that fits your body, meals, and day.
-                  </h1>
-                  <p className="hero-sub text-muted">
-                    Health Coach turns your goal, calendar, and training level
-                    into a practical daily nutrition and workout plan.
-                  </p>
-
-                  <div className="d-flex flex-wrap gap-3 mt-4">
-                    <button
-                      className="btn btn-primary btn-lg fw-bold"
-                      onClick={startQuiz}
-                      disabled={!currentUser || isRestoringSession || isReadOnlyClientView}
-                    >
-                      {!currentUser
-                        ? "Sign in to Start"
-                        : isReadOnlyClientView
-                          ? "Client Must Log In"
-                          : "Start Quiz"}
-                    </button>
-                    <button
-                      className="btn btn-outline-light btn-lg"
-                      onClick={() => setStage("results")}
-                      disabled={!currentUser || !getCachedPlan()}
-                      title={
-                        !currentUser
-                          ? "Log in to access your plan"
-                          : !getCachedPlan()
-                            ? "Generate a plan first"
-                            : ""
-                      }
-                    >
-                      View My Plan
-                    </button>
-                  </div>
-
-                  <div className="mt-4 hero-stats">
-                    <QuickStat label="Quiz time" value="~60 sec" />
-                    <QuickStat label="Training" value="Home or gym" />
-                    <QuickStat label="Output" value="Meals + calendar" />
-                  </div>
-
-                  <div className="hero-visual" aria-hidden="true">
-                    <div className="hero-visual-copy">
-                      <span>Today</span>
-                      <strong>2 workouts</strong>
-                      <small>3 meals planned</small>
-                    </div>
-                    <img src="/images/average-body-male.png" alt="" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="col-lg-5">
+          <div className="row justify-content-center">
+            <div className="col-lg-6 col-xl-5">
               <div className="card card-soft h-100">
                 <div className="card-body p-4">
-                  <h2 className="h5 section-title mb-3">Your Account</h2>
+                  <div className="results-kicker mb-2 text-center">Health Coach</div>
+                  <h2 className="h3 section-title mb-4 text-center">Log In or Sign Up</h2>
                   {currentUser ? (
                     <>
                       <div className="account-summary">
@@ -1312,94 +1255,8 @@ export default function App() {
                       </div>
 
                       <FieldNote>
-                        Your account now holds your saved plan, profile answers,
-                        scheduling, nudges, and feedback.
+                        Your account is ready. Continue to your dashboard.
                       </FieldNote>
-
-                      {currentUser.role === "dietitian" ? (
-                        <div className="mt-4">
-                          <div className="d-flex justify-content-between align-items-center mb-2">
-                            <div className="fw-semibold">Client Accounts</div>
-                            <span className="badge text-bg-dark">{managedClients.length}</span>
-                          </div>
-
-                          <div className="list-group list-group-soft mb-3">
-                            <button
-                              type="button"
-                              className="list-group-item list-group-item-action"
-                              onClick={handleSelectOwnAccount}
-                            >
-                              <strong>Your account</strong>
-                              <div className="small text-muted">
-                                {currentUser.display_name || currentUser.email}
-                                {userId === currentUser.user_id ? " - active" : ""}
-                              </div>
-                            </button>
-
-                            {managedClients.length === 0 ? (
-                              <div className="list-group-item text-muted small">
-                                No client accounts yet.
-                              </div>
-                            ) : (
-                              managedClients.map((client) => (
-                                <button
-                                  key={client.user_id}
-                                  type="button"
-                                  className="list-group-item list-group-item-action"
-                                  onClick={() => handleSelectManagedClient(client)}
-                                >
-                                  <strong>{client.display_name || "Client account"}</strong>
-                                  <div className="small text-muted">
-                                    {client.email}
-                                    {userId === client.user_id ? " - active" : ""}
-                                  </div>
-                                </button>
-                              ))
-                            )}
-                          </div>
-
-                          <form onSubmit={handleCreateClient}>
-                            <div className="fw-semibold mb-2">Create Client Account</div>
-                            <div className="mb-2">
-                              <input
-                                className="form-control"
-                                value={clientName}
-                                onChange={(e) => setClientName(e.target.value)}
-                                placeholder="Client name"
-                              />
-                            </div>
-                            <div className="mb-2">
-                              <input
-                                className="form-control"
-                                type="email"
-                                value={clientEmail}
-                                onChange={(e) => setClientEmail(e.target.value)}
-                                placeholder="client@example.com"
-                              />
-                            </div>
-                            <div className="mb-2">
-                              <input
-                                className="form-control"
-                                type="password"
-                                value={clientPassword}
-                                onChange={(e) => setClientPassword(e.target.value)}
-                                placeholder="Temporary password"
-                              />
-                            </div>
-                            <button
-                              className="btn btn-primary w-100"
-                              type="submit"
-                              disabled={isCreatingClient}
-                            >
-                              {isCreatingClient ? <Spinner label="Creating client..." /> : "Create Client"}
-                            </button>
-                          </form>
-
-                          {clientMsg ? (
-                            <div className="alert alert-warning mt-3 mb-0 small">{clientMsg}</div>
-                          ) : null}
-                        </div>
-                      ) : null}
                     </>
                   ) : (
                     <>
@@ -1516,11 +1373,11 @@ export default function App() {
                   {currentUser ? (
                     <div className="mt-4">
                       <button
-                        className="btn btn-outline-light w-100"
-                        onClick={() => loadAccountData(userId)}
+                        className="btn btn-primary w-100"
+                        onClick={() => setStage(homeStageFor(currentUser))}
                         disabled={isCheckingUser || isRestoringSession}
                       >
-                        {isCheckingUser ? <Spinner label="Loading account..." /> : "Continue to My Plan"}
+                        {isCheckingUser ? <Spinner label="Loading account..." /> : "Continue"}
                       </button>
                     </div>
                   ) : null}
