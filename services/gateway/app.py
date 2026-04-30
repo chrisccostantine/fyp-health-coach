@@ -21,7 +21,9 @@ from services.common.storage import (
     get_google_calendar_token,
     get_auth_session,
     get_auth_user_by_email,
+    is_managed_by,
     get_latest_plan,
+    list_managed_auth_users,
     get_user,
     init_db,
     save_plan,
@@ -55,6 +57,8 @@ def _serialize_auth_user(user: dict):
         "user_id": user["user_id"],
         "email": user["email"],
         "display_name": user.get("display_name") or "",
+        "role": user.get("role") or "user",
+        "managed_by_user_id": user.get("managed_by_user_id"),
     }
 
 
@@ -77,6 +81,27 @@ def _require_auth():
     if not session:
         return None, (jsonify({"error": "Authentication required"}), 401)
     return session, None
+
+
+def _require_dietitian(session: dict):
+    if (session.get("role") or "user") != "dietitian":
+        return jsonify({"error": "Dietitian account required"}), 403
+    return None
+
+
+def _resolve_target_user_id(session: dict | None, requested_user_id: str | None):
+    if not session:
+        return requested_user_id or "anon"
+
+    own_user_id = session["user_id"]
+    target_user_id = (requested_user_id or own_user_id or "").strip() or own_user_id
+    if target_user_id == own_user_id:
+        return target_user_id
+
+    if (session.get("role") or "user") == "dietitian" and is_managed_by(own_user_id, target_user_id):
+        return target_user_id
+
+    return None
 
 
 def _google_calendar_enabled() -> bool:
@@ -437,18 +462,21 @@ def signup():
     email = str(data.get("email", "")).strip().lower()
     password = str(data.get("password", ""))
     display_name = str(data.get("display_name", "")).strip() or None
+    role = str(data.get("role", "user")).strip().lower() or "user"
 
     if not email or "@" not in email:
         return jsonify({"error": "A valid email is required."}), 400
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters."}), 400
+    if role not in {"user", "dietitian"}:
+        return jsonify({"error": "Role must be 'user' or 'dietitian'."}), 400
     if get_auth_user_by_email(email):
         return jsonify({"error": "An account with this email already exists."}), 409
 
     user_id = f"user-{uuid.uuid4().hex[:12]}"
     password_hash = generate_password_hash(password)
     try:
-        create_auth_user(user_id, email, password_hash, display_name)
+        create_auth_user(user_id, email, password_hash, display_name, role=role)
     except IntegrityError:
         return jsonify({"error": "An account with this email already exists."}), 409
 
@@ -461,6 +489,8 @@ def signup():
                 "user_id": user_id,
                 "email": email,
                 "display_name": display_name or "",
+                "role": role,
+                "managed_by_user_id": None,
             },
         }
     ), 201
@@ -477,6 +507,57 @@ def login():
 
     token = create_auth_session(user["user_id"])
     return jsonify({"ok": True, "token": token, "user": _serialize_auth_user(user)})
+
+
+@app.get("/dietitian/clients")
+def dietitian_clients():
+    session, error = _require_auth()
+    if error:
+        return error
+    role_error = _require_dietitian(session)
+    if role_error:
+        return role_error
+    clients = list_managed_auth_users(session["user_id"])
+    return jsonify({"ok": True, "clients": [_serialize_auth_user(client) for client in clients]})
+
+
+@app.post("/dietitian/clients")
+def dietitian_create_client():
+    session, error = _require_auth()
+    if error:
+        return error
+    role_error = _require_dietitian(session)
+    if role_error:
+        return role_error
+
+    data = request.get_json(force=True)
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    display_name = str(data.get("display_name", "")).strip() or None
+
+    if not email or "@" not in email:
+        return jsonify({"error": "A valid client email is required."}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Client password must be at least 8 characters."}), 400
+    if get_auth_user_by_email(email):
+        return jsonify({"error": "A client account with this email already exists."}), 409
+
+    client_user_id = f"user-{uuid.uuid4().hex[:12]}"
+    password_hash = generate_password_hash(password)
+    try:
+        create_auth_user(
+            client_user_id,
+            email,
+            password_hash,
+            display_name,
+            role="user",
+            managed_by_user_id=session["user_id"],
+        )
+    except IntegrityError:
+        return jsonify({"error": "A client account with this email already exists."}), 409
+
+    client = get_auth_user_by_email(email)
+    return jsonify({"ok": True, "client": _serialize_auth_user(client)}), 201
 
 
 @app.get("/auth/me")
@@ -527,7 +608,9 @@ def plan_today():
     payload = request.get_json(force=True)
     try:
         session = _get_current_session()
-        user_id = session["user_id"] if session else payload.get("user_id", "anon")
+        user_id = _resolve_target_user_id(session, payload.get("user_id", "anon"))
+        if user_id is None:
+            return jsonify({"error": "Forbidden"}), 403
         profile = UserProfile(**payload.get("profile", {}))
         goal = Goal(**payload.get("goal", {}))
     except ValidationError as e:
@@ -575,7 +658,9 @@ def plan_today():
 def diet_chat():
     body = request.get_json(force=True)
     session = _get_current_session()
-    user_id = session["user_id"] if session else body.get("user_id", "anon")
+    user_id = _resolve_target_user_id(session, body.get("user_id", "anon"))
+    if user_id is None:
+        return jsonify({"error": "Forbidden"}), 403
     res = requests.post(f"{DIET_URL}/diet/chat", json=body, timeout=30)
     data = res.json()
     updated_plan = data.get("updated_plan")
@@ -590,7 +675,9 @@ def diet_chat():
 def exercise_chat():
     body = request.get_json(force=True)
     session = _get_current_session()
-    user_id = session["user_id"] if session else body.get("user_id", "anon")
+    user_id = _resolve_target_user_id(session, body.get("user_id", "anon"))
+    if user_id is None:
+        return jsonify({"error": "Forbidden"}), 403
     res = requests.post(f"{EXERCISE_URL}/exercise/chat", json=body, timeout=30)
     data = res.json()
     updated_plan = data.get("updated_plan")
@@ -605,7 +692,9 @@ def exercise_chat():
 def calendar_list():
     session = _get_current_session()
     requested_user_id = request.args.get("user_id", "anon")
-    user_id = session["user_id"] if session else requested_user_id
+    user_id = _resolve_target_user_id(session, requested_user_id)
+    if user_id is None:
+        return jsonify({"error": "Forbidden"}), 403
     data = _list_calendar(user_id)
     if data is None:
         return jsonify({"error": "calendar service unavailable"}), 502
@@ -616,7 +705,9 @@ def calendar_list():
 def calendar_sync():
     body = request.get_json(force=True)
     session = _get_current_session()
-    user_id = session["user_id"] if session else body.get("user_id", "anon")
+    user_id = _resolve_target_user_id(session, body.get("user_id", "anon"))
+    if user_id is None:
+        return jsonify({"error": "Forbidden"}), 403
     plan = body.get("plan")
     if not isinstance(plan, dict):
         plan = get_latest_plan(user_id)
@@ -644,26 +735,28 @@ def nudge_send():
 @app.get("/user/<user_id>")
 def get_user_route(user_id):
     session = _get_current_session()
-    if session and session["user_id"] != user_id:
+    target_user_id = _resolve_target_user_id(session, user_id)
+    if session and target_user_id is None:
         return jsonify({"error": "Forbidden"}), 403
 
-    data = get_user(user_id)
+    data = get_user(target_user_id or user_id)
     if not data:
         return jsonify({"exists": False})
-    plan = get_latest_plan(user_id)
-    calendar = _list_calendar(user_id)
-    return jsonify({"exists": True, **data, "plan": plan, "calendar": calendar})
+    plan = get_latest_plan(target_user_id or user_id)
+    calendar = _list_calendar(target_user_id or user_id)
+    return jsonify({"exists": True, **data, "plan": plan, "calendar": calendar, "user_id": target_user_id or user_id})
 
 
 @app.post("/user/<user_id>/profile")
 def save_user_profile(user_id):
     session = _get_current_session()
-    if session and session["user_id"] != user_id:
+    target_user_id = _resolve_target_user_id(session, user_id)
+    if session and target_user_id is None:
         return jsonify({"error": "Forbidden"}), 403
 
     body = request.get_json(force=True)
     upsert_user(
-        user_id,
+        target_user_id or user_id,
         profile=body.get("profile", {}),
         goal=body.get("goal", {}),
         quiz_data=body.get("quiz_data", {}),

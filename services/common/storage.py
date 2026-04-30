@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS auth_users (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     display_name TEXT,
+    role TEXT DEFAULT 'user',
+    managed_by_user_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -153,6 +155,8 @@ CREATE TABLE IF NOT EXISTS auth_users (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     display_name TEXT,
+    role TEXT DEFAULT 'user',
+    managed_by_user_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -181,12 +185,23 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
 
 SCHEMA = SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE
 
+MIGRATIONS = [
+    "ALTER TABLE auth_users ADD COLUMN role TEXT DEFAULT 'user'",
+    "ALTER TABLE auth_users ADD COLUMN managed_by_user_id TEXT",
+]
+
 def init_db():
     with engine.begin() as conn:
         for stmt in SCHEMA.strip().split(';'):
             s = stmt.strip()
             if s:
                 conn.execute(text(s))
+        for stmt in MIGRATIONS:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                # Column already exists or backend does not need this migration.
+                pass
 
 def record_feedback(event_id:str, user_id:str, rating:int, reason:str|None):
     with engine.begin() as conn:
@@ -311,18 +326,31 @@ def get_calendar_events(user_id: str):
         events.append(event)
     return events
 
-def create_auth_user(user_id: str, email: str, password_hash: str, display_name: str | None = None):
+def create_auth_user(
+    user_id: str,
+    email: str,
+    password_hash: str,
+    display_name: str | None = None,
+    role: str = "user",
+    managed_by_user_id: str | None = None,
+):
     with engine.begin() as conn:
         conn.execute(
             text("""
-                INSERT INTO auth_users(user_id, email, password_hash, display_name, updated_at)
-                VALUES(:uid, :email, :password_hash, :display_name, CURRENT_TIMESTAMP)
+                INSERT INTO auth_users(
+                    user_id, email, password_hash, display_name, role, managed_by_user_id, updated_at
+                )
+                VALUES(
+                    :uid, :email, :password_hash, :display_name, :role, :managed_by_user_id, CURRENT_TIMESTAMP
+                )
             """),
             {
                 "uid": user_id,
                 "email": email,
                 "password_hash": password_hash,
                 "display_name": display_name,
+                "role": role,
+                "managed_by_user_id": managed_by_user_id,
             },
         )
 
@@ -330,7 +358,7 @@ def get_auth_user_by_email(email: str):
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT user_id, email, password_hash, display_name, created_at
+                SELECT user_id, email, password_hash, display_name, role, managed_by_user_id, created_at
                 FROM auth_users
                 WHERE lower(email) = lower(:email)
             """),
@@ -342,13 +370,40 @@ def get_auth_user_by_id(user_id: str):
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT user_id, email, password_hash, display_name, created_at
+                SELECT user_id, email, password_hash, display_name, role, managed_by_user_id, created_at
                 FROM auth_users
                 WHERE user_id = :uid
             """),
             {"uid": user_id},
         ).mappings().first()
     return dict(row) if row else None
+
+def list_managed_auth_users(manager_user_id: str):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT user_id, email, display_name, role, managed_by_user_id, created_at
+                FROM auth_users
+                WHERE managed_by_user_id = :uid
+                ORDER BY created_at ASC, email ASC
+            """),
+            {"uid": manager_user_id},
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+def is_managed_by(manager_user_id: str, client_user_id: str) -> bool:
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT 1
+                FROM auth_users
+                WHERE user_id = :client_uid
+                  AND managed_by_user_id = :manager_uid
+                LIMIT 1
+            """),
+            {"client_uid": client_user_id, "manager_uid": manager_user_id},
+        ).first()
+    return bool(row)
 
 def create_auth_session(user_id: str):
     token = secrets.token_urlsafe(32)
@@ -363,7 +418,7 @@ def get_auth_session(token: str):
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT s.token, s.user_id, u.email, u.display_name
+                SELECT s.token, s.user_id, u.email, u.display_name, u.role, u.managed_by_user_id
                 FROM auth_sessions s
                 JOIN auth_users u ON u.user_id = s.user_id
                 WHERE s.token = :token

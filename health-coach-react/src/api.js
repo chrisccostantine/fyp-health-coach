@@ -182,10 +182,10 @@ export const api = {
     }
   },
 
-  async signup({ display_name, email, password }) {
+  async signup({ display_name, email, password, role = "user" }) {
     return await fetchJSON("/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ display_name, email, password }),
+      body: JSON.stringify({ display_name, email, password, role }),
     });
   },
 
@@ -257,6 +257,17 @@ export const api = {
     return await fetchJSON("/google/calendar/disconnect", {
       method: "POST",
       body: JSON.stringify({}),
+    });
+  },
+
+  async listDietitianClients() {
+    return await fetchJSON("/dietitian/clients", { method: "GET" });
+  },
+
+  async createDietitianClient({ display_name, email, password }) {
+    return await fetchJSON("/dietitian/clients", {
+      method: "POST",
+      body: JSON.stringify({ display_name, email, password }),
     });
   },
 

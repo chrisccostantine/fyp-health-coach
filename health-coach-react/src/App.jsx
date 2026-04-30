@@ -386,10 +386,17 @@ export default function App() {
   const [authName, setAuthName] = useState(initialSettings.currentUser?.display_name || "");
   const [authEmail, setAuthEmail] = useState(initialSettings.currentUser?.email || "");
   const [authPassword, setAuthPassword] = useState("");
+  const [authRole, setAuthRole] = useState("user");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(
     Boolean(initialSettings.authToken),
   );
+  const [managedClients, setManagedClients] = useState([]);
+  const [clientName, setClientName] = useState("");
+  const [clientEmail, setClientEmail] = useState("");
+  const [clientPassword, setClientPassword] = useState("");
+  const [isCreatingClient, setIsCreatingClient] = useState(false);
+  const [clientMsg, setClientMsg] = useState("");
   const [googleCalendar, setGoogleCalendar] = useState({
     enabled: false,
     connected: false,
@@ -930,6 +937,7 @@ export default function App() {
     setIsCheckingUser(true);
     if (!quiet) setCheckUserMsg("");
     try {
+      setUserId(uid);
       saveSettings({ userId: uid });
       const data = await api.checkUser(uid);
       if (data.exists) {
@@ -942,6 +950,21 @@ export default function App() {
       setCheckUserMsg(`Error: ${e.message}`);
     } finally {
       setIsCheckingUser(false);
+    }
+  }
+
+  async function loadDietitianClients({ quiet = true, account = null } = {}) {
+    const effectiveAccount = account || currentUser;
+    if (effectiveAccount?.role !== "dietitian") {
+      setManagedClients([]);
+      return;
+    }
+    if (!quiet) setClientMsg("");
+    try {
+      const data = await api.listDietitianClients();
+      setManagedClients(Array.isArray(data?.clients) ? data.clients : []);
+    } catch (e) {
+      if (!quiet) setClientMsg(`Error: ${e.message}`);
     }
   }
 
@@ -979,6 +1002,7 @@ export default function App() {
               display_name: authName.trim(),
               email: authEmail.trim(),
               password: authPassword,
+              role: authRole,
             })
           : await api.login({
               email: authEmail.trim(),
@@ -991,6 +1015,12 @@ export default function App() {
       setAuthEmail(response.user.email || authEmail.trim());
       setAuthName(response.user.display_name || authName.trim());
       setAuthPassword("");
+      setAuthRole(response.user.role || authRole);
+      if (response.user.role === "dietitian") {
+        await loadDietitianClients({ quiet: true, account: response.user });
+      } else {
+        setManagedClients([]);
+      }
       await loadAccountData(response.user.user_id, { quiet: true });
     } catch (e) {
       setCheckUserMsg(`Error: ${e.message}`);
@@ -1009,6 +1039,8 @@ export default function App() {
     setCurrentUser(null);
     setUserId("");
     setAuthPassword("");
+    setManagedClients([]);
+    setClientMsg("");
     setPlan(null);
     setStage("landing");
     setCheckUserMsg("");
@@ -1031,6 +1063,10 @@ export default function App() {
         setUserId(res.user.user_id);
         setAuthEmail(res.user.email || "");
         setAuthName(res.user.display_name || "");
+        setAuthRole(res.user.role || "user");
+        if (res.user.role === "dietitian") {
+          loadDietitianClients({ quiet: true, account: res.user }).catch(() => {});
+        }
         const data = await api.checkUser(res.user.user_id);
         if (cancelled) return;
         if (data.exists) {
@@ -1057,6 +1093,42 @@ export default function App() {
       cancelled = true;
     };
   }, [initialSettings.authToken]);
+
+  async function handleCreateClient(event) {
+    event.preventDefault();
+    setIsCreatingClient(true);
+    setClientMsg("");
+    try {
+      if (!clientEmail.trim()) throw new Error("Client email is required.");
+      if (!clientPassword.trim() || clientPassword.trim().length < 8) {
+        throw new Error("Client password must be at least 8 characters.");
+      }
+      const response = await api.createDietitianClient({
+        display_name: clientName.trim(),
+        email: clientEmail.trim(),
+        password: clientPassword,
+      });
+      setManagedClients((prev) => [...prev, response.client]);
+      setClientName("");
+      setClientEmail("");
+      setClientPassword("");
+      setClientMsg("Client account created successfully.");
+    } catch (e) {
+      setClientMsg(`Error: ${e.message}`);
+    } finally {
+      setIsCreatingClient(false);
+    }
+  }
+
+  async function handleSelectManagedClient(client) {
+    if (!client?.user_id) return;
+    await loadAccountData(client.user_id);
+  }
+
+  async function handleSelectOwnAccount() {
+    if (!currentUser?.user_id) return;
+    await loadAccountData(currentUser.user_id);
+  }
 
   return (
     <div className="app-shell">
@@ -1158,15 +1230,108 @@ export default function App() {
                         <div className="account-summary-meta">
                           {currentUser.email}
                         </div>
+                        <div className="account-summary-meta text-capitalize">
+                          Role: {currentUser.role || "user"}
+                        </div>
                         <div className="account-summary-meta">
                           ID: <code className="code-soft">{userId}</code>
                         </div>
+                        {currentUser.role === "dietitian" && userId !== currentUser.user_id ? (
+                          <div className="account-summary-meta">
+                            Planning for client account
+                          </div>
+                        ) : null}
                       </div>
 
                       <FieldNote>
                         Your account now holds your saved plan, profile answers,
                         scheduling, nudges, and feedback.
                       </FieldNote>
+
+                      {currentUser.role === "dietitian" ? (
+                        <div className="mt-4">
+                          <div className="d-flex justify-content-between align-items-center mb-2">
+                            <div className="fw-semibold">Client Accounts</div>
+                            <span className="badge text-bg-dark">{managedClients.length}</span>
+                          </div>
+
+                          <div className="list-group list-group-soft mb-3">
+                            <button
+                              type="button"
+                              className="list-group-item list-group-item-action"
+                              onClick={handleSelectOwnAccount}
+                            >
+                              <strong>Your account</strong>
+                              <div className="small text-muted">
+                                {currentUser.display_name || currentUser.email}
+                                {userId === currentUser.user_id ? " - active" : ""}
+                              </div>
+                            </button>
+
+                            {managedClients.length === 0 ? (
+                              <div className="list-group-item text-muted small">
+                                No client accounts yet.
+                              </div>
+                            ) : (
+                              managedClients.map((client) => (
+                                <button
+                                  key={client.user_id}
+                                  type="button"
+                                  className="list-group-item list-group-item-action"
+                                  onClick={() => handleSelectManagedClient(client)}
+                                >
+                                  <strong>{client.display_name || "Client account"}</strong>
+                                  <div className="small text-muted">
+                                    {client.email}
+                                    {userId === client.user_id ? " - active" : ""}
+                                  </div>
+                                </button>
+                              ))
+                            )}
+                          </div>
+
+                          <form onSubmit={handleCreateClient}>
+                            <div className="fw-semibold mb-2">Create Client Account</div>
+                            <div className="mb-2">
+                              <input
+                                className="form-control"
+                                value={clientName}
+                                onChange={(e) => setClientName(e.target.value)}
+                                placeholder="Client name"
+                              />
+                            </div>
+                            <div className="mb-2">
+                              <input
+                                className="form-control"
+                                type="email"
+                                value={clientEmail}
+                                onChange={(e) => setClientEmail(e.target.value)}
+                                placeholder="client@example.com"
+                              />
+                            </div>
+                            <div className="mb-2">
+                              <input
+                                className="form-control"
+                                type="password"
+                                value={clientPassword}
+                                onChange={(e) => setClientPassword(e.target.value)}
+                                placeholder="Temporary password"
+                              />
+                            </div>
+                            <button
+                              className="btn btn-primary w-100"
+                              type="submit"
+                              disabled={isCreatingClient}
+                            >
+                              {isCreatingClient ? <Spinner label="Creating client..." /> : "Create Client"}
+                            </button>
+                          </form>
+
+                          {clientMsg ? (
+                            <div className="alert alert-warning mt-3 mb-0 small">{clientMsg}</div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <>
@@ -1200,6 +1365,20 @@ export default function App() {
                           </div>
                         ) : null}
 
+                        {authMode === "signup" ? (
+                          <div className="mb-3">
+                            <label className="form-label">Account Type</label>
+                            <select
+                              className="form-select"
+                              value={authRole}
+                              onChange={(e) => setAuthRole(e.target.value)}
+                            >
+                              <option value="user">Single User</option>
+                              <option value="dietitian">Dietitian</option>
+                            </select>
+                          </div>
+                        ) : null}
+
                         <div className="mb-3">
                           <label className="form-label">Email</label>
                           <input
@@ -1224,7 +1403,9 @@ export default function App() {
 
                         <FieldNote>
                           {authMode === "signup"
-                            ? "Create one account and your profile and plan stay attached to it."
+                            ? authRole === "dietitian"
+                              ? "Create a dietitian account to manage client accounts and plan on their behalf."
+                              : "Create one account and your profile and plan stay attached to it."
                             : "Log in to continue with your saved progress and latest plan."}
                         </FieldNote>
 
