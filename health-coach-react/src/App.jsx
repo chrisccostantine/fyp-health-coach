@@ -1017,7 +1017,7 @@ export default function App() {
       setNudgeTimezone(settings.timezone || nudgeTimezone);
       setNudgeMsg(
         settings.enabled
-          ? `Automatic email nudges are enabled for ${settings.send_time} (${settings.timezone}). The system will choose each message based on the user's goal and current plan.`
+          ? `Automatic email nudges are enabled for ${settings.send_time} (${settings.timezone}). No email is sent right away when you save this. The next email is sent only when the scheduled runner reaches that exact time.`
           : "Automatic email nudges are disabled.",
       );
     } catch (e) {
@@ -1663,7 +1663,7 @@ export default function App() {
                 <div className="card-body p-4">
                   <h2 className="h5 panel-title mb-3">Motivation</h2>
                   <p className="text-muted mb-3">
-                    Daily motivation emails are sent automatically to the account email. The system picks the message style and content from the user's goal, meals, and workout plan.
+                    Daily motivation emails are sent automatically to the account email when the schedule reaches the selected time. The system picks the message style and content from the user's goal, meals, and workout plan.
                   </p>
 
                   <div className="row g-3">
@@ -1681,7 +1681,7 @@ export default function App() {
                         </label>
                       </div>
                       <div className="automation-note mt-3">
-                        Emails are personalized automatically, so there is nothing extra to configure beyond the schedule.
+                        Emails are personalized automatically, so there is nothing extra to configure beyond the schedule. Saving this does not send a message immediately.
                       </div>
                     </div>
 
