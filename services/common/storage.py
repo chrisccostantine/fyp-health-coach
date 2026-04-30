@@ -405,6 +405,20 @@ def is_managed_by(manager_user_id: str, client_user_id: str) -> bool:
         ).first()
     return bool(row)
 
+def remove_managed_auth_user(manager_user_id: str, client_user_id: str) -> bool:
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("""
+                UPDATE auth_users
+                SET managed_by_user_id = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = :client_uid
+                  AND managed_by_user_id = :manager_uid
+            """),
+            {"client_uid": client_user_id, "manager_uid": manager_user_id},
+        )
+    return result.rowcount > 0
+
 def create_auth_session(user_id: str):
     token = secrets.token_urlsafe(32)
     with engine.begin() as conn:

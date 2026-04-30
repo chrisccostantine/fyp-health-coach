@@ -38,6 +38,7 @@ export default function ResultsSection({
   stage,
   plan,
   setStage,
+  handleGoHome,
   isPlanning,
   handlePlanToday,
   isReadOnlyClientView,
@@ -89,6 +90,7 @@ export default function ResultsSection({
   NudgeView,
   Spinner,
   Alert,
+  showAdvancedPanels = true,
 }) {
   if (stage !== "results") return null;
 
@@ -324,90 +326,91 @@ export default function ResultsSection({
           </div>
         </div>
 
-        {/* Feedback */}
-        <div className="card card-soft mt-4">
-          <div className="card-body p-4">
-            <details className="details-soft">
-              <summary className="details-summary">Feedback (Advanced)</summary>
+        {showAdvancedPanels ? (
+          <div className="card card-soft mt-4">
+            <div className="card-body p-4">
+              <details className="details-soft">
+                <summary className="details-summary">Feedback (Advanced)</summary>
 
-              <div className="mt-3">
-                <p className="text-muted mb-3">
-                  Use an event ID from the calendar.
-                </p>
+                <div className="mt-3">
+                  <p className="text-muted mb-3">
+                    Use an event ID from the calendar.
+                  </p>
 
-                <div className="row g-3">
-                  <div className="col-md-6">
-                    <label className="form-label">Event ID</label>
-                    <input
-                      className="form-control"
-                      value={eventId}
-                      onChange={(e) => setEventId(e.target.value)}
-                    />
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label">Event ID</label>
+                      <input
+                        className="form-control"
+                        value={eventId}
+                        onChange={(e) => setEventId(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="col-md-2">
+                      <label className="form-label">Rating (1-5)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={5}
+                        className="form-control"
+                        value={rating}
+                        onChange={(e) => setRating(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="col-md-4">
+                      <label className="form-label">Reason</label>
+                      <input
+                        className="form-control"
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="col-md-4">
+                      <label className="form-label">Bandit Arm (optional)</label>
+                      <select
+                        className="form-select"
+                        value={banditArm}
+                        onChange={(e) => setBanditArm(e.target.value)}
+                      >
+                        <option value="">(none)</option>
+                        <option value="coach">coach</option>
+                        <option value="friendly">friendly</option>
+                      </select>
+                    </div>
                   </div>
 
-                  <div className="col-md-2">
-                    <label className="form-label">Rating (1-5)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={5}
-                      className="form-control"
-                      value={rating}
-                      onChange={(e) => setRating(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="col-md-4">
-                    <label className="form-label">Reason</label>
-                    <input
-                      className="form-control"
-                      value={reason}
-                      onChange={(e) => setReason(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="col-md-4">
-                    <label className="form-label">Bandit Arm (optional)</label>
-                    <select
-                      className="form-select"
-                      value={banditArm}
-                      onChange={(e) => setBanditArm(e.target.value)}
+                  <div className="mt-3 d-flex gap-2">
+                    <button
+                      className="btn btn-primary fw-bold"
+                      type="button"
+                      onClick={handleFeedback}
+                      disabled={isFeedback}
                     >
-                      <option value="">(none)</option>
-                      <option value="coach">coach</option>
-                      <option value="friendly">friendly</option>
-                    </select>
+                      {isFeedback ? <Loading label="Submitting..." /> : "Submit"}
+                    </button>
+
+                    <button
+                      className="btn btn-outline-light"
+                      type="button"
+                      onClick={copyFeedback}
+                      disabled={
+                        !feedbackOut ||
+                        String(feedbackOut).startsWith("Submitting")
+                      }
+                    >
+                      Copy Output
+                    </button>
                   </div>
+
+                  <pre className="out mt-3">{feedbackOut}</pre>
                 </div>
-
-                <div className="mt-3 d-flex gap-2">
-                  <button
-                    className="btn btn-primary fw-bold"
-                    type="button"
-                    onClick={handleFeedback}
-                    disabled={isFeedback}
-                  >
-                    {isFeedback ? <Loading label="Submitting..." /> : "Submit"}
-                  </button>
-
-                  <button
-                    className="btn btn-outline-light"
-                    type="button"
-                    onClick={copyFeedback}
-                    disabled={
-                      !feedbackOut ||
-                      String(feedbackOut).startsWith("Submitting")
-                    }
-                  >
-                    Copy Output
-                  </button>
-                </div>
-
-                <pre className="out mt-3">{feedbackOut}</pre>
-              </div>
-            </details>
+              </details>
+            </div>
           </div>
-        </div>
+        ) : null}
       </div>
 
       {/* Right column */}
@@ -461,60 +464,62 @@ export default function ResultsSection({
           </div>
         </div>
 
-        <div className="card card-soft mt-4">
-          <div className="card-body p-4">
-            <h2 className="h5 panel-title mb-3">Motivation</h2>
+        {showAdvancedPanels ? (
+          <div className="card card-soft mt-4">
+            <div className="card-body p-4">
+              <h2 className="h5 panel-title mb-3">Motivation</h2>
 
-            <div className="row g-3">
-              <div className="col-12">
-                <label className="form-label">Tone</label>
-                <select
-                  className="form-select"
-                  value={tone}
-                  onChange={(e) => setTone(e.target.value)}
-                >
-                  <option value="coach">coach</option>
-                  <option value="friendly">friendly</option>
-                </select>
+              <div className="row g-3">
+                <div className="col-12">
+                  <label className="form-label">Tone</label>
+                  <select
+                    className="form-select"
+                    value={tone}
+                    onChange={(e) => setTone(e.target.value)}
+                  >
+                    <option value="coach">coach</option>
+                    <option value="friendly">friendly</option>
+                  </select>
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label">Goal Text</label>
+                  <input
+                    className="form-control"
+                    value={goalText}
+                    onChange={(e) => setGoalText(e.target.value)}
+                    placeholder="stay_consistent"
+                  />
+                </div>
               </div>
 
-              <div className="col-12">
-                <label className="form-label">Goal Text</label>
-                <input
-                  className="form-control"
-                  value={goalText}
-                  onChange={(e) => setGoalText(e.target.value)}
-                  placeholder="stay_consistent"
-                />
-              </div>
+              <button
+                className="btn btn-primary fw-bold w-100 mt-3"
+                type="button"
+                onClick={handleNudge}
+                disabled={isNudging}
+              >
+                {isNudging ? <Loading label="Sending..." /> : "Send Nudge"}
+              </button>
+
+              <StatusAlert variant="warning">{nudgeMsg}</StatusAlert>
+              {nudge ? (
+                <Nudge result={nudge} tone={tone} goal={goalText} />
+              ) : null}
             </div>
-
-            <button
-              className="btn btn-primary fw-bold w-100 mt-3"
-              type="button"
-              onClick={handleNudge}
-              disabled={isNudging}
-            >
-              {isNudging ? <Loading label="Sending..." /> : "Send Nudge"}
-            </button>
-
-            <StatusAlert variant="warning">{nudgeMsg}</StatusAlert>
-            {nudge ? (
-              <Nudge result={nudge} tone={tone} goal={goalText} />
-            ) : null}
           </div>
-        </div>
+        ) : null}
 
         <div className="mt-4">
-          <button
-            className="btn btn-outline-light w-100"
-            type="button"
-            onClick={() => setStage("landing")}
-          >
-            {"<-"} Back to Home
-          </button>
+            <button
+              className="btn btn-outline-light w-100"
+              type="button"
+              onClick={handleGoHome || (() => setStage("auth"))}
+            >
+              {"<-"} Back
+            </button>
+          </div>
         </div>
-      </div>
     </div>
   );
 }

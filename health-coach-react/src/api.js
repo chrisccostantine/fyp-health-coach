@@ -271,6 +271,13 @@ export const api = {
     });
   },
 
+  async unsubscribeDietitianClient(clientUserId) {
+    return await fetchJSON(`/dietitian/clients/${encodeURIComponent(clientUserId)}/unsubscribe`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
+
   async sendNudge({ tone, goal }) {
     return await fetchJSON("/nudge/send", {
       method: "POST",

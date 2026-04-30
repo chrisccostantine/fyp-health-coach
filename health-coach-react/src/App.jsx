@@ -253,6 +253,11 @@ function OptionGrid({ children }) {
   return <div className="option-grid">{children}</div>;
 }
 
+function homeStageFor(account) {
+  if (!account) return "auth";
+  return account.role === "dietitian" ? "dietitianHome" : "userHome";
+}
+
 function toMetricHeight(value, unit) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
@@ -460,7 +465,7 @@ export default function App() {
   const [checkUserMsg, setCheckUserMsg] = useState("");
 
   // ------- Funnel state (NEW) -------
-  const [stage, setStage] = useState("landing"); // landing | quiz | results
+  const [stage, setStage] = useState("auth"); // auth | userHome | dietitianHome | dietitianCreate | dietitianClients | coachTools | quiz | results
   const [step, setStep] = useState(ACTIVE_QUIZ_STEPS[0]);
   const TOTAL_STEPS = ACTIVE_QUIZ_STEPS.length;
   const stepPosition = Math.max(0, ACTIVE_QUIZ_STEPS.indexOf(step));
@@ -937,7 +942,7 @@ export default function App() {
     }
   }
 
-  async function loadAccountData(uid, { quiet = false } = {}) {
+  async function loadAccountData(uid, { quiet = false, targetStage = null } = {}) {
     if (!uid) return;
     setIsCheckingUser(true);
     if (!quiet) setCheckUserMsg("");
@@ -950,7 +955,11 @@ export default function App() {
       if (data.exists) {
         hydrateSavedUser(data);
         setViewedAccount(data.account || null);
-        setStage(isManagedClientView ? "results" : data.plan ? "results" : "quiz");
+        if (targetStage) {
+          setStage(targetStage);
+        } else {
+          setStage(isManagedClientView ? "results" : data.plan ? "results" : "quiz");
+        }
       } else {
         setViewedAccount(data.account || null);
         setPlan(null);
@@ -959,7 +968,11 @@ export default function App() {
           setStage("results");
           setCheckUserMsg("This client has not created a profile or plan yet. Only the client can do that from their own account.");
         } else {
-          startQuiz();
+          if (targetStage) {
+            setStage(targetStage);
+          } else {
+            startQuiz();
+          }
         }
       }
     } catch (e) {
@@ -1038,7 +1051,10 @@ export default function App() {
       } else {
         setManagedClients([]);
       }
-      await loadAccountData(response.user.user_id, { quiet: true });
+      await loadAccountData(response.user.user_id, {
+        quiet: true,
+        targetStage: homeStageFor(response.user),
+      });
     } catch (e) {
       setCheckUserMsg(`Error: ${e.message}`);
     } finally {
@@ -1060,7 +1076,7 @@ export default function App() {
     setManagedClients([]);
     setClientMsg("");
     setPlan(null);
-    setStage("landing");
+    setStage("auth");
     setCheckUserMsg("");
   }
 
@@ -1090,9 +1106,10 @@ export default function App() {
         if (cancelled) return;
         if (data.exists) {
           hydrateSavedUser(data);
-          setStage(data.plan ? "results" : "quiz");
+          setViewedAccount(data.account || res.user);
+          setStage(homeStageFor(res.user));
         } else {
-          setStage("quiz");
+          setStage(homeStageFor(res.user));
           setStep(ACTIVE_QUIZ_STEPS[0]);
           setPlanMsg("");
           setCheckUserMsg("");
@@ -1139,20 +1156,37 @@ export default function App() {
     }
   }
 
+  async function handleUnsubscribeClient(client) {
+    if (!client?.user_id) return;
+    setClientMsg("");
+    try {
+      await api.unsubscribeDietitianClient(client.user_id);
+      setManagedClients((prev) => prev.filter((entry) => entry.user_id !== client.user_id));
+      if (userId === client.user_id) {
+        await handleSelectOwnAccount();
+      }
+      setClientMsg("Client subscription cancelled.");
+    } catch (e) {
+      setClientMsg(`Error: ${e.message}`);
+    }
+  }
+
   async function handleSelectManagedClient(client) {
     if (!client?.user_id) return;
-    await loadAccountData(client.user_id);
+    await loadAccountData(client.user_id, { targetStage: "results" });
   }
 
   async function handleSelectOwnAccount() {
     if (!currentUser?.user_id) return;
-    await loadAccountData(currentUser.user_id);
+    await loadAccountData(currentUser.user_id, { targetStage: homeStageFor(currentUser) });
   }
 
   const isReadOnlyClientView =
     currentUser?.role === "dietitian" &&
     viewedAccount?.user_id &&
     viewedAccount.user_id !== currentUser.user_id;
+
+  const defaultHomeStage = homeStageFor(currentUser);
 
   return (
     <div className="app-shell">
@@ -1183,8 +1217,8 @@ export default function App() {
       </div>
 
       <div className="container py-4">
-        {/* LANDING */}
-        {stage === "landing" && (
+        {/* AUTH */}
+        {stage === "auth" && (
           <div className="row g-4 align-items-stretch">
             <div className="col-lg-7">
               <div className="hero card card-soft">
@@ -1492,6 +1526,374 @@ export default function App() {
                   ) : null}
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* USER HOME */}
+        {stage === "userHome" && currentUser?.role !== "dietitian" && (
+          <div className="row g-4">
+            <div className="col-lg-7">
+              <div className="card card-soft h-100">
+                <div className="card-body p-4 p-md-5">
+                  <div className="results-kicker">Welcome Back</div>
+                  <h1 className="results-title mb-3">
+                    {currentUser?.display_name || "Your health dashboard"}
+                  </h1>
+                  <p className="text-muted mb-4">
+                    Start your quiz, review your saved plan, and keep your meals and workouts on track.
+                  </p>
+
+                  <div className="results-summary">
+                    <div className="summary-card">
+                      <div className="summary-label">Meals</div>
+                      <div className="summary-value">{Array.isArray(plan?.meals) ? plan.meals.length : 0}</div>
+                      <div className="summary-meta">{plan ? "Current saved plan" : "No plan yet"}</div>
+                    </div>
+                    <div className="summary-card">
+                      <div className="summary-label">Workouts</div>
+                      <div className="summary-value">{Array.isArray(plan?.workouts) ? plan.workouts.length : 0}</div>
+                      <div className="summary-meta">{plan ? "Ready to review" : "Create your first plan"}</div>
+                    </div>
+                  </div>
+
+                  <div className="d-flex flex-wrap gap-3 mt-4">
+                    <button className="btn btn-primary btn-lg fw-bold" type="button" onClick={startQuiz}>
+                      {plan ? "Update My Plan" : "Start Quiz"}
+                    </button>
+                    <button
+                      className="btn btn-outline-light btn-lg"
+                      type="button"
+                      onClick={() => setStage("results")}
+                      disabled={!plan}
+                    >
+                      View My Plan
+                    </button>
+                    <button
+                      className="btn btn-outline-light btn-lg"
+                      type="button"
+                      onClick={() => setStage("coachTools")}
+                    >
+                      Coach Tools
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-lg-5">
+              <div className="card card-soft h-100">
+                <div className="card-body p-4">
+                  <h2 className="h5 section-title mb-3">Account</h2>
+                  <div className="account-summary">
+                    <div className="account-summary-label">Signed in as</div>
+                    <div className="account-summary-title">
+                      {currentUser.display_name || "Health Coach User"}
+                    </div>
+                    <div className="account-summary-meta">{currentUser.email}</div>
+                    <div className="account-summary-meta text-capitalize">
+                      Role: {currentUser.role || "user"}
+                    </div>
+                    {currentUser.managed_by ? (
+                      <div className="account-summary-meta">
+                        Under dietitian: {currentUser.managed_by.display_name || currentUser.managed_by.email}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <FieldNote>
+                    {plan
+                      ? "Your last saved plan is ready. Open it to review meals, workouts, calendar sync, and edits."
+                      : "You do not have a saved plan yet. Start the quiz to create one."}
+                  </FieldNote>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DIETITIAN HOME */}
+        {stage === "dietitianHome" && currentUser?.role === "dietitian" && (
+          <div className="row g-4">
+            <div className="col-12">
+              <div className="card card-soft">
+                <div className="card-body p-4 p-md-5">
+                  <div className="results-kicker">Dietitian Dashboard</div>
+                  <h1 className="results-title mb-3">
+                    Manage your subscribed clients
+                  </h1>
+                  <p className="text-muted mb-4">
+                    Choose what you want to do next. Client plans can be viewed here, but only each client can create or change their own plan.
+                  </p>
+
+                  <div className="results-summary">
+                    <button type="button" className="summary-card text-start" onClick={() => setStage("dietitianCreate")}>
+                      <div className="summary-label">Create User</div>
+                      <div className="summary-value">+</div>
+                      <div className="summary-meta">Create a new client account under your subscription.</div>
+                    </button>
+
+                    <button type="button" className="summary-card text-start" onClick={() => setStage("dietitianClients")}>
+                      <div className="summary-label">View Users</div>
+                      <div className="summary-value">{managedClients.length}</div>
+                      <div className="summary-meta">Open a subscribed client and review their saved plan.</div>
+                    </button>
+
+                    <button type="button" className="summary-card text-start" onClick={() => setStage("dietitianClients")}>
+                      <div className="summary-label">Cancel Subscription</div>
+                      <div className="summary-value">-</div>
+                      <div className="summary-meta">Remove a client from your managed subscription list.</div>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DIETITIAN CREATE */}
+        {stage === "dietitianCreate" && currentUser?.role === "dietitian" && (
+          <div className="row justify-content-center">
+            <div className="col-lg-7">
+              <div className="card card-soft">
+                <div className="card-body p-4 p-md-5">
+                  <div className="results-kicker">Dietitian Dashboard</div>
+                  <h2 className="section-title mb-3">Create Client Account</h2>
+                  <p className="text-muted mb-4">
+                    Create a client login that will appear under your subscription list.
+                  </p>
+
+                  <form onSubmit={handleCreateClient}>
+                    <div className="mb-3">
+                      <label className="form-label">Client Name</label>
+                      <input
+                        className="form-control"
+                        value={clientName}
+                        onChange={(e) => setClientName(e.target.value)}
+                        placeholder="Client name"
+                      />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Client Email</label>
+                      <input
+                        className="form-control"
+                        type="email"
+                        value={clientEmail}
+                        onChange={(e) => setClientEmail(e.target.value)}
+                        placeholder="client@example.com"
+                      />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Temporary Password</label>
+                      <input
+                        className="form-control"
+                        type="password"
+                        value={clientPassword}
+                        onChange={(e) => setClientPassword(e.target.value)}
+                        placeholder="Temporary password"
+                      />
+                    </div>
+                    <div className="d-flex gap-2">
+                      <button className="btn btn-primary fw-bold flex-grow-1" type="submit" disabled={isCreatingClient}>
+                        {isCreatingClient ? <Spinner label="Creating client..." /> : "Create Client"}
+                      </button>
+                      <button className="btn btn-outline-light" type="button" onClick={() => setStage("dietitianHome")}>
+                        Back
+                      </button>
+                    </div>
+                  </form>
+
+                  {clientMsg ? <div className="alert alert-warning mt-3 mb-0 small">{clientMsg}</div> : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DIETITIAN CLIENTS */}
+        {stage === "dietitianClients" && currentUser?.role === "dietitian" && (
+          <div className="row justify-content-center">
+            <div className="col-lg-9">
+              <div className="card card-soft">
+                <div className="card-body p-4 p-md-5">
+                  <div className="results-kicker">Dietitian Dashboard</div>
+                  <h2 className="section-title mb-3">Subscribed Clients</h2>
+                  <p className="text-muted mb-4">
+                    View saved client plans or cancel a subscription. Clients must log into their own accounts to create or edit plans.
+                  </p>
+
+                  <div className="list-group list-group-soft">
+                    {managedClients.length === 0 ? (
+                      <div className="list-group-item text-muted">No subscribed clients yet.</div>
+                    ) : (
+                      managedClients.map((client) => (
+                        <div key={client.user_id} className="list-group-item">
+                          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                            <div>
+                              <div className="fw-semibold">{client.display_name || "Client account"}</div>
+                              <div className="small text-muted">{client.email}</div>
+                            </div>
+                            <div className="d-flex gap-2">
+                              <button
+                                type="button"
+                                className="btn btn-outline-light btn-sm"
+                                onClick={() => handleSelectManagedClient(client)}
+                              >
+                                View Plan
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-outline-danger btn-sm"
+                                onClick={() => handleUnsubscribeClient(client)}
+                              >
+                                Cancel Subscription
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {clientMsg ? <div className="alert alert-warning mt-3 mb-0 small">{clientMsg}</div> : null}
+
+                  <div className="mt-4">
+                    <button className="btn btn-outline-light" type="button" onClick={() => setStage("dietitianHome")}>
+                      Back to Dashboard
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* COACH TOOLS */}
+        {stage === "coachTools" && currentUser?.role !== "dietitian" && (
+          <div className="row g-4">
+            <div className="col-lg-6">
+              <div className="card card-soft">
+                <div className="card-body p-4">
+                  <h2 className="h5 panel-title mb-3">Motivation</h2>
+
+                  <div className="row g-3">
+                    <div className="col-12">
+                      <label className="form-label">Tone</label>
+                      <select
+                        className="form-select"
+                        value={tone}
+                        onChange={(e) => setTone(e.target.value)}
+                      >
+                        <option value="coach">coach</option>
+                        <option value="friendly">friendly</option>
+                      </select>
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label">Goal Text</label>
+                      <input
+                        className="form-control"
+                        value={goalText}
+                        onChange={(e) => setGoalText(e.target.value)}
+                        placeholder="stay_consistent"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    className="btn btn-primary fw-bold w-100 mt-3"
+                    type="button"
+                    onClick={handleNudge}
+                    disabled={isNudging}
+                  >
+                    {isNudging ? <Spinner label="Sending..." /> : "Send Nudge"}
+                  </button>
+
+                  <Alert variant="warning">{nudgeMsg}</Alert>
+                  {nudge ? <NudgeView result={nudge} tone={tone} goal={goalText} /> : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="col-lg-6">
+              <div className="card card-soft">
+                <div className="card-body p-4">
+                  <h2 className="h5 panel-title mb-3">Feedback</h2>
+                  <p className="text-muted mb-3">Use an event ID from the calendar to submit feedback.</p>
+
+                  <div className="row g-3">
+                    <div className="col-md-12">
+                      <label className="form-label">Event ID</label>
+                      <input
+                        className="form-control"
+                        value={eventId}
+                        onChange={(e) => setEventId(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="col-md-4">
+                      <label className="form-label">Rating</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={5}
+                        className="form-control"
+                        value={rating}
+                        onChange={(e) => setRating(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="col-md-8">
+                      <label className="form-label">Reason</label>
+                      <input
+                        className="form-control"
+                        value={reason}
+                        onChange={(e) => setReason(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="col-md-12">
+                      <label className="form-label">Bandit Arm (optional)</label>
+                      <select
+                        className="form-select"
+                        value={banditArm}
+                        onChange={(e) => setBanditArm(e.target.value)}
+                      >
+                        <option value="">(none)</option>
+                        <option value="coach">coach</option>
+                        <option value="friendly">friendly</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="d-flex gap-2 mt-3">
+                    <button
+                      className="btn btn-primary fw-bold"
+                      type="button"
+                      onClick={handleFeedback}
+                      disabled={isFeedback}
+                    >
+                      {isFeedback ? <Spinner label="Submitting..." /> : "Submit"}
+                    </button>
+                    <button
+                      className="btn btn-outline-light"
+                      type="button"
+                      onClick={copyFeedback}
+                      disabled={!feedbackOut || String(feedbackOut).startsWith("Submitting")}
+                    >
+                      Copy Output
+                    </button>
+                  </div>
+
+                  <pre className="out mt-3">{feedbackOut}</pre>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-12">
+              <button className="btn btn-outline-light" type="button" onClick={() => setStage("userHome")}>
+                {"<-"} Back to Dashboard
+              </button>
             </div>
           </div>
         )}
@@ -2635,7 +3037,7 @@ export default function App() {
                   <button
                     className="btn btn-outline-light"
                     onClick={() =>
-                      step === 0 ? setStage("landing") : prevStep()
+                      step === 0 ? setStage(defaultHomeStage) : prevStep()
                     }
                   >
                     Back
@@ -2674,6 +3076,7 @@ export default function App() {
           stage={stage}
           plan={plan}
           setStage={setStage}
+          handleGoHome={() => setStage(isReadOnlyClientView ? "dietitianClients" : defaultHomeStage)}
           isPlanning={isPlanning}
           handlePlanToday={handlePlanToday}
           isReadOnlyClientView={isReadOnlyClientView}
@@ -2715,6 +3118,7 @@ export default function App() {
           NudgeView={NudgeView}
           Spinner={Spinner}
           Alert={Alert}
+          showAdvancedPanels={false}
         />
       </div>
 

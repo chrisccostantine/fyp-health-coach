@@ -25,6 +25,7 @@ from services.common.storage import (
     is_managed_by,
     get_latest_plan,
     list_managed_auth_users,
+    remove_managed_auth_user,
     get_user,
     init_db,
     save_plan,
@@ -583,6 +584,21 @@ def dietitian_create_client():
 
     client = get_auth_user_by_email(email)
     return jsonify({"ok": True, "client": _serialize_auth_user(client)}), 201
+
+
+@app.post("/dietitian/clients/<client_user_id>/unsubscribe")
+def dietitian_unsubscribe_client(client_user_id):
+    session, error = _require_auth()
+    if error:
+        return error
+    role_error = _require_dietitian(session)
+    if role_error:
+        return role_error
+
+    removed = remove_managed_auth_user(session["user_id"], client_user_id)
+    if not removed:
+        return jsonify({"error": "Client subscription not found."}), 404
+    return jsonify({"ok": True, "client_user_id": client_user_id})
 
 
 @app.get("/auth/me")
