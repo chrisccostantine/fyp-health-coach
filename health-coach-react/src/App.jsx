@@ -425,6 +425,7 @@ export default function App() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [changePasswordMsg, setChangePasswordMsg] = useState("");
+  const [showChangePasswordForm, setShowChangePasswordForm] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(
     Boolean(initialSettings.authToken),
@@ -1242,6 +1243,7 @@ export default function App() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmNewPassword("");
+      setShowChangePasswordForm(false);
       setChangePasswordMsg(response.message || "Password updated successfully.");
     } catch (e) {
       setChangePasswordMsg(`Error: ${e.message}`);
@@ -1704,41 +1706,69 @@ export default function App() {
 
                   <div className="security-panel mt-4">
                     <div className="fw-semibold mb-2">Security</div>
-                    <form onSubmit={handleChangePassword}>
-                      <div className="mb-3">
-                        <label className="form-label">Current Password</label>
-                        <input
-                          className="form-control"
-                          type="password"
-                          value={currentPassword}
-                          onChange={(e) => setCurrentPassword(e.target.value)}
-                          placeholder="Current password"
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">New Password</label>
-                        <input
-                          className="form-control"
-                          type="password"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="At least 8 characters"
-                        />
-                      </div>
-                      <div className="mb-3">
-                        <label className="form-label">Confirm New Password</label>
-                        <input
-                          className="form-control"
-                          type="password"
-                          value={confirmNewPassword}
-                          onChange={(e) => setConfirmNewPassword(e.target.value)}
-                          placeholder="Repeat new password"
-                        />
-                      </div>
-                      <button className="btn btn-outline-light w-100" type="submit" disabled={isChangingPassword}>
-                        {isChangingPassword ? <Spinner label="Updating..." /> : "Change Password"}
+                    {!showChangePasswordForm ? (
+                      <button
+                        className="btn btn-outline-light w-100"
+                        type="button"
+                        onClick={() => {
+                          setShowChangePasswordForm(true);
+                          setChangePasswordMsg("");
+                        }}
+                      >
+                        Change Password
                       </button>
-                    </form>
+                    ) : (
+                      <form onSubmit={handleChangePassword}>
+                        <div className="mb-3">
+                          <label className="form-label">Current Password</label>
+                          <input
+                            className="form-control"
+                            type="password"
+                            value={currentPassword}
+                            onChange={(e) => setCurrentPassword(e.target.value)}
+                            placeholder="Current password"
+                          />
+                        </div>
+                        <div className="mb-3">
+                          <label className="form-label">New Password</label>
+                          <input
+                            className="form-control"
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="At least 8 characters"
+                          />
+                        </div>
+                        <div className="mb-3">
+                          <label className="form-label">Confirm New Password</label>
+                          <input
+                            className="form-control"
+                            type="password"
+                            value={confirmNewPassword}
+                            onChange={(e) => setConfirmNewPassword(e.target.value)}
+                            placeholder="Repeat new password"
+                          />
+                        </div>
+                        <div className="d-flex gap-2">
+                          <button className="btn btn-outline-light flex-grow-1" type="submit" disabled={isChangingPassword}>
+                            {isChangingPassword ? <Spinner label="Updating..." /> : "Save New Password"}
+                          </button>
+                          <button
+                            className="btn btn-outline-light"
+                            type="button"
+                            onClick={() => {
+                              setShowChangePasswordForm(false);
+                              setCurrentPassword("");
+                              setNewPassword("");
+                              setConfirmNewPassword("");
+                              setChangePasswordMsg("");
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    )}
                     {changePasswordMsg ? (
                       <div className={`alert ${String(changePasswordMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
                         {changePasswordMsg}
@@ -1799,41 +1829,69 @@ export default function App() {
                     </div>
                     <div className="account-summary-meta">{currentUser.email}</div>
                   </div>
-                  <form onSubmit={handleChangePassword}>
-                    <div className="mb-3">
-                      <label className="form-label">Current Password</label>
-                      <input
-                        className="form-control"
-                        type="password"
-                        value={currentPassword}
-                        onChange={(e) => setCurrentPassword(e.target.value)}
-                        placeholder="Current password"
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label">New Password</label>
-                      <input
-                        className="form-control"
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="At least 8 characters"
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label">Confirm New Password</label>
-                      <input
-                        className="form-control"
-                        type="password"
-                        value={confirmNewPassword}
-                        onChange={(e) => setConfirmNewPassword(e.target.value)}
-                        placeholder="Repeat new password"
-                      />
-                    </div>
-                    <button className="btn btn-outline-light w-100" type="submit" disabled={isChangingPassword}>
-                      {isChangingPassword ? <Spinner label="Updating..." /> : "Change Password"}
+                  {!showChangePasswordForm ? (
+                    <button
+                      className="btn btn-outline-light w-100"
+                      type="button"
+                      onClick={() => {
+                        setShowChangePasswordForm(true);
+                        setChangePasswordMsg("");
+                      }}
+                    >
+                      Change Password
                     </button>
-                  </form>
+                  ) : (
+                    <form onSubmit={handleChangePassword}>
+                      <div className="mb-3">
+                        <label className="form-label">Current Password</label>
+                        <input
+                          className="form-control"
+                          type="password"
+                          value={currentPassword}
+                          onChange={(e) => setCurrentPassword(e.target.value)}
+                          placeholder="Current password"
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">New Password</label>
+                        <input
+                          className="form-control"
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="At least 8 characters"
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Confirm New Password</label>
+                        <input
+                          className="form-control"
+                          type="password"
+                          value={confirmNewPassword}
+                          onChange={(e) => setConfirmNewPassword(e.target.value)}
+                          placeholder="Repeat new password"
+                        />
+                      </div>
+                      <div className="d-flex gap-2">
+                        <button className="btn btn-outline-light flex-grow-1" type="submit" disabled={isChangingPassword}>
+                          {isChangingPassword ? <Spinner label="Updating..." /> : "Save New Password"}
+                        </button>
+                        <button
+                          className="btn btn-outline-light"
+                          type="button"
+                          onClick={() => {
+                            setShowChangePasswordForm(false);
+                            setCurrentPassword("");
+                            setNewPassword("");
+                            setConfirmNewPassword("");
+                            setChangePasswordMsg("");
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
                   {changePasswordMsg ? (
                     <div className={`alert ${String(changePasswordMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
                       {changePasswordMsg}
