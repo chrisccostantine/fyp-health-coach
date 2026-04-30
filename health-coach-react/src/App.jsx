@@ -284,6 +284,11 @@ function homeStageFor(account) {
   return account.role === "dietitian" ? "dietitianHome" : "userHome";
 }
 
+function displayAccountName(account) {
+  if (!account) return "Account";
+  return account.display_name || account.email || "Account";
+}
+
 function toMetricHeight(value, unit) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
@@ -437,6 +442,13 @@ export default function App() {
   const [clientPassword, setClientPassword] = useState("");
   const [isCreatingClient, setIsCreatingClient] = useState(false);
   const [clientMsg, setClientMsg] = useState("");
+  const [activeChatPartner, setActiveChatPartner] = useState(null);
+  const [privateMessages, setPrivateMessages] = useState([]);
+  const [privateChatInput, setPrivateChatInput] = useState("");
+  const [privateChatMsg, setPrivateChatMsg] = useState("");
+  const [privateChatReturnStage, setPrivateChatReturnStage] = useState("userHome");
+  const [isLoadingPrivateMessages, setIsLoadingPrivateMessages] = useState(false);
+  const [isSendingPrivateMessage, setIsSendingPrivateMessage] = useState(false);
   const [googleCalendar, setGoogleCalendar] = useState({
     enabled: false,
     connected: false,
@@ -511,7 +523,7 @@ export default function App() {
   const [checkUserMsg, setCheckUserMsg] = useState("");
 
   // ------- Funnel state (NEW) -------
-  const [stage, setStage] = useState("auth"); // auth | userHome | dietitianHome | dietitianCreate | dietitianClients | coachTools | quiz | results
+  const [stage, setStage] = useState("auth"); // auth | userHome | dietitianHome | dietitianCreate | dietitianClients | privateChat | coachTools | quiz | results
   const [step, setStep] = useState(ACTIVE_QUIZ_STEPS[0]);
   const TOTAL_STEPS = ACTIVE_QUIZ_STEPS.length;
   const stepPosition = Math.max(0, ACTIVE_QUIZ_STEPS.indexOf(step));
@@ -1212,6 +1224,10 @@ export default function App() {
     setChangePasswordMsg("");
     setManagedClients([]);
     setClientMsg("");
+    setActiveChatPartner(null);
+    setPrivateMessages([]);
+    setPrivateChatInput("");
+    setPrivateChatMsg("");
     setPlan(null);
     setStage("auth");
     setCheckUserMsg("");
@@ -1340,6 +1356,51 @@ export default function App() {
       setClientMsg("Client subscription cancelled.");
     } catch (e) {
       setClientMsg(`Error: ${e.message}`);
+    }
+  }
+
+  async function openPrivateChat(partner, returnStage = null) {
+    if (!partner?.user_id) return;
+    setActiveChatPartner(partner);
+    setPrivateChatReturnStage(
+      returnStage || (currentUser?.role === "dietitian" ? "dietitianClients" : "userHome"),
+    );
+    setPrivateChatInput("");
+    setPrivateChatMsg("");
+    setPrivateMessages([]);
+    setStage("privateChat");
+    setIsLoadingPrivateMessages(true);
+    try {
+      const data = await api.getPrivateMessages(partner.user_id);
+      setActiveChatPartner(data?.partner || partner);
+      setPrivateMessages(Array.isArray(data?.messages) ? data.messages : []);
+    } catch (e) {
+      setPrivateChatMsg(`Error: ${e.message}`);
+    } finally {
+      setIsLoadingPrivateMessages(false);
+    }
+  }
+
+  async function handleSendPrivateMessage(event) {
+    event.preventDefault();
+    if (!activeChatPartner?.user_id) return;
+    const body = privateChatInput.trim();
+    if (!body) {
+      setPrivateChatMsg("Write a message first.");
+      return;
+    }
+
+    setIsSendingPrivateMessage(true);
+    setPrivateChatMsg("");
+    try {
+      const data = await api.sendPrivateMessage(activeChatPartner.user_id, body);
+      setPrivateMessages(Array.isArray(data?.messages) ? data.messages : []);
+      setActiveChatPartner(data?.partner || activeChatPartner);
+      setPrivateChatInput("");
+    } catch (e) {
+      setPrivateChatMsg(`Error: ${e.message}`);
+    } finally {
+      setIsSendingPrivateMessage(false);
     }
   }
 
@@ -1673,6 +1734,15 @@ export default function App() {
                     >
                       Coach Tools
                     </button>
+                    {currentUser?.managed_by ? (
+                      <button
+                        className="btn btn-outline-light btn-lg"
+                        type="button"
+                        onClick={() => openPrivateChat(currentUser.managed_by, "userHome")}
+                      >
+                        Chat with Dietitian
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -1703,6 +1773,18 @@ export default function App() {
                       ? "Your last saved plan is ready. Open it to review meals, workouts, calendar sync, and edits."
                       : "You do not have a saved plan yet. Start the quiz to create one."}
                   </FieldNote>
+
+                  {currentUser.managed_by ? (
+                    <div className="mt-3">
+                      <button
+                        className="btn btn-outline-light w-100"
+                        type="button"
+                        onClick={() => openPrivateChat(currentUser.managed_by, "userHome")}
+                      >
+                        Message {displayAccountName(currentUser.managed_by)}
+                      </button>
+                    </div>
+                  ) : null}
 
                   <div className="security-panel mt-4">
                     <div className="fw-semibold mb-2">Security</div>
@@ -1812,6 +1894,12 @@ export default function App() {
                       <div className="summary-label">Cancel Subscription</div>
                       <div className="summary-value">-</div>
                       <div className="summary-meta">Remove a client from your managed subscription list.</div>
+                    </button>
+
+                    <button type="button" className="summary-card text-start" onClick={() => setStage("dietitianClients")}>
+                      <div className="summary-label">Private Chats</div>
+                      <div className="summary-value">{managedClients.length}</div>
+                      <div className="summary-meta">Open a private conversation with any subscribed client.</div>
                     </button>
                   </div>
                 </div>
@@ -1971,7 +2059,7 @@ export default function App() {
                   <div className="results-kicker">Dietitian Dashboard</div>
                   <h2 className="section-title mb-3">Subscribed Clients</h2>
                   <p className="text-muted mb-4">
-                    View saved client plans or cancel a subscription. Clients must log into their own accounts to create or edit plans.
+                    View saved client plans, open private chats, or cancel a subscription. Clients must log into their own accounts to create or edit plans.
                   </p>
 
                   <div className="list-group list-group-soft">
@@ -1995,6 +2083,13 @@ export default function App() {
                               </button>
                               <button
                                 type="button"
+                                className="btn btn-outline-light btn-sm"
+                                onClick={() => openPrivateChat(client, "dietitianClients")}
+                              >
+                                Open Chat
+                              </button>
+                              <button
+                                type="button"
                                 className="btn btn-outline-danger btn-sm"
                                 onClick={() => handleUnsubscribeClient(client)}
                               >
@@ -2014,6 +2109,104 @@ export default function App() {
                       Back to Dashboard
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PRIVATE CHAT */}
+        {stage === "privateChat" && currentUser && activeChatPartner && (
+          <div className="row justify-content-center">
+            <div className="col-lg-9 col-xl-8">
+              <div className="card card-soft">
+                <div className="card-body p-4 p-md-5">
+                  <div className="results-kicker">
+                    {currentUser.role === "dietitian" ? "Dietitian Chat" : "Private Chat"}
+                  </div>
+                  <h2 className="section-title mb-3">
+                    Chat with {displayAccountName(activeChatPartner)}
+                  </h2>
+                  <p className="text-muted mb-4">
+                    This conversation is private between you and this {currentUser.role === "dietitian" ? "client" : "dietitian"}.
+                  </p>
+
+                  <div className="account-summary mb-4">
+                    <div className="account-summary-label">
+                      {currentUser.role === "dietitian" ? "Client account" : "Dietitian account"}
+                    </div>
+                    <div className="account-summary-title">
+                      {displayAccountName(activeChatPartner)}
+                    </div>
+                    <div className="account-summary-meta">{activeChatPartner.email}</div>
+                  </div>
+
+                  {isLoadingPrivateMessages ? (
+                    <div className="chat-empty">Loading conversation...</div>
+                  ) : (
+                    <div className="chat-shell private-chat-shell mb-3">
+                      {privateMessages.length === 0 ? (
+                        <div className="chat-empty">
+                          No messages yet. Start the conversation here.
+                        </div>
+                      ) : (
+                        privateMessages.map((message) => {
+                          const isOwnMessage = message.sender_user_id === currentUser.user_id;
+                          return (
+                            <div
+                              key={`${message.id}-${message.created_at}`}
+                              className={`chat-message ${isOwnMessage ? "chat-user" : "chat-assistant"}`}
+                            >
+                              <div>{message.body}</div>
+                              <div className="chat-meta">
+                                {isOwnMessage ? "You" : displayAccountName(activeChatPartner)} · {fmtIso(message.created_at)}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  <form onSubmit={handleSendPrivateMessage}>
+                    <div className="private-chat-composer">
+                      <textarea
+                        className="form-control private-chat-input"
+                        rows={3}
+                        value={privateChatInput}
+                        onChange={(e) => setPrivateChatInput(e.target.value)}
+                        placeholder={
+                          currentUser.role === "dietitian"
+                            ? "Write a message for your client..."
+                            : "Write a message for your dietitian..."
+                        }
+                      />
+                      <div className="d-flex gap-2 flex-wrap">
+                        <button
+                          className="btn btn-primary fw-bold"
+                          type="submit"
+                          disabled={isSendingPrivateMessage || isLoadingPrivateMessages}
+                        >
+                          {isSendingPrivateMessage ? <Spinner label="Sending..." /> : "Send Message"}
+                        </button>
+                        <button
+                          className="btn btn-outline-light"
+                          type="button"
+                          onClick={() => {
+                            setPrivateChatMsg("");
+                            setPrivateChatInput("");
+                            setStage(privateChatReturnStage || defaultHomeStage);
+                          }}
+                        >
+                          Back
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+
+                  {privateChatMsg ? (
+                    <div className="alert alert-warning mt-3 mb-0 small">{privateChatMsg}</div>
+                  ) : null}
                 </div>
               </div>
             </div>

@@ -121,6 +121,13 @@ CREATE TABLE IF NOT EXISTS user_nudge_settings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS private_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_user_id TEXT NOT NULL,
+    recipient_user_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 '''
 
 SCHEMA_POSTGRES = '''
@@ -215,6 +222,13 @@ CREATE TABLE IF NOT EXISTS user_nudge_settings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS private_messages (
+    id SERIAL PRIMARY KEY,
+    sender_user_id TEXT NOT NULL,
+    recipient_user_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 '''
 
 SCHEMA = SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE
@@ -232,6 +246,7 @@ MIGRATIONS = [
     "ALTER TABLE user_nudge_settings ADD COLUMN last_sent_on TEXT",
     "ALTER TABLE user_nudge_settings ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE user_nudge_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+    "CREATE TABLE IF NOT EXISTS private_messages (id SERIAL PRIMARY KEY, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS private_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
 ]
 
 def init_db():
@@ -464,7 +479,48 @@ def remove_managed_auth_user(manager_user_id: str, client_user_id: str) -> bool:
             """),
             {"client_uid": client_user_id, "manager_uid": manager_user_id},
         )
-    return result.rowcount > 0
+        return result.rowcount > 0
+
+
+def create_private_message(sender_user_id: str, recipient_user_id: str, body: str):
+    message_body = str(body or "").strip()
+    if not message_body:
+        raise ValueError("Message body is required.")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO private_messages(sender_user_id, recipient_user_id, body)
+                VALUES (:sender_user_id, :recipient_user_id, :body)
+                """
+            ),
+            {
+                "sender_user_id": sender_user_id,
+                "recipient_user_id": recipient_user_id,
+                "body": message_body,
+            },
+        )
+
+
+def list_private_messages(user_a_id: str, user_b_id: str):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, sender_user_id, recipient_user_id, body, created_at
+                FROM private_messages
+                WHERE (sender_user_id = :user_a AND recipient_user_id = :user_b)
+                   OR (sender_user_id = :user_b AND recipient_user_id = :user_a)
+                ORDER BY created_at ASC, id ASC
+                """
+            ),
+            {
+                "user_a": user_a_id,
+                "user_b": user_b_id,
+            },
+        ).fetchall()
+    return [dict(row._mapping) for row in rows]
 
 def create_auth_session(user_id: str):
     token = secrets.token_urlsafe(32)

@@ -299,6 +299,19 @@ export const api = {
     });
   },
 
+  async getPrivateMessages(partnerUserId) {
+    return await fetchJSON(`/messages/${encodeURIComponent(partnerUserId)}`, {
+      method: "GET",
+    });
+  },
+
+  async sendPrivateMessage(partnerUserId, body) {
+    return await fetchJSON(`/messages/${encodeURIComponent(partnerUserId)}`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    });
+  },
+
   async sendNudge({ tone, goal }) {
     return await fetchJSON("/nudge/send", {
       method: "POST",

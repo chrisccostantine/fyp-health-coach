@@ -1403,6 +1403,35 @@ pre.out {
   color:#fff;
 }
 
+.private-chat-shell{
+  min-height: 280px;
+  max-height: 460px;
+}
+
+.chat-empty{
+  color: rgba(255,255,255,.68);
+  text-align: center;
+  padding: 2.5rem 1rem;
+  font-weight: 600;
+}
+
+.chat-meta{
+  margin-top: 8px;
+  font-size: .75rem;
+  color: rgba(255,255,255,.62);
+}
+
+.private-chat-composer{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.private-chat-input{
+  resize: vertical;
+  min-height: 96px;
+}
+
 .empty-state-title{
   font-size: 1.2rem;
   font-weight: 800;

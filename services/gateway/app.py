@@ -15,6 +15,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from services.common.models import DayPlan, Goal, PlanMeal, PlanWorkout, UserProfile
 from services.common.storage import (
     create_password_reset_token,
+    create_private_message,
     create_auth_session,
     create_auth_user,
     create_google_oauth_state,
@@ -30,6 +31,7 @@ from services.common.storage import (
     get_password_reset_token,
     is_managed_by,
     get_latest_plan,
+    list_private_messages,
     list_managed_auth_users,
     list_all_nudge_settings,
     mark_nudge_sent,
@@ -143,6 +145,44 @@ def _resolve_write_user_id(session: dict | None, requested_user_id: str | None):
     if target_user_id == own_user_id:
         return target_user_id
     return None
+
+
+def _resolve_private_chat_partner(session: dict | None, partner_user_id: str | None):
+    if not session:
+        return None
+
+    own_user_id = session["user_id"]
+    target_user_id = str(partner_user_id or "").strip()
+    if not target_user_id or target_user_id == own_user_id:
+        return None
+
+    if (session.get("role") or "user") == "dietitian":
+        if is_managed_by(own_user_id, target_user_id):
+            return get_auth_user_by_id(target_user_id)
+        return None
+
+    manager_user_id = session.get("managed_by_user_id")
+    if manager_user_id and manager_user_id == target_user_id:
+        return get_auth_user_by_id(target_user_id)
+    return None
+
+
+def _serialize_private_message(message: dict):
+    created_at = message.get("created_at")
+    if isinstance(created_at, datetime):
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        created_at = created_at.isoformat()
+    elif created_at is not None:
+        created_at = str(created_at)
+
+    return {
+        "id": message.get("id"),
+        "sender_user_id": message.get("sender_user_id"),
+        "recipient_user_id": message.get("recipient_user_id"),
+        "body": message.get("body") or "",
+        "created_at": created_at,
+    }
 
 
 def _google_calendar_enabled() -> bool:
@@ -833,6 +873,56 @@ def dietitian_unsubscribe_client(client_user_id):
     if not removed:
         return jsonify({"error": "Client subscription not found."}), 404
     return jsonify({"ok": True, "client_user_id": client_user_id})
+
+
+@app.get("/messages/<partner_user_id>")
+def get_private_messages(partner_user_id):
+    session, error = _require_auth()
+    if error:
+        return error
+
+    partner = _resolve_private_chat_partner(session, partner_user_id)
+    if not partner:
+        return jsonify({"error": "Private chat is only available with your assigned dietitian or managed client."}), 403
+
+    messages = list_private_messages(session["user_id"], partner_user_id)
+    return jsonify(
+        {
+            "ok": True,
+            "partner": _serialize_auth_user(partner),
+            "messages": [_serialize_private_message(message) for message in messages],
+        }
+    )
+
+
+@app.post("/messages/<partner_user_id>")
+def send_private_message(partner_user_id):
+    session, error = _require_auth()
+    if error:
+        return error
+
+    partner = _resolve_private_chat_partner(session, partner_user_id)
+    if not partner:
+        return jsonify({"error": "Private chat is only available with your assigned dietitian or managed client."}), 403
+
+    data = request.get_json(force=True)
+    body = str(data.get("body", "")).strip()
+    if not body:
+        return jsonify({"error": "Message body is required."}), 400
+
+    try:
+        create_private_message(session["user_id"], partner_user_id, body)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    messages = list_private_messages(session["user_id"], partner_user_id)
+    return jsonify(
+        {
+            "ok": True,
+            "partner": _serialize_auth_user(partner),
+            "messages": [_serialize_private_message(message) for message in messages],
+        }
+    ), 201
 
 
 @app.get("/auth/me")
