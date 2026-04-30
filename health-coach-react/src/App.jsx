@@ -417,7 +417,6 @@ export default function App() {
   const [gatewayUrl] = useState(initialSettings.gatewayUrl);
   const [userId, setUserId] = useState(initialSettings.userId || "");
   const [currentUser, setCurrentUser] = useState(initialSettings.currentUser || null);
-  const [ping, setPing] = useState(null);
   const [authMode, setAuthMode] = useState("login");
   const [authName, setAuthName] = useState(initialSettings.currentUser?.display_name || "");
   const [authEmail, setAuthEmail] = useState(initialSettings.currentUser?.email || "");
@@ -492,31 +491,6 @@ export default function App() {
       const nextUrl = `${window.location.pathname}${window.location.hash || ""}`;
       window.history.replaceState({}, "", nextUrl);
     }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const timeout = setTimeout(() => {
-      if (!cancelled) setPing({ ok: false, error: "Ping timeout" });
-    }, 3000);
-
-    api
-      .ping()
-      .then((res) => {
-        clearTimeout(timeout);
-        if (!cancelled) setPing(res);
-      })
-      .catch((e) => {
-        clearTimeout(timeout);
-        if (!cancelled)
-          setPing({ ok: false, error: e?.message || "Ping failed" });
-      });
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeout);
-    };
   }, []);
 
   const [isCheckingUser, setIsCheckingUser] = useState(false);
@@ -935,17 +909,6 @@ export default function App() {
     () => coachToolFeedbackItems.find((item) => item.id === eventId) || null,
     [coachToolFeedbackItems, eventId],
   );
-
-  const pingBadge = useMemo(() => {
-    if (ping == null)
-      return <span className="badge text-bg-secondary">Connecting…</span>;
-    if (ping.ok) return <span className="badge text-bg-success">Online</span>;
-    return (
-      <span className="badge text-bg-danger">
-        Offline{ping?.error ? `: ${ping.error}` : ""}
-      </span>
-    );
-  }, [ping]);
 
   function startQuiz() {
     if (!currentUser) {
@@ -1470,18 +1433,16 @@ export default function App() {
             </div>
           </div>
 
-          <div className="d-flex align-items-center gap-2">
-            {pingBadge}
+          <div className="topbar-actions">
             {currentUser ? (
               <button
-                className="btn btn-outline-light btn-sm"
+                className="btn btn-outline-light topbar-action-btn"
                 type="button"
                 onClick={handleLogout}
               >
                 Log Out
               </button>
             ) : null}
-            <span className="badge text-bg-dark">User: {userId || "—"}</span>
           </div>
         </div>
       </div>

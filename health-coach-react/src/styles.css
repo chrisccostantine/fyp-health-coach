@@ -68,6 +68,20 @@ body {
   color: rgba(255, 255, 255, 0.75);
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.topbar-action-btn {
+  min-width: 118px;
+  padding: 0.72rem 1.1rem !important;
+  border-radius: 14px !important;
+  font-weight: 800 !important;
+  line-height: 1;
+}
+
 /* ===== Containers ===== */
 .container {
   max-width: 1100px;
