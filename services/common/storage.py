@@ -222,17 +222,20 @@ MIGRATIONS = [
 ]
 
 def init_db():
-    with engine.begin() as conn:
-        for stmt in SCHEMA.strip().split(';'):
-            s = stmt.strip()
-            if s:
-                conn.execute(text(s))
-        for stmt in MIGRATIONS:
-            try:
+    for stmt in SCHEMA.strip().split(';'):
+        s = stmt.strip()
+        if not s:
+            continue
+        with engine.begin() as conn:
+            conn.execute(text(s))
+
+    for stmt in MIGRATIONS:
+        try:
+            with engine.begin() as conn:
                 conn.execute(text(stmt))
-            except Exception:
-                # Column already exists or backend does not need this migration.
-                pass
+        except Exception:
+            # Column already exists or backend does not need this migration.
+            pass
 
 def record_feedback(event_id:str, user_id:str, rating:int, reason:str|None):
     with engine.begin() as conn:
