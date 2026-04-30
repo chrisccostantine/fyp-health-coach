@@ -66,6 +66,27 @@ BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "").strip()
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "Health Coach").strip()
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 PLAN_SPAN_DAYS = max(1, int(os.environ.get("PLAN_SPAN_DAYS", "30") or 30))
+MEAL_VARIANT_LABELS = [
+    "Mediterranean Style",
+    "Fresh Bowl",
+    "High-Protein Plate",
+    "Balanced Fuel",
+    "Recovery Combo",
+    "Light Energy Mix",
+]
+SNACK_POOL = [
+    {"name": "Protein Shake + Banana", "calories": 260, "macros": {"protein": 24, "carbs": 28, "fat": 5}, "when": "11:00"},
+    {"name": "Cottage Cheese + Apple + Cinnamon", "calories": 240, "macros": {"protein": 20, "carbs": 24, "fat": 6}, "when": "16:00"},
+    {"name": "Hummus + Veggie Sticks + Crackers", "calories": 250, "macros": {"protein": 10, "carbs": 28, "fat": 10}, "when": "16:30"},
+    {"name": "Peanut Butter Toast + Milk", "calories": 300, "macros": {"protein": 16, "carbs": 30, "fat": 12}, "when": "10:30"},
+    {"name": "Greek Yogurt + Honey + Granola", "calories": 280, "macros": {"protein": 18, "carbs": 32, "fat": 8}, "when": "15:30"},
+]
+WORKOUT_SLOTS = [
+    ("Morning Mobility Flow", "07:00", "low"),
+    ("Midday Booster Circuit", "12:30", "medium"),
+    ("Main Training Session", "18:00", None),
+    ("Evening Walk + Stretch", "20:00", "low"),
+]
 
 app = Flask(__name__)
 CORS(app)
@@ -205,6 +226,94 @@ def _copy_plan_items(items):
     return [dict(item) for item in (items or [])]
 
 
+def _duration_target_minutes(quiz_data: dict | None, goal_data: dict | None):
+    quiz_data = quiz_data or {}
+    goal_data = goal_data or {}
+    pref = str(quiz_data.get("workoutDurationPref") or "").strip().lower()
+    training_freq = str(quiz_data.get("trainingFreq") or "").strip().lower()
+    goal_type = str(goal_data.get("type") or "general_health").strip().lower()
+
+    if pref == "10_15":
+        return 15
+    if pref == "20_30":
+        return 30
+    if pref == "30_40":
+        return 40
+    if pref == "40_60":
+        return 55
+
+    if goal_type == "muscle_gain":
+        return 50
+    if goal_type == "endurance":
+        return 45
+    if training_freq == "more_3":
+        return 45
+    if training_freq == "3":
+        return 35
+    return 30
+
+
+def _build_day_meals(base_meals: list[dict], offset: int):
+    if not base_meals:
+        snack = dict(SNACK_POOL[offset % len(SNACK_POOL)])
+        return [snack]
+
+    rotated = base_meals[offset % len(base_meals) :] + base_meals[: offset % len(base_meals)]
+    meals = []
+    default_times = ["08:00", "13:00", "16:00", "19:00"]
+
+    for idx, meal in enumerate(rotated[:3]):
+        variant = dict(meal)
+        variant_suffix = MEAL_VARIANT_LABELS[(offset + idx) % len(MEAL_VARIANT_LABELS)]
+        base_name = str(variant.get("name") or variant.get("title") or f"Meal {idx + 1}").strip()
+        variant["name"] = f"{base_name} - {variant_suffix}"
+        variant["when"] = variant.get("when") or default_times[min(idx, len(default_times) - 1)]
+        calories = int(variant.get("calories", 0) or 0)
+        if calories > 0:
+            variant["calories"] = max(180, calories + ((offset + idx) % 3 - 1) * 35)
+        meals.append(variant)
+
+    snack = dict(SNACK_POOL[offset % len(SNACK_POOL)])
+    meals.insert(2 if len(meals) >= 2 else len(meals), snack)
+    return meals
+
+
+def _build_day_workouts(base_workouts: list[dict], offset: int, target_minutes: int):
+    if not base_workouts:
+        return []
+
+    rotated = base_workouts[offset % len(base_workouts) :] + base_workouts[: offset % len(base_workouts)]
+    total_target = max(15, int(target_minutes or 30))
+    slot_count = 4 if total_target >= 45 else 3
+    slot_templates = WORKOUT_SLOTS[:slot_count]
+    remaining = total_target
+    workouts = []
+
+    for idx, (slot_label, slot_time, slot_intensity) in enumerate(slot_templates):
+        slots_left = slot_count - idx
+        min_for_this = 8 if idx < slot_count - 1 else max(8, remaining)
+        block_duration = max(min_for_this, round(remaining / slots_left))
+        if idx < slot_count - 1:
+            max_allowed = remaining - 8 * (slots_left - 1)
+            block_duration = min(block_duration, max_allowed)
+        block_duration = max(8, block_duration)
+
+        template = dict(rotated[idx % len(rotated)])
+        base_name = str(template.get("name") or template.get("title") or f"Workout {idx + 1}").strip()
+        template["name"] = base_name if idx == 1 else f"{slot_label}: {base_name}"
+        template["when"] = slot_time if idx != 1 else (template.get("when") or slot_time)
+        template["duration_min"] = block_duration
+        if slot_intensity:
+            template["intensity"] = slot_intensity
+        workouts.append(template)
+        remaining -= block_duration
+
+    if remaining > 0:
+        workouts[-1]["duration_min"] = int(workouts[-1].get("duration_min", 0) or 0) + remaining
+
+    return workouts
+
+
 def _plan_days(plan: dict | None):
     plan = plan or {}
     plan_days = plan.get("plan_days")
@@ -245,22 +354,16 @@ def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], spa
     today = datetime.now(_safe_zoneinfo(APP_TIMEZONE)).date()
     base_meals = _copy_plan_items(meals)
     base_workouts = _copy_plan_items(workouts)
+    user_data = get_user(user_id) or {}
+    quiz_data = user_data.get("quiz_data") or {}
+    goal_data = user_data.get("goal") or {}
+    workout_target = _duration_target_minutes(quiz_data, goal_data)
     plan_days = []
 
     for offset in range(max(1, span_days)):
         current_date = (today + timedelta(days=offset)).isoformat()
-
-        if base_meals:
-            meal_rotation = offset % len(base_meals)
-            rotated_meals = base_meals[meal_rotation:] + base_meals[:meal_rotation]
-            day_meals = _copy_plan_items(rotated_meals)
-        else:
-            day_meals = []
-
-        day_workouts = []
-        if base_workouts:
-            template = base_workouts[offset % len(base_workouts)]
-            day_workouts = [dict(template)]
+        day_meals = _build_day_meals(base_meals, offset)
+        day_workouts = _build_day_workouts(base_workouts, offset, workout_target)
 
         plan_days.append(
             {
