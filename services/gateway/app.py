@@ -179,6 +179,25 @@ def _google_headers(user_id: str):
     }
 
 
+def _google_error_payload(prefix: str, response=None, detail: str | None = None):
+    message = prefix
+    if detail:
+        message = f"{prefix}: {detail}"
+    elif response is not None:
+        try:
+            payload = response.json()
+            detail = (
+                payload.get("error_description")
+                or payload.get("error", {}).get("message")
+                or payload.get("error")
+            )
+        except ValueError:
+            detail = response.text.strip() or response.reason
+        if detail:
+            message = f"{prefix}: {detail}"
+    return {"connected": False, "error": message}
+
+
 def _google_event_body(user_id: str, event: dict):
     payload = event.get("payload") or {}
     description_parts = []
@@ -226,41 +245,59 @@ def _google_event_body(user_id: str, event: dict):
 
 
 def _sync_google_calendar_for_user(user_id: str, events: list[dict]):
-    headers = _google_headers(user_id)
-    if not headers:
-        return None
+    try:
+        headers = _google_headers(user_id)
+        if not headers:
+            return None
 
-    res = requests.get(
-        GOOGLE_CALENDAR_EVENTS_URL,
-        headers=headers,
-        params={
-            "privateExtendedProperty": f"healthCoachUserId={user_id}",
-            "singleEvents": "true",
-            "maxResults": 250,
-        },
-        timeout=20,
-    )
-    if res.status_code == 200:
+        res = requests.get(
+            GOOGLE_CALENDAR_EVENTS_URL,
+            headers=headers,
+            params={
+                "privateExtendedProperty": f"healthCoachUserId={user_id}",
+                "singleEvents": "true",
+                "maxResults": 250,
+            },
+            timeout=20,
+        )
+        if res.status_code != 200:
+            return _google_error_payload("Google Calendar list failed", response=res)
+
         for item in res.json().get("items", []):
             event_id = item.get("id")
             if event_id:
-                requests.delete(
+                delete_res = requests.delete(
                     f"{GOOGLE_CALENDAR_EVENTS_URL}/{event_id}",
                     headers=headers,
                     timeout=20,
                 )
+                if delete_res.status_code not in {200, 204}:
+                    return _google_error_payload(
+                        "Google Calendar cleanup failed",
+                        response=delete_res,
+                    )
 
-    created = []
-    for event in events:
-        insert_res = requests.post(
-            GOOGLE_CALENDAR_EVENTS_URL,
-            headers=headers,
-            json=_google_event_body(user_id, event),
-            timeout=20,
-        )
-        if insert_res.status_code in {200, 201}:
+        created = []
+        for event in events:
+            insert_res = requests.post(
+                GOOGLE_CALENDAR_EVENTS_URL,
+                headers=headers,
+                json=_google_event_body(user_id, event),
+                timeout=20,
+            )
+            if insert_res.status_code not in {200, 201}:
+                return _google_error_payload(
+                    "Google Calendar event creation failed",
+                    response=insert_res,
+                )
             created.append(insert_res.json().get("id"))
-    return {"connected": True, "created": len(created)}
+        return {"connected": True, "created": len(created)}
+    except requests.RequestException as exc:
+        app.logger.exception("Google Calendar sync request failed for user %s", user_id)
+        return _google_error_payload("Google Calendar sync request failed", detail=str(exc))
+    except Exception as exc:
+        app.logger.exception("Unexpected Google Calendar sync failure for user %s", user_id)
+        return _google_error_payload("Google Calendar sync failed", detail=str(exc))
 
 
 def _sync_calendar_for_plan(user_id: str, plan: dict):
@@ -561,10 +598,14 @@ def calendar_sync():
         return jsonify({"error": "No plan available to sync."}), 400
 
     plan["user_id"] = user_id
-    data = _sync_calendar_for_plan(user_id, plan)
-    if data is None:
-        return jsonify({"error": "calendar service unavailable"}), 502
-    return jsonify(data)
+    try:
+        data = _sync_calendar_for_plan(user_id, plan)
+        if data is None:
+            return jsonify({"error": "calendar service unavailable"}), 502
+        return jsonify(data)
+    except Exception as exc:
+        app.logger.exception("Calendar sync failed for user %s", user_id)
+        return jsonify({"error": f"Calendar sync failed: {exc}"}), 500
 
 
 @app.post("/nudge/send")
