@@ -1017,7 +1017,7 @@ export default function App() {
       setNudgeTimezone(settings.timezone || nudgeTimezone);
       setNudgeMsg(
         settings.enabled
-          ? `Automatic email nudges are enabled for ${settings.send_time} (${settings.timezone}). No email is sent right away when you save this. The next email is sent only when the scheduled runner reaches that exact time.`
+          ? `Automatic email nudges are enabled for ${settings.send_time} (${settings.timezone}). No email is sent right away when you save this. The next email is sent by the first scheduled runner that checks after that time.`
           : "Automatic email nudges are disabled.",
       );
     } catch (e) {

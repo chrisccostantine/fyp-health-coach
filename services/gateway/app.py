@@ -147,6 +147,20 @@ def _safe_zoneinfo(value: str | None) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
+def _parse_hhmm_to_minutes(value: str | None) -> int | None:
+    raw = str(value or "").strip()
+    if len(raw) != 5 or raw[2] != ":":
+        return None
+    try:
+        hours = int(raw[:2])
+        minutes = int(raw[3:])
+    except ValueError:
+        return None
+    if not (0 <= hours <= 23 and 0 <= minutes <= 59):
+        return None
+    return hours * 60 + minutes
+
+
 def _send_nudge_via_motivation_service(*, user_id: str, email: str, name: str, tone: str, goal: str):
     payload = {
         "user_id": user_id,
@@ -916,12 +930,16 @@ def nudge_run_scheduled():
             continue
 
         user_now = now_utc.astimezone(_safe_zoneinfo(settings.get("timezone")))
-        current_hhmm = user_now.strftime("%H:%M")
+        current_minutes = user_now.hour * 60 + user_now.minute
+        scheduled_minutes = _parse_hhmm_to_minutes(settings.get("send_time"))
         today = user_now.date().isoformat()
         if settings.get("last_sent_on") == today:
             skipped.append({"user_id": settings["user_id"], "reason": "already_sent_today"})
             continue
-        if settings.get("send_time") != current_hhmm:
+        if scheduled_minutes is None:
+            skipped.append({"user_id": settings["user_id"], "reason": "invalid_send_time"})
+            continue
+        if current_minutes < scheduled_minutes:
             skipped.append({"user_id": settings["user_id"], "reason": "not_due_yet"})
             continue
 
