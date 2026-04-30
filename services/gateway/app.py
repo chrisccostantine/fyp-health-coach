@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import requests
 from flask import Flask, jsonify, redirect, request
 from flask_cors import CORS
+from openai import OpenAI
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -91,6 +92,7 @@ WORKOUT_SLOTS = [
 app = Flask(__name__)
 CORS(app)
 init_db()
+openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY")) if os.environ.get("OPENAI_API_KEY") else None
 
 
 def _serialize_auth_user(user: dict):
@@ -251,6 +253,153 @@ def _duration_target_minutes(quiz_data: dict | None, goal_data: dict | None):
     if training_freq == "3":
         return 35
     return 30
+
+
+def _fitness_score_components(payload: dict):
+    age = max(14, int(float(payload.get("age") or 24)))
+    activity = str(payload.get("activity") or "light").strip().lower()
+    fitness_level = str(payload.get("fitness_level") or "beginner").strip().lower()
+    training_freq = str(payload.get("training_freq") or "").strip().lower()
+    workout_pref = str(payload.get("workout_duration_pref") or "").strip().lower()
+    water_intake = str(payload.get("water_intake") or "").strip().lower()
+    body_type = str(payload.get("body_type") or "average").strip().lower()
+    goal_type = str(payload.get("goal_type") or "general_health").strip().lower()
+    pushups_level = str(payload.get("pushups_level") or "").strip().lower()
+    pullups_level = str(payload.get("pullups_level") or "").strip().lower()
+    additional_goals = [str(goal).strip().lower() for goal in (payload.get("additional_goals") or [])]
+
+    score = 50.0
+    score += {
+        "sedentary": -10,
+        "light": -2,
+        "moderate": 6,
+        "active": 10,
+        "very_active": 14,
+    }.get(activity, 0)
+    score += {
+        "beginner": -6,
+        "amateur": 2,
+        "advanced": 8,
+    }.get(fitness_level, 0)
+    score += {
+        "not_at_all": -10,
+        "1_2": -2,
+        "3": 5,
+        "more_3": 9,
+    }.get(training_freq, 0)
+    score += {
+        "10_15": -2,
+        "20_30": 1,
+        "30_40": 4,
+        "40_60": 7,
+        "auto": 3,
+    }.get(workout_pref, 0)
+    score += {
+        "lt2": -5,
+        "2_6": 2,
+        "7_10": 4,
+        "gt10": 3,
+        "coffee_tea": -3,
+    }.get(water_intake, 0)
+    score += {
+        "lt10": -3,
+        "10_20": 2,
+        "21_30": 4,
+        "gt30": 6,
+    }.get(pushups_level, 0)
+    score += {
+        "none": -4,
+        "lt5": 1,
+        "5_10": 3,
+        "gt10": 5,
+    }.get(pullups_level, 0)
+
+    if body_type == "heavy":
+        score -= 4
+    elif body_type == "slim":
+        score += 1
+
+    if goal_type == "endurance":
+        score += 2
+    elif goal_type == "muscle_gain":
+        score += 1
+
+    score += min(4, len(additional_goals))
+    score = max(20, min(95, round(score)))
+
+    age_offset = round((50 - score) / 3)
+    fitness_age = max(14, min(80, age + age_offset))
+    meter_percent = max(5, min(95, score))
+
+    if score >= 80:
+        band = "excellent"
+    elif score >= 65:
+        band = "strong"
+    elif score >= 50:
+        band = "improving"
+    else:
+        band = "needs_attention"
+
+    return {
+        "score": int(score),
+        "fitness_age": int(fitness_age),
+        "meter_percent": int(meter_percent),
+        "band": band,
+        "chronological_age": age,
+    }
+
+
+def _fallback_fitness_summary(assessment: dict):
+    band = assessment["band"]
+    if band == "excellent":
+        return (
+            "Your fitness signals are strong right now. The data suggests a solid training base, healthy activity pattern, and good recovery potential.\n\n"
+            "Keep progressing gradually and stay consistent with hydration, recovery, and plan adherence to hold this advantage."
+        )
+    if band == "strong":
+        return (
+            "Your fitness baseline is in a good place, with a healthy mix of activity and training habits.\n\n"
+            "A bit more consistency in training volume and recovery can move you closer to an elite routine."
+        )
+    if band == "improving":
+        return (
+            "Your current fitness score shows a decent starting point, but there is clear room to improve stamina, strength, and consistency.\n\n"
+            "Following the plan regularly should lower your fitness age and raise your score over the coming weeks."
+        )
+    return (
+        "Your current fitness score suggests your body would benefit from more regular training, better recovery habits, and steady daily movement.\n\n"
+        "The good news is that this type of score usually improves quickly once you follow a structured plan consistently."
+    )
+
+
+def _ai_fitness_summary(payload: dict, assessment: dict):
+    if openai_client is None:
+        return _fallback_fitness_summary(assessment)
+
+    try:
+        prompt = {
+            "user_inputs": payload,
+            "assessment": assessment,
+            "task": "Explain this fitness score in two short motivating paragraphs. Be practical, realistic, and encouraging. Do not mention AI or formulas.",
+        }
+        resp = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.4,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a fitness coach explaining a computed fitness score to a user in clear, supportive language.",
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(prompt),
+                },
+            ],
+        )
+        content = resp.choices[0].message.content if resp.choices else ""
+        return str(content or "").strip() or _fallback_fitness_summary(assessment)
+    except Exception:
+        return _fallback_fitness_summary(assessment)
 
 
 def _build_day_meals(base_meals: list[dict], offset: int):
@@ -1164,6 +1313,14 @@ def send_private_message(partner_user_id):
             "messages": [_serialize_private_message(message) for message in messages],
         }
     ), 201
+
+
+@app.post("/fitness-score/estimate")
+def estimate_fitness_score():
+    payload = request.get_json(force=True) or {}
+    assessment = _fitness_score_components(payload)
+    assessment["summary"] = _ai_fitness_summary(payload, assessment)
+    return jsonify({"ok": True, "assessment": assessment})
 
 
 @app.get("/auth/me")

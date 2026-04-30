@@ -228,6 +228,13 @@ export const api = {
     });
   },
 
+  async estimateFitnessScore(payload) {
+    return await fetchJSON("/fitness-score/estimate", {
+      method: "POST",
+      body: JSON.stringify(payload || {}),
+    });
+  },
+
   async planToday(payload) {
     const body = withUserId({
       profile: payload?.profile,

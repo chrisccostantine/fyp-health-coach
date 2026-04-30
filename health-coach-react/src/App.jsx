@@ -685,6 +685,10 @@ export default function App() {
   const [leadDob, setLeadDob] = useState("");
   const [leadEmail, setLeadEmail] = useState("");
   const [fitnessAge, setFitnessAge] = useState(null);
+  const [fitnessScore, setFitnessScore] = useState(null);
+  const [fitnessMeterPercent, setFitnessMeterPercent] = useState(45);
+  const [fitnessSummary, setFitnessSummary] = useState("");
+  const [isLoadingFitnessScore, setIsLoadingFitnessScore] = useState(false);
   const ageBand =
     Number(age) < 25
       ? "under_25"
@@ -722,11 +726,61 @@ export default function App() {
     ],
   );
   useEffect(() => {
-    if (step === ACTIVE_QUIZ_STEPS[ACTIVE_QUIZ_STEPS.length - 1]) {
-      setFitnessAge(calcFitnessAge());
-    }
+    if (step !== ACTIVE_QUIZ_STEPS[ACTIVE_QUIZ_STEPS.length - 1]) return;
+
+    let cancelled = false;
+    setIsLoadingFitnessScore(true);
+    api
+      .estimateFitnessScore({
+        age,
+        activity,
+        fitness_level: fitnessLevel,
+        training_freq: trainingFreq,
+        workout_duration_pref: workoutDurationPref,
+        water_intake: waterIntake,
+        body_type: bodyType,
+        goal_type: goalType,
+        pushups_level: pushupsLevel,
+        pullups_level: pullupsLevel,
+        additional_goals: additionalGoals,
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const assessment = data?.assessment || {};
+        setFitnessAge(Number(assessment.fitness_age) || calcFitnessAge());
+        setFitnessScore(Number(assessment.score) || null);
+        setFitnessMeterPercent(Number(assessment.meter_percent) || 45);
+        setFitnessSummary(String(assessment.summary || "").trim());
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFitnessAge(calcFitnessAge());
+        setFitnessScore(null);
+        setFitnessMeterPercent(45);
+        setFitnessSummary("");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingFitnessScore(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [
+    step,
+    age,
+    activity,
+    fitnessLevel,
+    trainingFreq,
+    workoutDurationPref,
+    waterIntake,
+    bodyType,
+    goalType,
+    pushupsLevel,
+    pullupsLevel,
+    additionalGoals,
+  ]);
 
   useEffect(() => {
     const metricHeight = toMetricHeight(heightValue, heightUnit);
@@ -3675,30 +3729,42 @@ export default function App() {
                   <>
                     <h3 className="quiz-title">Your current fitness score</h3>
                     <div className="age-pill">
-                      {fitnessAge || Number(age) || 24} years{" "}
+                      {isLoadingFitnessScore ? "..." : fitnessAge || Number(age) || 24} years{" "}
+                    </div>
+
+                    <div className="quiz-sub mt-3">
+                      Fitness score:{" "}
+                      <strong>{isLoadingFitnessScore ? "Calculating..." : fitnessScore ?? "Pending"}</strong>
                     </div>
 
                     <div className="fitness-copy">
-                      <p>
-                        This indicates a slight aging of the body. Irregular
-                        exercise and sleeping late at night can lead to
-                        metabolic aging.
-                      </p>
-                      <p>
-                        People with a low metabolism are more likely to gain
-                        weight and tire quickly.
-                      </p>
+                      {fitnessSummary ? (
+                        fitnessSummary.split(/\n\s*\n/).map((paragraph, idx) => (
+                          <p key={idx}>{paragraph}</p>
+                        ))
+                      ) : (
+                        <>
+                          <p>
+                            This score blends your activity level, recent training history, workout preference, recovery habits, and strength markers.
+                          </p>
+                          <p>
+                            As your consistency improves, this score and your projected fitness age should improve with it.
+                          </p>
+                        </>
+                      )}
                     </div>
 
                     <div className="meter-card">
                       <div className="meter-bar">
                         <span
                           className="meter-pin"
-                          style={{ left: "45%" }} // you can compute this later
+                          style={{ left: `${fitnessMeterPercent}%` }}
                         />
                       </div>
                       <div className="meter-text">
-                        Your current fitness baseline can be improved{" "}
+                        {fitnessScore != null
+                          ? `Your current fitness baseline is ${fitnessScore}/100 and can improve with plan consistency.`
+                          : "Your current fitness baseline can be improved."}
                       </div>
                     </div>
 
