@@ -1080,6 +1080,39 @@ pre.out {
 .toggle-label.on{
   color: var(--accent); /* your orange */
 }
+
+.automation-toggle {
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.automation-toggle .form-check-input {
+  width: 2.8rem;
+  height: 1.45rem;
+  margin-top: 0;
+  border-color: rgba(255, 255, 255, 0.22);
+  background-color: rgba(255, 255, 255, 0.16);
+  box-shadow: none !important;
+}
+
+.automation-toggle .form-check-input:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.automation-toggle .form-check-label {
+  color: var(--text) !important;
+  font-weight: 800;
+}
+
+.automation-note {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
 .results-shell{
   border-radius: 22px;
   background: linear-gradient(180deg, rgba(32,32,32,.98), rgba(20,20,20,.98)) !important;

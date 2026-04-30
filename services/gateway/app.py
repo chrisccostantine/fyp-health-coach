@@ -159,6 +159,34 @@ def _send_nudge_via_motivation_service(*, user_id: str, email: str, name: str, t
     return res
 
 
+def _derive_nudge_context(user_id: str):
+    user_data = get_user(user_id) or {}
+    goal_data = user_data.get("goal") or {}
+    plan = get_latest_plan(user_id) or {}
+
+    goal_type = str(goal_data.get("type") or "general_health").strip().lower()
+    workout_count = len(plan.get("workouts", []) or [])
+    meal_count = len(plan.get("meals", []) or [])
+
+    tone = "coach" if goal_type in {"fat_loss", "muscle_gain"} else "friendly"
+
+    goal_map = {
+        "fat_loss": "stay_consistent",
+        "muscle_gain": "build_strength",
+        "endurance": "keep_moving",
+        "general_health": "feel_better_daily",
+    }
+    goal = goal_map.get(goal_type, "stay_consistent")
+
+    return {
+        "tone": tone,
+        "goal": goal,
+        "goal_type": goal_type,
+        "workout_count": workout_count,
+        "meal_count": meal_count,
+    }
+
+
 def _frontend_redirect(status: str) -> str:
     base = FRONTEND_URL.rstrip("/") if FRONTEND_URL else "/"
     return f"{base}?google_calendar={status}"
@@ -797,9 +825,15 @@ def nudge_send():
     session = _get_current_session()
     nudge_payload = dict(body or {})
     if session:
+        derived = _derive_nudge_context(session["user_id"])
         nudge_payload["email"] = session.get("email")
         nudge_payload["name"] = session.get("display_name") or session.get("email", "")
         nudge_payload["user_id"] = session["user_id"]
+        nudge_payload["tone"] = derived["tone"]
+        nudge_payload["goal"] = derived["goal"]
+        nudge_payload["goal_type"] = derived["goal_type"]
+        nudge_payload["workout_count"] = derived["workout_count"]
+        nudge_payload["meal_count"] = derived["meal_count"]
     res = requests.post(f"{MOTIVATION_URL}/nudge/send", json=nudge_payload)
     return jsonify(res.json()), res.status_code
 
@@ -809,15 +843,18 @@ def nudge_settings_get():
     session, error = _require_auth()
     if error:
         return error
+    derived = _derive_nudge_context(session["user_id"])
     settings = get_nudge_settings(session["user_id"]) or {
         "user_id": session["user_id"],
         "enabled": False,
-        "tone": "coach",
-        "goal_text": "stay_consistent",
+        "tone": derived["tone"],
+        "goal_text": derived["goal"],
         "send_time": "08:00",
         "timezone": APP_TIMEZONE,
         "last_sent_on": None,
     }
+    settings["tone"] = derived["tone"]
+    settings["goal_text"] = derived["goal"]
     return jsonify({"ok": True, "settings": settings})
 
 
@@ -828,26 +865,27 @@ def nudge_settings_save():
         return error
     body = request.get_json(force=True)
     enabled = bool(body.get("enabled"))
-    tone = str(body.get("tone", "coach")).strip().lower() or "coach"
-    goal_text = str(body.get("goal_text", "stay_consistent")).strip() or "stay_consistent"
     send_time = str(body.get("send_time", "08:00")).strip() or "08:00"
     timezone_name = str(body.get("timezone", APP_TIMEZONE)).strip() or APP_TIMEZONE
 
-    if tone not in {"coach", "friendly"}:
-        return jsonify({"error": "Tone must be 'coach' or 'friendly'."}), 400
     if len(send_time) != 5 or send_time[2] != ":":
         return jsonify({"error": "Send time must be in HH:MM format."}), 400
     _safe_zoneinfo(timezone_name)
 
+    derived = _derive_nudge_context(session["user_id"])
+
     upsert_nudge_settings(
         session["user_id"],
         enabled=enabled,
-        tone=tone,
-        goal_text=goal_text,
+        tone=derived["tone"],
+        goal_text=derived["goal"],
         send_time=send_time,
         timezone=timezone_name,
     )
     settings = get_nudge_settings(session["user_id"])
+    if settings:
+        settings["tone"] = derived["tone"]
+        settings["goal_text"] = derived["goal"]
     return jsonify({"ok": True, "settings": settings})
 
 
@@ -880,12 +918,13 @@ def nudge_run_scheduled():
             continue
 
         try:
+            derived = _derive_nudge_context(user["user_id"])
             res = _send_nudge_via_motivation_service(
                 user_id=user["user_id"],
                 email=user["email"],
                 name=user.get("display_name") or user["email"],
-                tone=settings.get("tone") or "coach",
-                goal=settings.get("goal_text") or "stay_consistent",
+                tone=derived["tone"],
+                goal=derived["goal"],
             )
             payload = res.json()
             if res.status_code >= 400:

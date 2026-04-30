@@ -823,32 +823,13 @@ export default function App() {
   }
 
   // ------- Nudge -------
-  const [tone, setTone] = useState("coach");
-  const [goalText, setGoalText] = useState("stay_consistent");
-  const [nudge, setNudge] = useState(null);
   const [nudgeMsg, setNudgeMsg] = useState("");
-  const [isNudging, setIsNudging] = useState(false);
   const [nudgeAutomationEnabled, setNudgeAutomationEnabled] = useState(false);
   const [nudgeSendTime, setNudgeSendTime] = useState("08:00");
   const [nudgeTimezone, setNudgeTimezone] = useState(
     Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   );
   const [isSavingNudgeSettings, setIsSavingNudgeSettings] = useState(false);
-
-  async function handleNudge() {
-    setIsNudging(true);
-    setNudgeMsg("");
-    try {
-      if (!goalText.trim()) throw new Error("Goal text is required.");
-      const data = await api.sendNudge({ tone, goal: goalText.trim() });
-      setNudge(data);
-    } catch (e) {
-      setNudge(null);
-      setNudgeMsg(`Error: ${e.message}`);
-    } finally {
-      setIsNudging(false);
-    }
-  }
 
   // ------- Feedback -------
   const [eventId, setEventId] = useState("");
@@ -1012,8 +993,6 @@ export default function App() {
         if (cancelled) return;
         const settings = data?.settings || {};
         setNudgeAutomationEnabled(Boolean(settings.enabled));
-        setTone(settings.tone || "coach");
-        setGoalText(settings.goal_text || "stay_consistent");
         setNudgeSendTime(settings.send_time || "08:00");
         setNudgeTimezone(settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
       })
@@ -1029,20 +1008,16 @@ export default function App() {
     try {
       const data = await api.saveNudgeSettings({
         enabled: nudgeAutomationEnabled,
-        tone,
-        goal_text: goalText.trim() || "stay_consistent",
         send_time: nudgeSendTime,
         timezone: nudgeTimezone,
       });
       const settings = data?.settings || {};
       setNudgeAutomationEnabled(Boolean(settings.enabled));
-      setTone(settings.tone || "coach");
-      setGoalText(settings.goal_text || "stay_consistent");
       setNudgeSendTime(settings.send_time || "08:00");
       setNudgeTimezone(settings.timezone || nudgeTimezone);
       setNudgeMsg(
         settings.enabled
-          ? `Automatic email nudges are enabled for ${settings.send_time} (${settings.timezone}).`
+          ? `Automatic email nudges are enabled for ${settings.send_time} (${settings.timezone}). The system will choose each message based on the user's goal and current plan.`
           : "Automatic email nudges are disabled.",
       );
     } catch (e) {
@@ -1688,12 +1663,12 @@ export default function App() {
                 <div className="card-body p-4">
                   <h2 className="h5 panel-title mb-3">Motivation</h2>
                   <p className="text-muted mb-3">
-                    Send a motivation nudge to your account email.
+                    Daily motivation emails are sent automatically to the account email. The system picks the message style and content from the user's goal, meals, and workout plan.
                   </p>
 
                   <div className="row g-3">
                     <div className="col-12">
-                      <div className="form-check form-switch">
+                      <div className="form-check form-switch automation-toggle">
                         <input
                           className="form-check-input"
                           type="checkbox"
@@ -1705,28 +1680,9 @@ export default function App() {
                           Enable automatic daily email nudges
                         </label>
                       </div>
-                    </div>
-
-                    <div className="col-12">
-                      <label className="form-label">Tone</label>
-                      <select
-                        className="form-select"
-                        value={tone}
-                        onChange={(e) => setTone(e.target.value)}
-                      >
-                        <option value="coach">coach</option>
-                        <option value="friendly">friendly</option>
-                      </select>
-                    </div>
-
-                    <div className="col-12">
-                      <label className="form-label">Goal Text</label>
-                      <input
-                        className="form-control"
-                        value={goalText}
-                        onChange={(e) => setGoalText(e.target.value)}
-                        placeholder="stay_consistent"
-                      />
+                      <div className="automation-note mt-3">
+                        Emails are personalized automatically, so there is nothing extra to configure beyond the schedule.
+                      </div>
                     </div>
 
                     <div className="col-md-6">
@@ -1754,14 +1710,6 @@ export default function App() {
                     <button
                       className="btn btn-primary fw-bold flex-grow-1"
                       type="button"
-                      onClick={handleNudge}
-                      disabled={isNudging}
-                    >
-                      {isNudging ? <Spinner label="Sending..." /> : "Send Nudge Now"}
-                    </button>
-                    <button
-                      className="btn btn-outline-light"
-                      type="button"
                       onClick={handleSaveNudgeAutomation}
                       disabled={isSavingNudgeSettings}
                     >
@@ -1770,7 +1718,6 @@ export default function App() {
                   </div>
 
                   <Alert variant="warning">{nudgeMsg}</Alert>
-                  {nudge ? <NudgeView result={nudge} tone={tone} goal={goalText} /> : null}
                 </div>
               </div>
             </div>
@@ -3060,14 +3007,7 @@ export default function App() {
           isGoogleCalendarBusy={isGoogleCalendarBusy}
           handleGoogleCalendarConnect={handleGoogleCalendarConnect}
           handleGoogleCalendarDisconnect={handleGoogleCalendarDisconnect}
-          tone={tone}
-          setTone={setTone}
-          goalText={goalText}
-          setGoalText={setGoalText}
-          isNudging={isNudging}
-          handleNudge={handleNudge}
           nudgeMsg={nudgeMsg}
-          nudge={nudge}
           dietChatInput={dietChatInput}
           setDietChatInput={setDietChatInput}
           dietChatMessages={dietChatMessages}
