@@ -734,10 +734,14 @@ export default function App() {
       .getGoogleCalendarStatus()
       .then((data) => {
         if (cancelled) return;
-        setGoogleCalendar({
+        const nextStatus = {
           enabled: Boolean(data?.enabled),
           connected: Boolean(data?.connected),
-        });
+        };
+        setGoogleCalendar(nextStatus);
+        if (nextStatus.connected) {
+          setGoogleCalendarMsg("");
+        }
       })
       .catch(() => {
         if (cancelled) return;
@@ -756,6 +760,7 @@ export default function App() {
     }
 
     setIsGoogleCalendarBusy(true);
+    setGoogleCalendarMsg("");
     try {
       const data = await api.startGoogleCalendarConnect();
       if (!data?.auth_url) throw new Error("Missing Google auth URL.");
@@ -768,6 +773,7 @@ export default function App() {
 
   async function handleGoogleCalendarDisconnect() {
     setIsGoogleCalendarBusy(true);
+    setGoogleCalendarMsg("");
     try {
       await api.disconnectGoogleCalendar();
       setGoogleCalendar({ enabled: true, connected: false });
