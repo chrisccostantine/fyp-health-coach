@@ -1936,7 +1936,7 @@ export default function App() {
                     {currentUser?.display_name || "Your health dashboard"}
                   </h1>
                   <p className="text-muted mb-4">
-                    Start your quiz, review your saved plan, and keep your meals and workouts on track.
+                    Set up your plan, review your saved schedule, and keep your meals and workouts on track.
                   </p>
 
                   <div className="results-summary">
@@ -1954,7 +1954,7 @@ export default function App() {
 
                   <div className="d-flex flex-wrap gap-3 mt-4">
                     <button className="btn btn-primary btn-lg fw-bold" type="button" onClick={startQuiz}>
-                      {plan ? "Update My Plan" : "Start Quiz"}
+                      {plan ? "Update My Plan Setup" : "Start My Plan"}
                     </button>
                     <button
                       className="btn btn-outline-light btn-lg"
@@ -2008,7 +2008,7 @@ export default function App() {
                   <FieldNote>
                     {plan
                       ? "Your last saved plan is ready. Open it to review meals, workouts, calendar sync, and edits."
-                      : "You do not have a saved plan yet. Start the quiz to create one."}
+                      : "You do not have a saved plan yet. Start your plan setup to create one."}
                   </FieldNote>
 
                   {currentUser.managed_by ? (

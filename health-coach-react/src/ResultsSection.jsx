@@ -170,7 +170,7 @@ export default function ResultsSection({
                   onClick={() => setStage("quiz")}
                   disabled={isReadOnlyClientView}
                 >
-                  Edit Quiz
+                  Edit Plan Setup
                 </button>
 
                 <button
@@ -192,7 +192,7 @@ export default function ResultsSection({
               <div className="empty-state mt-4">
                 <div className="empty-state-title">No plan generated yet</div>
                 <p className="text-muted mb-3">
-                  Complete the quiz to generate a personalized meal and workout
+                  Complete your plan setup to generate a personalized meal and workout
                   plan.
                 </p>
                 <button
@@ -201,7 +201,7 @@ export default function ResultsSection({
                   onClick={() => setStage("quiz")}
                   disabled={isReadOnlyClientView}
                 >
-                  {isReadOnlyClientView ? "Client Must Log In" : "Start Quiz"}
+                  {isReadOnlyClientView ? "Client Must Log In" : "Start My Plan"}
                 </button>
               </div>
             ) : (
