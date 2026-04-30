@@ -4,8 +4,19 @@ const SETTINGS_KEY = "hc.settings.v1";
 const PLAN_KEY = "hc.lastPlan.v1";
 const CALENDAR_KEY = "hc.calendar.v1";
 
+const ENV_GATEWAY_URL = (import.meta.env.VITE_GATEWAY_URL || "").trim();
+
+function isLoopbackUrl(value) {
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/i.test(String(value || ""));
+}
+
+function resolveDefaultGatewayUrl() {
+  if (ENV_GATEWAY_URL) return ENV_GATEWAY_URL.replace(/\/+$/, "");
+  return "http://127.0.0.1:8000";
+}
+
 const DEFAULT_SETTINGS = {
-  gatewayUrl: "http://127.0.0.1:8000",
+  gatewayUrl: resolveDefaultGatewayUrl(),
   userId: "",
   authToken: "",
   currentUser: null,
@@ -63,7 +74,14 @@ function buildErrorMessage(data, res) {
 // ---------- Settings ----------
 export function getSettings() {
   const saved = safeJsonParse(localStorage.getItem(SETTINGS_KEY), null);
-  return { ...DEFAULT_SETTINGS, ...(saved || {}) };
+  const merged = { ...DEFAULT_SETTINGS, ...(saved || {}) };
+
+  // If the app is deployed and a real backend URL is provided, prefer it over stale localhost settings.
+  if (ENV_GATEWAY_URL && isLoopbackUrl(merged.gatewayUrl)) {
+    merged.gatewayUrl = resolveDefaultGatewayUrl();
+  }
+
+  return merged;
 }
 
 export function saveSettings(partial) {
