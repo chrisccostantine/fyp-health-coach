@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from datetime import datetime, timedelta
 
@@ -30,6 +31,28 @@ def _to_iso_datetime(value: str | None, fallback_time: str) -> str:
         return parsed.replace(microsecond=0).isoformat()
     except ValueError:
         return f"{_today_iso_date()}T{fallback_time}:00"
+
+
+def _parse_duration_minutes(value, fallback: int = 30) -> int:
+    if value is None:
+        return fallback
+    if isinstance(value, (int, float)):
+        parsed = int(value)
+        return parsed if parsed > 0 else fallback
+
+    raw = str(value).strip()
+    if not raw:
+        return fallback
+
+    try:
+        parsed = int(raw)
+        return parsed if parsed > 0 else fallback
+    except ValueError:
+        match = re.search(r"\d+(?:\.\d+)?", raw)
+        if not match:
+            return fallback
+        parsed = int(float(match.group(0)))
+        return parsed if parsed > 0 else fallback
 
 
 def _build_event(source_key: str, item_type: str, title: str, starts_at: str, duration_min: int, payload: dict):
@@ -73,7 +96,10 @@ def _calendar_from_plan(user_id: str, plan: dict):
         )
 
     for idx, workout in enumerate(workouts):
-        duration = int(workout.get("duration_min", workout.get("duration", 30)) or 30)
+        duration = _parse_duration_minutes(
+            workout.get("duration_min", workout.get("duration", 30)),
+            fallback=30,
+        )
         starts_at = _to_iso_datetime(
             workout.get("when") or workout.get("time"),
             DEFAULT_WORKOUT_TIME,
