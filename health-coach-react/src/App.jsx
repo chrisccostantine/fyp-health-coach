@@ -344,6 +344,90 @@ function toMetricWeight(value, unit) {
   return unit === "lb" ? Math.round(numeric * 0.453592 * 10) / 10 : numeric;
 }
 
+function estimateGoalTimeline({
+  currentWeight,
+  targetWeight,
+  weightUnit,
+  goalType,
+  deficit,
+  activity,
+  fitnessLevel,
+  trainingFreq,
+  age,
+  bodyType,
+}) {
+  const currentKg = toMetricWeight(currentWeight, weightUnit);
+  const targetKg = toMetricWeight(targetWeight, weightUnit);
+  const deltaKg = Math.abs(targetKg - currentKg);
+
+  if (!Number.isFinite(currentKg) || !Number.isFinite(targetKg) || deltaKg <= 0) {
+    const fallbackDays = 14;
+    return {
+      days: fallbackDays,
+      weeklyRateKg: 0,
+      targetDate: new Date(Date.now() + fallbackDays * 86400000),
+      summary: "You are already close to your target, so this is mainly about consistency.",
+    };
+  }
+
+  const activityBoost = {
+    sedentary: -0.04,
+    light: 0,
+    moderate: 0.05,
+    active: 0.08,
+    very_active: 0.1,
+  }[activity] ?? 0;
+
+  const fitnessBoost = {
+    beginner: 0.03,
+    amateur: 0,
+    advanced: -0.02,
+  }[fitnessLevel] ?? 0;
+
+  const trainingBoost = {
+    not_at_all: -0.03,
+    "1_2": 0,
+    "3": 0.03,
+    more_3: 0.05,
+  }[trainingFreq] ?? 0;
+
+  const ageAdjustment =
+    Number(age) >= 50 ? -0.05 : Number(age) >= 40 ? -0.02 : 0;
+
+  let weeklyRateKg = 0.25;
+  let summary = "A steady pace is more sustainable than an aggressive one.";
+
+  if (targetKg < currentKg) {
+    const deficitBased = Math.max(0.18, (Number(deficit || 0) * 7) / 7700);
+    const bodyTypeBoost = bodyType === "heavy" ? 0.08 : bodyType === "big" ? 0.04 : 0;
+    weeklyRateKg = deficitBased + activityBoost + fitnessBoost + trainingBoost + ageAdjustment + bodyTypeBoost;
+    weeklyRateKg = Math.min(1.0, Math.max(0.2, weeklyRateKg));
+    summary =
+      goalType === "fat_loss"
+        ? "This estimate uses your calorie deficit and training profile to project a realistic fat-loss pace."
+        : "This estimate uses your weight gap, lifestyle, and activity level to project a safe pace.";
+  } else if (targetKg > currentKg) {
+    const goalBase = goalType === "muscle_gain" ? 0.28 : 0.2;
+    const bodyTypeAdjustment = bodyType === "slim" ? 0.05 : 0;
+    weeklyRateKg = goalBase + fitnessBoost + trainingBoost + ageAdjustment + bodyTypeAdjustment;
+    weeklyRateKg = Math.min(0.5, Math.max(0.12, weeklyRateKg));
+    summary =
+      goalType === "muscle_gain"
+        ? "This estimate assumes gradual lean mass gain with progressive training and consistent meals."
+        : "This estimate assumes a gradual increase while keeping the plan sustainable.";
+  } else {
+    weeklyRateKg = 0.2;
+  }
+
+  const days = Math.max(14, Math.ceil((deltaKg / weeklyRateKg) * 7));
+  return {
+    days,
+    weeklyRateKg,
+    targetDate: new Date(Date.now() + days * 86400000),
+    summary,
+  };
+}
+
 function ProgressCurve({ startWeight, endWeight, unit }) {
   const width = 760;
   const height = 250;
@@ -609,6 +693,34 @@ export default function App() {
         : Number(age) < 50
           ? "35_49"
           : "50_plus";
+  const timelineEstimate = useMemo(
+    () =>
+      estimateGoalTimeline({
+        currentWeight: currentWeight || weight,
+        targetWeight: targetWeight || currentWeight || weight,
+        weightUnit,
+        goalType,
+        deficit,
+        activity,
+        fitnessLevel,
+        trainingFreq,
+        age,
+        bodyType,
+      }),
+    [
+      currentWeight,
+      weight,
+      targetWeight,
+      weightUnit,
+      goalType,
+      deficit,
+      activity,
+      fitnessLevel,
+      trainingFreq,
+      age,
+      bodyType,
+    ],
+  );
   useEffect(() => {
     if (step === ACTIVE_QUIZ_STEPS[ACTIVE_QUIZ_STEPS.length - 1]) {
       setFitnessAge(calcFitnessAge());
@@ -3024,8 +3136,21 @@ export default function App() {
                     </p>
 
                     <h4 className="mt-2" style={{ color: "#ff4d00" }}>
-                      {new Date(Date.now() + 50 * 86400000).toDateString()}
+                      {timelineEstimate.targetDate.toDateString()}
                     </h4>
+
+                    <p className="quiz-sub mt-2">
+                      Estimated pace:{" "}
+                      <strong>
+                        {timelineEstimate.weeklyRateKg > 0
+                          ? `${timelineEstimate.weeklyRateKg.toFixed(2)} kg/week`
+                          : "maintenance"}
+                      </strong>
+                      {" · "}
+                      around <strong>{timelineEstimate.days} days</strong>
+                    </p>
+
+                    <FieldNote>{timelineEstimate.summary}</FieldNote>
 
                     <ProgressCurve
                       startWeight={
