@@ -1678,6 +1678,22 @@ body {
   background: rgba(255, 255, 255, 0.045);
 }
 
+.security-panel {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 18px;
+}
+
+.auth-link {
+  color: var(--success) !important;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-link:hover {
+  color: #7ce7ba !important;
+  text-decoration: underline;
+}
+
 .account-summary-label {
   color: var(--success);
   font-size: 0.78rem;

@@ -14,16 +14,20 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from services.common.models import DayPlan, Goal, PlanMeal, PlanWorkout, UserProfile
 from services.common.storage import (
+    create_password_reset_token,
     create_auth_session,
     create_auth_user,
     create_google_oauth_state,
     delete_google_calendar_token,
     delete_auth_session,
+    delete_auth_sessions_for_user,
+    delete_password_reset_token,
     get_google_calendar_token,
     get_auth_session,
     get_auth_user_by_email,
     get_auth_user_by_id,
     get_nudge_settings,
+    get_password_reset_token,
     is_managed_by,
     get_latest_plan,
     list_managed_auth_users,
@@ -33,6 +37,7 @@ from services.common.storage import (
     get_user,
     init_db,
     save_plan,
+    update_auth_user_password,
     upsert_google_calendar_token,
     upsert_nudge_settings,
     upsert_user,
@@ -54,6 +59,10 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_CALENDAR_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar"
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "").strip()
+BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "").strip()
+BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "Health Coach").strip()
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 app = Flask(__name__)
 CORS(app)
@@ -204,6 +213,47 @@ def _derive_nudge_context(user_id: str):
 def _frontend_redirect(status: str) -> str:
     base = FRONTEND_URL.rstrip("/") if FRONTEND_URL else "/"
     return f"{base}?google_calendar={status}"
+
+
+def _brevo_enabled() -> bool:
+    return bool(BREVO_API_KEY and BREVO_SENDER_EMAIL)
+
+
+def _send_account_email(*, recipient_email: str, recipient_name: str, subject: str, text_content: str):
+    if not _brevo_enabled():
+        raise RuntimeError("Brevo email is not configured.")
+
+    payload = {
+        "sender": {
+            "name": BREVO_SENDER_NAME,
+            "email": BREVO_SENDER_EMAIL,
+        },
+        "to": [
+            {
+                "email": recipient_email,
+                "name": recipient_name or recipient_email,
+            }
+        ],
+        "subject": subject,
+        "textContent": text_content,
+    }
+    response = requests.post(
+        BREVO_API_URL,
+        headers={
+            "accept": "application/json",
+            "content-type": "application/json",
+            "api-key": BREVO_API_KEY,
+        },
+        json=payload,
+        timeout=20,
+    )
+    if response.status_code not in {200, 201, 202}:
+        try:
+            detail = response.json()
+        except ValueError:
+            detail = response.text
+        raise RuntimeError(f"Brevo email failed: {detail}")
+    return response.json()
 
 
 def _google_auth_url_for_user(user_id: str) -> str:
@@ -600,6 +650,123 @@ def login():
 
     token = create_auth_session(user["user_id"])
     return jsonify({"ok": True, "token": token, "user": _serialize_auth_user(user)})
+
+
+@app.post("/auth/change-password")
+def change_password():
+    session, error = _require_auth()
+    if error:
+        return error
+
+    data = request.get_json(force=True)
+    current_password = str(data.get("current_password", ""))
+    new_password = str(data.get("new_password", ""))
+
+    if not current_password:
+        return jsonify({"error": "Current password is required."}), 400
+    if len(new_password) < 8:
+        return jsonify({"error": "New password must be at least 8 characters."}), 400
+
+    user = get_auth_user_by_id(session["user_id"])
+    if not user or not check_password_hash(user["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect."}), 401
+
+    update_auth_user_password(session["user_id"], generate_password_hash(new_password))
+    delete_auth_sessions_for_user(session["user_id"])
+    refreshed_user = get_auth_user_by_id(session["user_id"])
+    token = create_auth_session(session["user_id"])
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Password updated successfully.",
+            "token": token,
+            "user": _serialize_auth_user(refreshed_user),
+        }
+    )
+
+
+@app.post("/auth/forgot-password")
+def forgot_password():
+    data = request.get_json(force=True)
+    email = str(data.get("email", "")).strip().lower()
+    if not email or "@" not in email:
+        return jsonify({"error": "A valid email is required."}), 400
+
+    user = get_auth_user_by_email(email)
+    if user and (not FRONTEND_URL or not _brevo_enabled()):
+        return jsonify({"error": "Password reset email is not configured."}), 503
+    if user:
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        token = create_password_reset_token(user["user_id"], expires_at)
+        reset_link = f"{FRONTEND_URL.rstrip('/')}/?reset_token={token}"
+        display_name = user.get("display_name") or user["email"]
+        email_text = (
+            f"Hi {display_name},\n\n"
+            "We received a request to reset your Health Coach password.\n\n"
+            f"Use this link within 1 hour:\n{reset_link}\n\n"
+            "If you did not request this, you can ignore this message.\n\n"
+            "Health Coach"
+        )
+        try:
+            _send_account_email(
+                recipient_email=user["email"],
+                recipient_name=display_name,
+                subject="Health Coach password reset",
+                text_content=email_text,
+            )
+        except RuntimeError as exc:
+            app.logger.exception("Failed to send password reset email to %s", user["email"])
+            return jsonify({"error": str(exc)}), 502
+
+    return jsonify(
+        {
+            "ok": True,
+            "message": "If an account exists for that email, a password reset link has been sent.",
+        }
+    )
+
+
+@app.post("/auth/reset-password")
+def reset_password():
+    data = request.get_json(force=True)
+    token = str(data.get("token", "")).strip()
+    new_password = str(data.get("new_password", ""))
+
+    if not token:
+        return jsonify({"error": "Reset token is required."}), 400
+    if len(new_password) < 8:
+        return jsonify({"error": "New password must be at least 8 characters."}), 400
+
+    reset_record = get_password_reset_token(token)
+    if not reset_record:
+        return jsonify({"error": "This reset link is invalid or has already been used."}), 400
+
+    expires_at = str(reset_record.get("expires_at") or "")
+    try:
+        expires_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+    except Exception:
+        delete_password_reset_token(token)
+        return jsonify({"error": "This reset link is invalid."}), 400
+    if expires_dt.tzinfo is None:
+        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_dt:
+        delete_password_reset_token(token)
+        return jsonify({"error": "This reset link has expired."}), 400
+
+    user_id = reset_record["user_id"]
+    update_auth_user_password(user_id, generate_password_hash(new_password))
+    delete_password_reset_token(token)
+    delete_auth_sessions_for_user(user_id)
+    user = get_auth_user_by_id(user_id)
+    session_token = create_auth_session(user_id)
+    return jsonify(
+        {
+            "ok": True,
+            "message": "Password reset successfully.",
+            "token": session_token,
+            "user": _serialize_auth_user(user),
+        }
+    )
 
 
 @app.get("/dietitian/clients")

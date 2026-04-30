@@ -104,6 +104,12 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
     user_id TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS auth_password_resets (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS user_nudge_settings (
     user_id TEXT PRIMARY KEY,
     enabled INTEGER DEFAULT 0,
@@ -192,6 +198,12 @@ CREATE TABLE IF NOT EXISTS google_oauth_states (
     user_id TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS auth_password_resets (
+    token TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS user_nudge_settings (
     user_id TEXT PRIMARY KEY,
     enabled INTEGER DEFAULT 0,
@@ -210,6 +222,7 @@ SCHEMA = SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE
 MIGRATIONS = [
     "ALTER TABLE auth_users ADD COLUMN role TEXT DEFAULT 'user'",
     "ALTER TABLE auth_users ADD COLUMN managed_by_user_id TEXT",
+    "CREATE TABLE IF NOT EXISTS auth_password_resets (token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS user_nudge_settings (user_id TEXT PRIMARY KEY)",
     "ALTER TABLE user_nudge_settings ADD COLUMN enabled INTEGER DEFAULT 0",
     "ALTER TABLE user_nudge_settings ADD COLUMN tone TEXT DEFAULT 'coach'",
@@ -479,6 +492,60 @@ def delete_auth_session(token: str):
     with engine.begin() as conn:
         conn.execute(
             text("DELETE FROM auth_sessions WHERE token = :token"),
+            {"token": token},
+        )
+
+def delete_auth_sessions_for_user(user_id: str):
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM auth_sessions WHERE user_id = :uid"),
+            {"uid": user_id},
+        )
+
+def update_auth_user_password(user_id: str, password_hash: str):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                UPDATE auth_users
+                SET password_hash = :password_hash,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = :uid
+            """),
+            {"uid": user_id, "password_hash": password_hash},
+        )
+
+def create_password_reset_token(user_id: str, expires_at: str):
+    token = secrets.token_urlsafe(32)
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM auth_password_resets WHERE user_id = :uid"),
+            {"uid": user_id},
+        )
+        conn.execute(
+            text("""
+                INSERT INTO auth_password_resets(token, user_id, expires_at)
+                VALUES(:token, :uid, :expires_at)
+            """),
+            {"token": token, "uid": user_id, "expires_at": expires_at},
+        )
+    return token
+
+def get_password_reset_token(token: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT token, user_id, expires_at, created_at
+                FROM auth_password_resets
+                WHERE token = :token
+            """),
+            {"token": token},
+        ).mappings().first()
+    return dict(row) if row else None
+
+def delete_password_reset_token(token: str):
+    with engine.begin() as conn:
+        conn.execute(
+            text("DELETE FROM auth_password_resets WHERE token = :token"),
             {"token": token},
         )
 

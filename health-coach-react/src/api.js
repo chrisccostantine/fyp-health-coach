@@ -207,6 +207,27 @@ export const api = {
     });
   },
 
+  async changePassword({ current_password, new_password }) {
+    return await fetchJSON("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password, new_password }),
+    });
+  },
+
+  async forgotPassword({ email }) {
+    return await fetchJSON("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  async resetPassword({ token, new_password }) {
+    return await fetchJSON("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password }),
+    });
+  },
+
   async planToday(payload) {
     const body = withUserId({
       profile: payload?.profile,

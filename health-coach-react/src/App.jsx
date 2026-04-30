@@ -417,7 +417,14 @@ export default function App() {
   const [authName, setAuthName] = useState(initialSettings.currentUser?.display_name || "");
   const [authEmail, setAuthEmail] = useState(initialSettings.currentUser?.email || "");
   const [authPassword, setAuthPassword] = useState("");
+  const [authPasswordConfirm, setAuthPasswordConfirm] = useState("");
   const [authRole, setAuthRole] = useState("user");
+  const [resetToken, setResetToken] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [changePasswordMsg, setChangePasswordMsg] = useState("");
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(
     Boolean(initialSettings.authToken),
@@ -444,22 +451,34 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const googleState = params.get("google_calendar");
-    if (!googleState) return;
-
-    if (googleState === "connected") {
-      setGoogleCalendarMsg("Google Calendar connected successfully.");
-    } else if (googleState === "missing_code") {
-      setGoogleCalendarMsg("Google Calendar connection was cancelled or incomplete.");
-    } else if (googleState === "token_error") {
-      setGoogleCalendarMsg("Google Calendar token exchange failed.");
-    } else if (googleState === "invalid_state") {
-      setGoogleCalendarMsg("Google Calendar state validation failed.");
-    } else if (googleState === "not_configured") {
-      setGoogleCalendarMsg("Google Calendar is not configured on the backend yet.");
+    const resetTokenParam = params.get("reset_token");
+    let shouldCleanUrl = false;
+    if (resetTokenParam) {
+      setResetToken(resetTokenParam);
+      setAuthMode("reset");
+      setStage("auth");
+      setCheckUserMsg("");
+      shouldCleanUrl = true;
+    }
+    if (googleState) {
+      if (googleState === "connected") {
+        setGoogleCalendarMsg("Google Calendar connected successfully.");
+      } else if (googleState === "missing_code") {
+        setGoogleCalendarMsg("Google Calendar connection was cancelled or incomplete.");
+      } else if (googleState === "token_error") {
+        setGoogleCalendarMsg("Google Calendar token exchange failed.");
+      } else if (googleState === "invalid_state") {
+        setGoogleCalendarMsg("Google Calendar state validation failed.");
+      } else if (googleState === "not_configured") {
+        setGoogleCalendarMsg("Google Calendar is not configured on the backend yet.");
+      }
+      shouldCleanUrl = true;
     }
 
-    const nextUrl = `${window.location.pathname}${window.location.hash || ""}`;
-    window.history.replaceState({}, "", nextUrl);
+    if (shouldCleanUrl) {
+      const nextUrl = `${window.location.pathname}${window.location.hash || ""}`;
+      window.history.replaceState({}, "", nextUrl);
+    }
   }, []);
 
   useEffect(() => {
@@ -1084,10 +1103,56 @@ export default function App() {
     setCheckUserMsg("");
 
     try {
+      if (authMode === "forgot") {
+        if (!authEmail.trim()) throw new Error("Email is required.");
+        const response = await api.forgotPassword({ email: authEmail.trim() });
+        setCheckUserMsg(response.message || "If an account exists, a reset email has been sent.");
+        setAuthMode("login");
+        return;
+      }
+
+      if (authMode === "reset") {
+        if (!resetToken.trim()) throw new Error("Reset token is missing.");
+        if (!authPassword.trim() || authPassword.trim().length < 8) {
+          throw new Error("New password must be at least 8 characters.");
+        }
+        if (authPassword !== authPasswordConfirm) {
+          throw new Error("Passwords do not match.");
+        }
+        const response = await api.resetPassword({
+          token: resetToken.trim(),
+          new_password: authPassword,
+        });
+        saveAuthSession({ token: response.token, user: response.user });
+        setCurrentUser(response.user);
+      setViewedAccount(response.user);
+      setUserId(response.user.user_id);
+      setAuthEmail(response.user.email || authEmail.trim());
+      setAuthName(response.user.display_name || authName.trim());
+      setAuthPassword("");
+      setAuthPasswordConfirm("");
+      setResetToken("");
+      setAuthRole(response.user.role || authRole);
+      if (response.user.role === "dietitian") {
+        await loadDietitianClients({ quiet: true, account: response.user });
+      } else {
+        setManagedClients([]);
+      }
+      setCheckUserMsg("Password reset successfully.");
+      await loadAccountData(response.user.user_id, {
+        quiet: true,
+        targetStage: homeStageFor(response.user),
+      });
+        return;
+      }
+
       if (!authEmail.trim()) throw new Error("Email is required.");
       if (!authPassword.trim()) throw new Error("Password is required.");
       if (authMode === "signup" && authPassword.trim().length < 8) {
         throw new Error("Password must be at least 8 characters.");
+      }
+      if (authMode === "signup" && authPassword !== authPasswordConfirm) {
+        throw new Error("Passwords do not match.");
       }
 
       const response =
@@ -1110,6 +1175,7 @@ export default function App() {
       setAuthEmail(response.user.email || authEmail.trim());
       setAuthName(response.user.display_name || authName.trim());
       setAuthPassword("");
+      setAuthPasswordConfirm("");
       setAuthRole(response.user.role || authRole);
       if (response.user.role === "dietitian") {
         await loadDietitianClients({ quiet: true, account: response.user });
@@ -1138,11 +1204,50 @@ export default function App() {
     setViewedAccount(null);
     setUserId("");
     setAuthPassword("");
+    setAuthPasswordConfirm("");
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setChangePasswordMsg("");
     setManagedClients([]);
     setClientMsg("");
     setPlan(null);
     setStage("auth");
     setCheckUserMsg("");
+  }
+
+  async function handleChangePassword(event) {
+    event.preventDefault();
+    setIsChangingPassword(true);
+    setChangePasswordMsg("");
+
+    try {
+      if (!currentPassword.trim()) throw new Error("Current password is required.");
+      if (!newPassword.trim() || newPassword.trim().length < 8) {
+        throw new Error("New password must be at least 8 characters.");
+      }
+      if (newPassword !== confirmNewPassword) {
+        throw new Error("New passwords do not match.");
+      }
+
+      const response = await api.changePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      saveAuthSession({ token: response.token, user: response.user });
+      setCurrentUser(response.user);
+      setViewedAccount((prev) =>
+        prev?.user_id === response.user.user_id ? response.user : prev,
+      );
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setChangePasswordMsg(response.message || "Password updated successfully.");
+    } catch (e) {
+      setChangePasswordMsg(`Error: ${e.message}`);
+    } finally {
+      setIsChangingPassword(false);
+    }
   }
 
   useEffect(() => {
@@ -1328,15 +1433,23 @@ export default function App() {
                       <div className="auth-tabs mb-3">
                         <button
                           type="button"
-                          className={`auth-tab ${authMode === "login" ? "active" : ""}`}
-                          onClick={() => setAuthMode("login")}
+                          className={`auth-tab ${authMode === "login" || authMode === "forgot" || authMode === "reset" ? "active" : ""}`}
+                          onClick={() => {
+                            setAuthMode("login");
+                            setResetToken("");
+                            setAuthPassword("");
+                            setAuthPasswordConfirm("");
+                          }}
                         >
                           Log In
                         </button>
                         <button
                           type="button"
                           className={`auth-tab ${authMode === "signup" ? "active" : ""}`}
-                          onClick={() => setAuthMode("signup")}
+                          onClick={() => {
+                            setAuthMode("signup");
+                            setResetToken("");
+                          }}
                         >
                           Sign Up
                         </button>
@@ -1377,25 +1490,47 @@ export default function App() {
                             value={authEmail}
                             onChange={(e) => setAuthEmail(e.target.value)}
                             placeholder="name@example.com"
+                            disabled={authMode === "reset"}
                           />
                         </div>
 
-                        <div>
-                          <label className="form-label">Password</label>
-                          <input
-                            className="form-control"
-                            type="password"
-                            value={authPassword}
-                            onChange={(e) => setAuthPassword(e.target.value)}
-                            placeholder="At least 8 characters"
-                          />
-                        </div>
+                        {authMode !== "forgot" ? (
+                          <div>
+                            <label className="form-label">
+                              {authMode === "reset" ? "New Password" : "Password"}
+                            </label>
+                            <input
+                              className="form-control"
+                              type="password"
+                              value={authPassword}
+                              onChange={(e) => setAuthPassword(e.target.value)}
+                              placeholder="At least 8 characters"
+                            />
+                          </div>
+                        ) : null}
+
+                        {authMode === "signup" || authMode === "reset" ? (
+                          <div className="mt-3">
+                            <label className="form-label">Confirm Password</label>
+                            <input
+                              className="form-control"
+                              type="password"
+                              value={authPasswordConfirm}
+                              onChange={(e) => setAuthPasswordConfirm(e.target.value)}
+                              placeholder="Repeat your password"
+                            />
+                          </div>
+                        ) : null}
 
                         <FieldNote>
                           {authMode === "signup"
                             ? authRole === "dietitian"
                               ? "Create a dietitian account to manage client accounts and plan on their behalf."
                               : "Create one account and your profile and plan stay attached to it."
+                            : authMode === "forgot"
+                              ? "Enter your email and we will send a password reset link if the account exists."
+                              : authMode === "reset"
+                                ? "Create a new password to finish resetting your account."
                             : "Log in to continue with your saved progress and latest plan."}
                         </FieldNote>
 
@@ -1407,15 +1542,53 @@ export default function App() {
                           >
                             {isAuthenticating ? (
                               <Spinner
-                                label={authMode === "signup" ? "Creating account..." : "Logging in..."}
+                                label={
+                                  authMode === "signup"
+                                    ? "Creating account..."
+                                    : authMode === "forgot"
+                                      ? "Sending reset link..."
+                                      : authMode === "reset"
+                                        ? "Resetting password..."
+                                        : "Logging in..."
+                                }
                               />
-                            ) : authMode === "signup" ? (
-                              "Create Account"
-                            ) : (
-                              "Log In"
-                            )}
+                            ) : authMode === "signup" ? "Create Account" : authMode === "forgot" ? "Send Reset Link" : authMode === "reset" ? "Reset Password" : "Log In"}
                           </button>
                         </div>
+
+                        {authMode === "login" ? (
+                          <div className="mt-3 text-center">
+                            <button
+                              type="button"
+                              className="btn btn-link p-0 auth-link"
+                              onClick={() => {
+                                setAuthMode("forgot");
+                                setAuthPassword("");
+                                setAuthPasswordConfirm("");
+                                setCheckUserMsg("");
+                              }}
+                            >
+                              Forgot password?
+                            </button>
+                          </div>
+                        ) : null}
+
+                        {(authMode === "forgot" || authMode === "reset") ? (
+                          <div className="mt-3 text-center">
+                            <button
+                              type="button"
+                              className="btn btn-link p-0 auth-link"
+                              onClick={() => {
+                                setAuthMode("login");
+                                setResetToken("");
+                                setAuthPassword("");
+                                setAuthPasswordConfirm("");
+                              }}
+                            >
+                              Back to log in
+                            </button>
+                          </div>
+                        ) : null}
                       </form>
                     </>
                   )}
@@ -1528,6 +1701,50 @@ export default function App() {
                       ? "Your last saved plan is ready. Open it to review meals, workouts, calendar sync, and edits."
                       : "You do not have a saved plan yet. Start the quiz to create one."}
                   </FieldNote>
+
+                  <div className="security-panel mt-4">
+                    <div className="fw-semibold mb-2">Security</div>
+                    <form onSubmit={handleChangePassword}>
+                      <div className="mb-3">
+                        <label className="form-label">Current Password</label>
+                        <input
+                          className="form-control"
+                          type="password"
+                          value={currentPassword}
+                          onChange={(e) => setCurrentPassword(e.target.value)}
+                          placeholder="Current password"
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">New Password</label>
+                        <input
+                          className="form-control"
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="At least 8 characters"
+                        />
+                      </div>
+                      <div className="mb-3">
+                        <label className="form-label">Confirm New Password</label>
+                        <input
+                          className="form-control"
+                          type="password"
+                          value={confirmNewPassword}
+                          onChange={(e) => setConfirmNewPassword(e.target.value)}
+                          placeholder="Repeat new password"
+                        />
+                      </div>
+                      <button className="btn btn-outline-light w-100" type="submit" disabled={isChangingPassword}>
+                        {isChangingPassword ? <Spinner label="Updating..." /> : "Change Password"}
+                      </button>
+                    </form>
+                    {changePasswordMsg ? (
+                      <div className={`alert ${String(changePasswordMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
+                        {changePasswordMsg}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1537,7 +1754,7 @@ export default function App() {
         {/* DIETITIAN HOME */}
         {stage === "dietitianHome" && currentUser?.role === "dietitian" && (
           <div className="row g-4">
-            <div className="col-12">
+            <div className="col-lg-8">
               <div className="card card-soft">
                 <div className="card-body p-4 p-md-5">
                   <div className="results-kicker">Dietitian Dashboard</div>
@@ -1567,6 +1784,61 @@ export default function App() {
                       <div className="summary-meta">Remove a client from your managed subscription list.</div>
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-lg-4">
+              <div className="card card-soft h-100">
+                <div className="card-body p-4">
+                  <h2 className="h5 section-title mb-3">Security</h2>
+                  <div className="account-summary mb-3">
+                    <div className="account-summary-label">Signed in as</div>
+                    <div className="account-summary-title">
+                      {currentUser.display_name || "Dietitian"}
+                    </div>
+                    <div className="account-summary-meta">{currentUser.email}</div>
+                  </div>
+                  <form onSubmit={handleChangePassword}>
+                    <div className="mb-3">
+                      <label className="form-label">Current Password</label>
+                      <input
+                        className="form-control"
+                        type="password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        placeholder="Current password"
+                      />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">New Password</label>
+                      <input
+                        className="form-control"
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="At least 8 characters"
+                      />
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Confirm New Password</label>
+                      <input
+                        className="form-control"
+                        type="password"
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        placeholder="Repeat new password"
+                      />
+                    </div>
+                    <button className="btn btn-outline-light w-100" type="submit" disabled={isChangingPassword}>
+                      {isChangingPassword ? <Spinner label="Updating..." /> : "Change Password"}
+                    </button>
+                  </form>
+                  {changePasswordMsg ? (
+                    <div className={`alert ${String(changePasswordMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
+                      {changePasswordMsg}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
