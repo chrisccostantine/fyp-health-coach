@@ -2762,24 +2762,16 @@ export default function App() {
             <div className="col-lg-9 col-xl-8">
               <div className="card card-soft">
                 <div className="card-body p-4 p-md-5">
-                  <div className="results-kicker">
-                    {currentUser.role === "dietitian" ? "Dietitian Chat" : "Private Chat"}
-                  </div>
-                  <h2 className="section-title mb-3">
-                    Chat with {displayAccountName(activeChatPartner)}
-                  </h2>
-                  <p className="text-muted mb-4">
-                    This conversation is private between you and this {currentUser.role === "dietitian" ? "client" : "dietitian"}.
-                  </p>
-
-                  <div className="account-summary mb-4">
-                    <div className="account-summary-label">
-                      {currentUser.role === "dietitian" ? "Client account" : "Dietitian account"}
+                  <div className="private-chat-header">
+                    <div className="private-chat-kicker">
+                      {currentUser.role === "dietitian" ? "Dietitian Chat" : "Private Chat"}
                     </div>
-                    <div className="account-summary-title">
-                      {displayAccountName(activeChatPartner)}
-                    </div>
-                    <div className="account-summary-meta">{activeChatPartner.email}</div>
+                    <h2 className="private-chat-title">
+                      Chat with {displayAccountName(activeChatPartner)}
+                    </h2>
+                    <p className="private-chat-subtitle">
+                      This conversation is private between you and this {currentUser.role === "dietitian" ? "client" : "dietitian"}.
+                    </p>
                   </div>
 
                   {isLoadingPrivateMessages ? (
@@ -2800,7 +2792,7 @@ export default function App() {
                             >
                               <div>{message.body}</div>
                               <div className="chat-meta">
-                                {isOwnMessage ? "You" : displayAccountName(activeChatPartner)} · {fmtIso(message.created_at)}
+                                {isOwnMessage ? "You" : displayAccountName(activeChatPartner)} - {fmtIso(message.created_at)}
                               </div>
                             </div>
                           );

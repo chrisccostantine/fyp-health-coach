@@ -1583,6 +1583,35 @@ pre.out {
   max-height: 460px;
 }
 
+.private-chat-header{
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+
+.private-chat-kicker{
+  color: var(--success);
+  font-size: .82rem;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.private-chat-title{
+  margin: 8px 0 8px;
+  color: var(--text);
+  font-size: clamp(2rem, 4vw, 3.1rem);
+  font-weight: 950;
+  line-height: 1.08;
+}
+
+.private-chat-subtitle{
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.55;
+}
+
 .chat-empty{
   color: rgba(255,255,255,.68);
   text-align: center;
@@ -1600,11 +1629,19 @@ pre.out {
   display:flex;
   flex-direction:column;
   gap:12px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 8px;
+  background: rgba(255,255,255,.035);
 }
 
 .private-chat-input{
   resize: vertical;
   min-height: 96px;
+}
+
+.private-chat-composer .btn{
+  min-height: 44px;
 }
 
 .results-date-picker{
