@@ -427,6 +427,13 @@ export const api = {
     if (data?.calendar) cacheCalendar(data.calendar);
     return data;
   },
+
+  async reviewPlan({ client_user_id, status, note }) {
+    return await fetchJSON("/plan/review", {
+      method: "POST",
+      body: JSON.stringify({ client_user_id, status, note }),
+    });
+  },
 };
 
 // ---------- Shared utils ----------

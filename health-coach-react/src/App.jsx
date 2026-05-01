@@ -1172,6 +1172,9 @@ export default function App() {
   const [weeklyUpdate, setWeeklyUpdate] = useState(null);
   const [progressMsg, setProgressMsg] = useState("");
   const [isProgressBusy, setIsProgressBusy] = useState(false);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewMsg, setReviewMsg] = useState("");
+  const [isReviewingPlan, setIsReviewingPlan] = useState(false);
 
   useEffect(() => {
     if (stage !== "results" || !userId?.trim()) return;
@@ -1293,6 +1296,29 @@ export default function App() {
       setProgressMsg(`Error: ${e.message}`);
     } finally {
       setIsProgressBusy(false);
+    }
+  }
+
+  async function handlePlanReview(status) {
+    if (!viewedAccount?.user_id) return;
+    setIsReviewingPlan(true);
+    setReviewMsg("");
+    try {
+      const data = await api.reviewPlan({
+        client_user_id: viewedAccount.user_id,
+        status,
+        note: reviewNote,
+      });
+      if (data?.plan) {
+        setPlan(data.plan);
+        cachePlan(data.plan);
+      }
+      setReviewNote("");
+      setReviewMsg(status === "approved" ? "Plan approved." : "Changes requested.");
+    } catch (e) {
+      setReviewMsg(`Error: ${e.message}`);
+    } finally {
+      setIsReviewingPlan(false);
     }
   }
 
@@ -4050,6 +4076,11 @@ export default function App() {
           isProgressBusy={isProgressBusy}
           handleProgressCheckIn={handleProgressCheckIn}
           handleWeeklyUpdate={handleWeeklyUpdate}
+          reviewNote={reviewNote}
+          setReviewNote={setReviewNote}
+          reviewMsg={reviewMsg}
+          isReviewingPlan={isReviewingPlan}
+          handlePlanReview={handlePlanReview}
           googleCalendar={googleCalendar}
           googleCalendarMsg={googleCalendarMsg}
           isGoogleCalendarBusy={isGoogleCalendarBusy}

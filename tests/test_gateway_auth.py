@@ -4,6 +4,16 @@ import sys
 import pytest
 
 
+class DummyResponse:
+    def __init__(self, payload, status_code=200, text=""):
+        self._payload = payload
+        self.status_code = status_code
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
 @pytest.fixture()
 def gateway_client(monkeypatch, tmp_path):
     db_path = tmp_path / "test-auth.db"
@@ -170,3 +180,107 @@ def test_progress_checkin_and_weekly_update(gateway_client):
     progress = progress_res.get_json()
     assert len(progress["checkins"]) == 1
     assert progress["weekly_update"]["summary"]
+
+
+def test_managed_client_plan_requires_dietitian_review(gateway_client, monkeypatch):
+    import sys
+
+    gateway_module = sys.modules["services.gateway.app"]
+
+    def fake_post(url, json=None, timeout=None, **kwargs):
+        if url.endswith("/diet/suggest"):
+            return DummyResponse(
+                {
+                    "meals": [
+                        {
+                            "name": "Managed Client Bowl",
+                            "calories": 500,
+                            "macros": {"protein": 35, "carbs": 45, "fat": 15},
+                            "when": "13:00",
+                        }
+                    ]
+                }
+            )
+        if url.endswith("/exercise/suggest"):
+            return DummyResponse(
+                {
+                    "workouts": [
+                        {
+                            "name": "Managed Client Walk",
+                            "duration_min": 25,
+                            "intensity": "low",
+                            "when": "18:00",
+                        }
+                    ]
+                }
+            )
+        if url.endswith("/calendar/sync"):
+            return DummyResponse({"ok": True, "events": []})
+        return DummyResponse({"ok": True})
+
+    monkeypatch.setattr(gateway_module.requests, "post", fake_post)
+
+    dietitian_res = gateway_client.post(
+        "/auth/signup",
+        json={
+            "display_name": "Dietitian",
+            "email": "dietitian@example.com",
+            "password": "securepass123",
+            "role": "dietitian",
+        },
+    )
+    assert dietitian_res.status_code == 201
+    dietitian_token = dietitian_res.get_json()["token"]
+
+    client_res = gateway_client.post(
+        "/dietitian/clients",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={
+            "display_name": "Client",
+            "email": "client@example.com",
+            "password": "clientpass123",
+        },
+    )
+    assert client_res.status_code == 201
+
+    login_res = gateway_client.post(
+        "/auth/login",
+        json={"email": "client@example.com", "password": "clientpass123"},
+    )
+    assert login_res.status_code == 200
+    client_token = login_res.get_json()["token"]
+
+    plan_res = gateway_client.post(
+        "/plan/today",
+        headers={"Authorization": f"Bearer {client_token}"},
+        json={
+            "user_id": login_res.get_json()["user"]["user_id"],
+            "profile": {
+                "age": 30,
+                "sex": "F",
+                "height_cm": 165,
+                "weight_kg": 62,
+                "activity_level": "moderate",
+            },
+            "goal": {"type": "general_health", "deficit_kcal": 0},
+            "equipment": [],
+        },
+    )
+    assert plan_res.status_code == 200
+    plan = plan_res.get_json()
+    assert plan["review"]["required"] is True
+    assert plan["review"]["status"] == "pending_review"
+
+    review_res = gateway_client.post(
+        "/plan/review",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={
+            "client_user_id": login_res.get_json()["user"]["user_id"],
+            "status": "approved",
+            "note": "Looks appropriate for this week.",
+        },
+    )
+    assert review_res.status_code == 200
+    review = review_res.get_json()["review"]
+    assert review["status"] == "approved"
+    assert review["note"] == "Looks appropriate for this week."

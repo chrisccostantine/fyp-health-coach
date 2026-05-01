@@ -34,6 +34,19 @@ function describeWorkout(workout) {
   return parts.length > 0 ? parts.join(" | ") : "Scheduled workout";
 }
 
+function reviewStatusLabel(status) {
+  switch (status) {
+    case "pending_review":
+      return "Pending dietitian review";
+    case "approved":
+      return "Approved by dietitian";
+    case "changes_requested":
+      return "Changes requested";
+    default:
+      return "";
+  }
+}
+
 export default function ResultsSection({
   stage,
   plan,
@@ -78,6 +91,11 @@ export default function ResultsSection({
   isProgressBusy,
   handleProgressCheckIn,
   handleWeeklyUpdate,
+  reviewNote,
+  setReviewNote,
+  reviewMsg,
+  isReviewingPlan,
+  handlePlanReview,
 
   // calendar
   calendar,
@@ -142,6 +160,9 @@ export default function ResultsSection({
   const safetyDisclaimer = safety?.disclaimer || "";
   const recentProgress = Array.isArray(progressHistory) ? progressHistory.slice(0, 3) : [];
   const weeklyCheckInLocked = Boolean(weeklyLock?.locked);
+  const planReview = plan?.review || null;
+  const planReviewStatus = planReview?.status || "";
+  const planReviewLabel = reviewStatusLabel(planReviewStatus);
   const activeDateLabel = activeDate
     ? new Date(`${activeDate}T00:00:00`).toLocaleDateString([], {
         weekday: "long",
@@ -182,7 +203,21 @@ export default function ResultsSection({
                 {isReadOnlyClientView && viewedAccount ? (
                   <div className="alert alert-info mt-3 mb-0 small">
                     Viewing {viewedAccount.display_name || viewedAccount.email}'s plan in read-only mode.
-                    Only the client account can generate or change this plan.
+                    You can review this managed client's plan.
+                  </div>
+                ) : null}
+                {planReviewLabel ? (
+                  <div
+                    className={`alert ${
+                      planReviewStatus === "approved"
+                        ? "alert-success"
+                        : planReviewStatus === "changes_requested"
+                          ? "alert-warning"
+                          : "alert-info"
+                    } mt-3 mb-0 small`}
+                  >
+                    <div className="fw-semibold">{planReviewLabel}</div>
+                    {planReview?.note ? <div>{planReview.note}</div> : null}
                   </div>
                 ) : null}
                 {safetyWarnings.length > 0 ? (
@@ -435,6 +470,46 @@ export default function ResultsSection({
                     <StatusAlert variant="warning">{dietChatMsg}</StatusAlert>
                   </details>
                 </div>
+
+                {isReadOnlyClientView && planReview ? (
+                  <section className="results-section">
+                    <div className="section-head">
+                      <h2 className="section-h">Dietitian Review</h2>
+                      <span className="count-pill">{planReviewLabel || "Review"}</span>
+                    </div>
+
+                    <textarea
+                      className="form-control"
+                      rows="3"
+                      value={reviewNote}
+                      onChange={(e) => setReviewNote?.(e.target.value)}
+                      placeholder="Optional review note for the client"
+                    />
+
+                    <div className="d-flex flex-wrap gap-2 mt-3">
+                      <button
+                        className="btn btn-primary fw-bold"
+                        type="button"
+                        onClick={() => handlePlanReview?.("approved")}
+                        disabled={isReviewingPlan}
+                      >
+                        {isReviewingPlan ? <Loading label="Saving..." /> : "Approve Plan"}
+                      </button>
+                      <button
+                        className="btn btn-outline-light"
+                        type="button"
+                        onClick={() => handlePlanReview?.("changes_requested")}
+                        disabled={isReviewingPlan}
+                      >
+                        Request Changes
+                      </button>
+                    </div>
+
+                    <StatusAlert variant={String(reviewMsg).startsWith("Error:") ? "warning" : "success"}>
+                      {reviewMsg}
+                    </StatusAlert>
+                  </section>
+                ) : null}
               </>
             )}
           </div>
