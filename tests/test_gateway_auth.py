@@ -39,6 +39,7 @@ def test_signup_login_and_logout_flow(gateway_client):
             "display_name": "Amina",
             "email": "amina@example.com",
             "password": "securepass123",
+            "health_data_consent": True,
         },
     )
     assert signup_res.status_code == 201
@@ -86,6 +87,7 @@ def test_signup_rejects_duplicate_email(gateway_client):
             "display_name": "Omar",
             "email": "omar@example.com",
             "password": "duplicate123",
+            "health_data_consent": True,
         },
     )
     assert first.status_code == 201
@@ -96,10 +98,82 @@ def test_signup_rejects_duplicate_email(gateway_client):
             "display_name": "Someone Else",
             "email": "omar@example.com",
             "password": "duplicate123",
+            "health_data_consent": True,
         },
     )
     assert second.status_code == 409
     assert "already exists" in second.get_json()["error"]
+
+
+def test_signup_requires_health_data_consent_for_user(gateway_client):
+    res = gateway_client.post(
+        "/auth/signup",
+        json={
+            "display_name": "No Consent",
+            "email": "noconsent@example.com",
+            "password": "securepass123",
+            "role": "user",
+        },
+    )
+    assert res.status_code == 400
+    assert "consent" in res.get_json()["error"].lower()
+
+
+def test_expired_session_is_rejected(gateway_client):
+    import sys
+
+    storage = sys.modules["services.common.storage"]
+    create_res = gateway_client.post(
+        "/auth/signup",
+        json={
+            "display_name": "Expired",
+            "email": "expired@example.com",
+            "password": "securepass123",
+            "health_data_consent": True,
+        },
+    )
+    assert create_res.status_code == 201
+    user_id = create_res.get_json()["user"]["user_id"]
+    expired_token = storage.create_auth_session(user_id, "2000-01-01T00:00:00+00:00")
+
+    res = gateway_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+    assert res.status_code == 401
+
+
+def test_privacy_export_and_delete_account(gateway_client):
+    signup_res = gateway_client.post(
+        "/auth/signup",
+        json={
+            "display_name": "Privacy",
+            "email": "privacy@example.com",
+            "password": "securepass123",
+            "health_data_consent": True,
+        },
+    )
+    assert signup_res.status_code == 201
+    token = signup_res.get_json()["token"]
+
+    export_res = gateway_client.get(
+        "/privacy/export",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert export_res.status_code == 200
+    assert export_res.get_json()["export"]["account"]["email"] == "privacy@example.com"
+
+    delete_res = gateway_client.delete(
+        "/privacy/delete-account",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert delete_res.status_code == 200
+
+    me_res = gateway_client.get(
+        "/auth/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert me_res.status_code == 401
 
 
 def test_plan_today_blocks_unsafe_minor_profile(gateway_client):

@@ -559,12 +559,15 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState("");
   const [authPasswordConfirm, setAuthPasswordConfirm] = useState("");
   const [authRole, setAuthRole] = useState("user");
+  const [healthDataConsent, setHealthDataConsent] = useState(false);
   const [resetToken, setResetToken] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [changePasswordMsg, setChangePasswordMsg] = useState("");
+  const [privacyMsg, setPrivacyMsg] = useState("");
+  const [isPrivacyBusy, setIsPrivacyBusy] = useState(false);
   const [showChangePasswordForm, setShowChangePasswordForm] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isRestoringSession, setIsRestoringSession] = useState(
@@ -1565,6 +1568,9 @@ export default function App() {
       if (authMode === "signup" && authPassword !== authPasswordConfirm) {
         throw new Error("Passwords do not match.");
       }
+      if (authMode === "signup" && authRole === "user" && !healthDataConsent) {
+        throw new Error("Consent is required to store health data for a user account.");
+      }
 
       const response =
         authMode === "signup"
@@ -1573,6 +1579,7 @@ export default function App() {
               email: authEmail.trim(),
               password: authPassword,
               role: authRole,
+              health_data_consent: authRole === "dietitian" ? true : healthDataConsent,
             })
           : await api.login({
               email: authEmail.trim(),
@@ -1587,6 +1594,7 @@ export default function App() {
       setAuthName(response.user.display_name || authName.trim());
       setAuthPassword("");
       setAuthPasswordConfirm("");
+      setHealthDataConsent(false);
       setAuthRole(response.user.role || authRole);
       if (response.user.role === "dietitian") {
         await loadDietitianClients({ quiet: true, account: response.user });
@@ -1663,6 +1671,44 @@ export default function App() {
       setChangePasswordMsg(`Error: ${e.message}`);
     } finally {
       setIsChangingPassword(false);
+    }
+  }
+
+  async function handleExportPrivacyData() {
+    setIsPrivacyBusy(true);
+    setPrivacyMsg("");
+    try {
+      const data = await api.exportPrivacyData();
+      const blob = new Blob([JSON.stringify(data.export || data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "health-coach-data-export.json";
+      link.click();
+      URL.revokeObjectURL(url);
+      setPrivacyMsg("Data export prepared.");
+    } catch (e) {
+      setPrivacyMsg(`Error: ${e.message}`);
+    } finally {
+      setIsPrivacyBusy(false);
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (!window.confirm("Delete your account and stored health data? This cannot be undone.")) {
+      return;
+    }
+    setIsPrivacyBusy(true);
+    setPrivacyMsg("");
+    try {
+      await api.deleteAccount();
+      await handleLogout();
+    } catch (e) {
+      setPrivacyMsg(`Error: ${e.message}`);
+    } finally {
+      setIsPrivacyBusy(false);
     }
   }
 
@@ -1952,6 +1998,29 @@ export default function App() {
                       <FieldNote>
                         Your account is ready. Continue to your dashboard.
                       </FieldNote>
+                      <div className="d-flex flex-wrap gap-2 mt-3">
+                        <button
+                          className="btn btn-outline-light btn-sm"
+                          type="button"
+                          onClick={handleExportPrivacyData}
+                          disabled={isPrivacyBusy}
+                        >
+                          Export My Data
+                        </button>
+                        <button
+                          className="btn btn-outline-danger btn-sm"
+                          type="button"
+                          onClick={handleDeleteAccount}
+                          disabled={isPrivacyBusy}
+                        >
+                          Delete Account
+                        </button>
+                      </div>
+                      {privacyMsg ? (
+                        <div className={`alert ${String(privacyMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
+                          {privacyMsg}
+                        </div>
+                      ) : null}
                     </>
                   ) : (
                     <>
@@ -2044,6 +2113,21 @@ export default function App() {
                               onChange={(e) => setAuthPasswordConfirm(e.target.value)}
                               placeholder="Repeat your password"
                             />
+                          </div>
+                        ) : null}
+
+                        {authMode === "signup" && authRole === "user" ? (
+                          <div className="form-check mt-3">
+                            <input
+                              className="form-check-input"
+                              type="checkbox"
+                              id="health-data-consent"
+                              checked={healthDataConsent}
+                              onChange={(e) => setHealthDataConsent(e.target.checked)}
+                            />
+                            <label className="form-check-label text-muted" htmlFor="health-data-consent">
+                              I consent to Health Coach storing my health profile, plan, progress, and feedback data.
+                            </label>
                           </div>
                         ) : null}
 

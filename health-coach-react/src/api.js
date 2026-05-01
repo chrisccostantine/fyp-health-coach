@@ -182,10 +182,10 @@ export const api = {
     }
   },
 
-  async signup({ display_name, email, password, role = "user" }) {
+  async signup({ display_name, email, password, role = "user", health_data_consent = false }) {
     return await fetchJSON("/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ display_name, email, password, role }),
+      body: JSON.stringify({ display_name, email, password, role, health_data_consent }),
     });
   },
 
@@ -225,6 +225,16 @@ export const api = {
     return await fetchJSON("/auth/reset-password", {
       method: "POST",
       body: JSON.stringify({ token, new_password }),
+    });
+  },
+
+  async exportPrivacyData() {
+    return await fetchJSON("/privacy/export", { method: "GET" });
+  },
+
+  async deleteAccount() {
+    return await fetchJSON("/privacy/delete-account", {
+      method: "DELETE",
     });
   },
 

@@ -25,6 +25,8 @@ from services.common.storage import (
     delete_auth_session,
     delete_auth_sessions_for_user,
     delete_password_reset_token,
+    delete_user_account_data,
+    export_user_data,
     get_google_calendar_token,
     get_auth_session,
     get_auth_user_by_email,
@@ -42,6 +44,7 @@ from services.common.storage import (
     remove_managed_auth_user,
     get_user,
     init_db,
+    record_audit_log,
     record_progress_checkin,
     save_plan,
     save_weekly_update,
@@ -72,6 +75,8 @@ BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "").strip()
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "Health Coach").strip()
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 PLAN_SPAN_DAYS = max(1, int(os.environ.get("PLAN_SPAN_DAYS", "30") or 30))
+SESSION_TTL_HOURS = max(1, int(os.environ.get("SESSION_TTL_HOURS", "168") or 168))
+AUTH_RATE_LIMITS: dict[str, list[datetime]] = {}
 HEALTH_SAFETY_DISCLAIMER = (
     "Health Coach provides general wellness guidance, not medical advice. "
     "Consult a qualified clinician before changing diet or exercise if you have "
@@ -112,6 +117,7 @@ def _serialize_auth_user(user: dict):
         "display_name": user.get("display_name") or "",
         "role": user.get("role") or "user",
         "managed_by_user_id": user.get("managed_by_user_id"),
+        "health_data_consent": bool(user.get("health_data_consent")),
     }
     manager_user_id = user.get("managed_by_user_id")
     if manager_user_id:
@@ -136,7 +142,45 @@ def _get_current_session():
     token = _get_token_from_request()
     if not token:
         return None
-    return get_auth_session(token)
+    session = get_auth_session(token)
+    if not session:
+        return None
+    expires_at = session.get("expires_at")
+    if expires_at:
+        try:
+            expires_dt = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
+            if expires_dt.tzinfo is None:
+                expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > expires_dt:
+                delete_auth_session(token)
+                return None
+        except Exception:
+            delete_auth_session(token)
+            return None
+    return session
+
+
+def _session_expiry_iso():
+    return (datetime.now(timezone.utc) + timedelta(hours=SESSION_TTL_HOURS)).isoformat()
+
+
+def _rate_limit_key(scope: str, email: str | None = None):
+    remote = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",", 1)[0].strip()
+    identity = str(email or "").strip().lower()
+    return f"{scope}:{remote}:{identity}"
+
+
+def _check_rate_limit(scope: str, *, email: str | None = None, max_attempts: int = 8, window_seconds: int = 900):
+    key = _rate_limit_key(scope, email)
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(seconds=window_seconds)
+    attempts = [ts for ts in AUTH_RATE_LIMITS.get(key, []) if ts > window_start]
+    if len(attempts) >= max_attempts:
+        AUTH_RATE_LIMITS[key] = attempts
+        return jsonify({"error": "Too many attempts. Try again later."}), 429
+    attempts.append(now)
+    AUTH_RATE_LIMITS[key] = attempts
+    return None
 
 
 def _require_auth():
@@ -1403,24 +1447,37 @@ def signup():
     password = str(data.get("password", ""))
     display_name = str(data.get("display_name", "")).strip() or None
     role = str(data.get("role", "user")).strip().lower() or "user"
+    health_data_consent = bool(data.get("health_data_consent"))
 
+    rate_error = _check_rate_limit("signup", email=email, max_attempts=5, window_seconds=900)
+    if rate_error:
+        return rate_error
     if not email or "@" not in email:
         return jsonify({"error": "A valid email is required."}), 400
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters."}), 400
     if role not in {"user", "dietitian"}:
         return jsonify({"error": "Role must be 'user' or 'dietitian'."}), 400
+    if role == "user" and not health_data_consent:
+        return jsonify({"error": "Health data consent is required for user accounts."}), 400
     if get_auth_user_by_email(email):
         return jsonify({"error": "An account with this email already exists."}), 409
 
     user_id = f"user-{uuid.uuid4().hex[:12]}"
     password_hash = generate_password_hash(password)
     try:
-        create_auth_user(user_id, email, password_hash, display_name, role=role)
+        create_auth_user(
+            user_id,
+            email,
+            password_hash,
+            display_name,
+            role=role,
+            health_data_consent=health_data_consent or role == "dietitian",
+        )
     except IntegrityError:
         return jsonify({"error": "An account with this email already exists."}), 409
 
-    token = create_auth_session(user_id)
+    token = create_auth_session(user_id, _session_expiry_iso())
     return jsonify(
         {
             "ok": True,
@@ -1431,6 +1488,7 @@ def signup():
                 "display_name": display_name or "",
                 "role": role,
                 "managed_by_user_id": None,
+                "health_data_consent": health_data_consent or role == "dietitian",
             },
         }
     ), 201
@@ -1441,11 +1499,14 @@ def login():
     data = request.get_json(force=True)
     email = str(data.get("email", "")).strip().lower()
     password = str(data.get("password", ""))
+    rate_error = _check_rate_limit("login", email=email, max_attempts=8, window_seconds=900)
+    if rate_error:
+        return rate_error
     user = get_auth_user_by_email(email)
     if not user or not check_password_hash(user["password_hash"], password):
         return jsonify({"error": "Invalid email or password."}), 401
 
-    token = create_auth_session(user["user_id"])
+    token = create_auth_session(user["user_id"], _session_expiry_iso())
     return jsonify({"ok": True, "token": token, "user": _serialize_auth_user(user)})
 
 
@@ -1471,7 +1532,7 @@ def change_password():
     update_auth_user_password(session["user_id"], generate_password_hash(new_password))
     delete_auth_sessions_for_user(session["user_id"])
     refreshed_user = get_auth_user_by_id(session["user_id"])
-    token = create_auth_session(session["user_id"])
+    token = create_auth_session(session["user_id"], _session_expiry_iso())
     return jsonify(
         {
             "ok": True,
@@ -1486,6 +1547,9 @@ def change_password():
 def forgot_password():
     data = request.get_json(force=True)
     email = str(data.get("email", "")).strip().lower()
+    rate_error = _check_rate_limit("forgot_password", email=email, max_attempts=3, window_seconds=3600)
+    if rate_error:
+        return rate_error
     if not email or "@" not in email:
         return jsonify({"error": "A valid email is required."}), 400
 
@@ -1528,6 +1592,9 @@ def reset_password():
     data = request.get_json(force=True)
     token = str(data.get("token", "")).strip()
     new_password = str(data.get("new_password", ""))
+    rate_error = _check_rate_limit("reset_password", email=token[:16], max_attempts=6, window_seconds=900)
+    if rate_error:
+        return rate_error
 
     if not token:
         return jsonify({"error": "Reset token is required."}), 400
@@ -1555,7 +1622,7 @@ def reset_password():
     delete_password_reset_token(token)
     delete_auth_sessions_for_user(user_id)
     user = get_auth_user_by_id(user_id)
-    session_token = create_auth_session(user_id)
+    session_token = create_auth_session(user_id, _session_expiry_iso())
     return jsonify(
         {
             "ok": True,
@@ -1609,11 +1676,18 @@ def dietitian_create_client():
             display_name,
             role="user",
             managed_by_user_id=session["user_id"],
+            health_data_consent=True,
         )
     except IntegrityError:
         return jsonify({"error": "A client account with this email already exists."}), 409
 
     client = get_auth_user_by_email(email)
+    record_audit_log(
+        session["user_id"],
+        client_user_id,
+        "dietitian.client_created",
+        {"client_email": email},
+    )
     return jsonify({"ok": True, "client": _serialize_auth_user(client)}), 201
 
 
@@ -1629,6 +1703,7 @@ def dietitian_unsubscribe_client(client_user_id):
     removed = remove_managed_auth_user(session["user_id"], client_user_id)
     if not removed:
         return jsonify({"error": "Client subscription not found."}), 404
+    record_audit_log(session["user_id"], client_user_id, "dietitian.client_unsubscribed", {})
     return jsonify({"ok": True, "client_user_id": client_user_id})
 
 
@@ -1898,6 +1973,12 @@ def plan_review():
         note=note,
     )
     save_plan(client_user_id, next_plan)
+    record_audit_log(
+        session["user_id"],
+        client_user_id,
+        "dietitian.plan_reviewed",
+        {"status": status, "note": note},
+    )
     return jsonify({"ok": True, "plan": next_plan, "review": next_plan["review"]})
 
 
@@ -2082,6 +2163,8 @@ def get_user_route(user_id):
     plan = get_latest_plan(target_user_id or user_id)
     calendar = _list_calendar(target_user_id or user_id)
     target_auth_user = get_auth_user_by_id(target_user_id or user_id)
+    if session and session["user_id"] != (target_user_id or user_id):
+        record_audit_log(session["user_id"], target_user_id or user_id, "dietitian.client_viewed", {})
     return jsonify(
         {
             "exists": True,
@@ -2116,6 +2199,25 @@ def feedback():
     body = request.get_json(force=True)
     res = requests.post(f"{FEEDBACK_URL}/feedback", json=body)
     return jsonify(res.json()), res.status_code
+
+
+@app.get("/privacy/export")
+def privacy_export():
+    session, error = _require_auth()
+    if error:
+        return error
+    return jsonify({"ok": True, "export": export_user_data(session["user_id"])})
+
+
+@app.delete("/privacy/delete-account")
+def privacy_delete_account():
+    session, error = _require_auth()
+    if error:
+        return error
+    user_id = session["user_id"]
+    record_audit_log(user_id, user_id, "privacy.account_deleted", {})
+    delete_user_account_data(user_id)
+    return jsonify({"ok": True, "deleted_user_id": user_id})
 
 
 @app.get("/progress")

@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS auth_users (
     display_name TEXT,
     role TEXT DEFAULT 'user',
     managed_by_user_id TEXT,
+    health_data_consent INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -143,6 +144,14 @@ CREATE TABLE IF NOT EXISTS weekly_updates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
     recommendation TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_user_id TEXT,
+    target_user_id TEXT,
+    action TEXT NOT NULL,
+    metadata TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 '''
@@ -198,6 +207,7 @@ CREATE TABLE IF NOT EXISTS auth_users (
     display_name TEXT,
     role TEXT DEFAULT 'user',
     managed_by_user_id TEXT,
+    health_data_consent INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -263,6 +273,14 @@ CREATE TABLE IF NOT EXISTS weekly_updates (
     recommendation TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id SERIAL PRIMARY KEY,
+    actor_user_id TEXT,
+    target_user_id TEXT,
+    action TEXT NOT NULL,
+    metadata TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 '''
 
 SCHEMA = SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE
@@ -270,6 +288,7 @@ SCHEMA = SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE
 MIGRATIONS = [
     "ALTER TABLE auth_users ADD COLUMN role TEXT DEFAULT 'user'",
     "ALTER TABLE auth_users ADD COLUMN managed_by_user_id TEXT",
+    "ALTER TABLE auth_users ADD COLUMN health_data_consent INTEGER DEFAULT 0",
     "CREATE TABLE IF NOT EXISTS auth_password_resets (token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS user_nudge_settings (user_id TEXT PRIMARY KEY)",
     "ALTER TABLE user_nudge_settings ADD COLUMN enabled INTEGER DEFAULT 0",
@@ -283,6 +302,7 @@ MIGRATIONS = [
     "CREATE TABLE IF NOT EXISTS private_messages (id SERIAL PRIMARY KEY, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS private_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS progress_checkins (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS progress_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS weekly_updates (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS weekly_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS audit_logs (id SERIAL PRIMARY KEY, actor_user_id TEXT, target_user_id TEXT, action TEXT NOT NULL, metadata TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, actor_user_id TEXT, target_user_id TEXT, action TEXT NOT NULL, metadata TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
 ]
 
 def init_db():
@@ -431,15 +451,18 @@ def create_auth_user(
     display_name: str | None = None,
     role: str = "user",
     managed_by_user_id: str | None = None,
+    health_data_consent: bool = False,
 ):
     with engine.begin() as conn:
         conn.execute(
             text("""
                 INSERT INTO auth_users(
-                    user_id, email, password_hash, display_name, role, managed_by_user_id, updated_at
+                    user_id, email, password_hash, display_name, role, managed_by_user_id,
+                    health_data_consent, updated_at
                 )
                 VALUES(
-                    :uid, :email, :password_hash, :display_name, :role, :managed_by_user_id, CURRENT_TIMESTAMP
+                    :uid, :email, :password_hash, :display_name, :role, :managed_by_user_id,
+                    :health_data_consent, CURRENT_TIMESTAMP
                 )
             """),
             {
@@ -449,6 +472,7 @@ def create_auth_user(
                 "display_name": display_name,
                 "role": role,
                 "managed_by_user_id": managed_by_user_id,
+                "health_data_consent": 1 if health_data_consent else 0,
             },
         )
 
@@ -456,7 +480,8 @@ def get_auth_user_by_email(email: str):
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT user_id, email, password_hash, display_name, role, managed_by_user_id, created_at
+                SELECT user_id, email, password_hash, display_name, role, managed_by_user_id,
+                       health_data_consent, created_at
                 FROM auth_users
                 WHERE lower(email) = lower(:email)
             """),
@@ -468,7 +493,8 @@ def get_auth_user_by_id(user_id: str):
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT user_id, email, password_hash, display_name, role, managed_by_user_id, created_at
+                SELECT user_id, email, password_hash, display_name, role, managed_by_user_id,
+                       health_data_consent, created_at
                 FROM auth_users
                 WHERE user_id = :uid
             """),
@@ -480,7 +506,8 @@ def list_managed_auth_users(manager_user_id: str):
     with engine.begin() as conn:
         rows = conn.execute(
             text("""
-                SELECT user_id, email, display_name, role, managed_by_user_id, created_at
+                SELECT user_id, email, display_name, role, managed_by_user_id,
+                       health_data_consent, created_at
                 FROM auth_users
                 WHERE managed_by_user_id = :uid
                 ORDER BY created_at ASC, email ASC
@@ -558,12 +585,12 @@ def list_private_messages(user_a_id: str, user_b_id: str):
         ).fetchall()
     return [dict(row._mapping) for row in rows]
 
-def create_auth_session(user_id: str):
+def create_auth_session(user_id: str, expires_at: str | None = None):
     token = secrets.token_urlsafe(32)
     with engine.begin() as conn:
         conn.execute(
-            text("INSERT INTO auth_sessions(token, user_id) VALUES(:token, :uid)"),
-            {"token": token, "uid": user_id},
+            text("INSERT INTO auth_sessions(token, user_id, expires_at) VALUES(:token, :uid, :expires_at)"),
+            {"token": token, "uid": user_id, "expires_at": expires_at},
         )
     return token
 
@@ -571,7 +598,8 @@ def get_auth_session(token: str):
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT s.token, s.user_id, u.email, u.display_name, u.role, u.managed_by_user_id
+                SELECT s.token, s.user_id, s.expires_at, u.email, u.display_name, u.role,
+                       u.managed_by_user_id, u.health_data_consent
                 FROM auth_sessions s
                 JOIN auth_users u ON u.user_id = s.user_id
                 WHERE s.token = :token
@@ -867,3 +895,102 @@ def get_latest_weekly_update(user_id: str):
     payload = dict(row)
     payload["recommendation"] = json.loads(payload.get("recommendation") or "{}")
     return payload
+
+
+def record_audit_log(actor_user_id: str | None, target_user_id: str | None, action: str, metadata: dict | None = None):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO audit_logs(actor_user_id, target_user_id, action, metadata)
+                VALUES(:actor_user_id, :target_user_id, :action, :metadata)
+            """),
+            {
+                "actor_user_id": actor_user_id,
+                "target_user_id": target_user_id,
+                "action": action,
+                "metadata": json.dumps(metadata or {}),
+            },
+        )
+
+
+def list_audit_logs_for_user(user_id: str):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT id, actor_user_id, target_user_id, action, metadata, created_at
+                FROM audit_logs
+                WHERE actor_user_id = :uid OR target_user_id = :uid
+                ORDER BY created_at DESC, id DESC
+            """),
+            {"uid": user_id},
+        ).mappings().all()
+    logs = []
+    for row in rows:
+        item = dict(row)
+        item["metadata"] = json.loads(item.get("metadata") or "{}")
+        logs.append(item)
+    return logs
+
+
+def export_user_data(user_id: str):
+    with engine.begin() as conn:
+        auth_user = conn.execute(
+            text("""
+                SELECT user_id, email, display_name, role, managed_by_user_id,
+                       health_data_consent, created_at
+                FROM auth_users WHERE user_id = :uid
+            """),
+            {"uid": user_id},
+        ).mappings().first()
+        user = conn.execute(text("SELECT profile, goal, quiz_data, created_at, updated_at FROM users WHERE user_id=:uid"), {"uid": user_id}).mappings().first()
+        plans = conn.execute(text("SELECT plan, created_at FROM user_plans WHERE user_id=:uid ORDER BY created_at DESC"), {"uid": user_id}).mappings().all()
+        feedback_rows = conn.execute(text("SELECT event_id, rating, reason, created_at FROM feedback WHERE user_id=:uid ORDER BY created_at DESC"), {"uid": user_id}).mappings().all()
+        messages = conn.execute(
+            text("""
+                SELECT sender_user_id, recipient_user_id, body, created_at
+                FROM private_messages
+                WHERE sender_user_id=:uid OR recipient_user_id=:uid
+                ORDER BY created_at DESC
+            """),
+            {"uid": user_id},
+        ).mappings().all()
+
+    return {
+        "account": dict(auth_user) if auth_user else None,
+        "profile": {
+            **dict(user),
+            "profile": json.loads(user["profile"] or "{}"),
+            "goal": json.loads(user["goal"] or "{}"),
+            "quiz_data": json.loads(user["quiz_data"] or "{}"),
+        } if user else None,
+        "plans": [{"plan": json.loads(row["plan"] or "{}"), "created_at": row["created_at"]} for row in plans],
+        "calendar_events": get_calendar_events(user_id),
+        "feedback": [dict(row) for row in feedback_rows],
+        "progress_checkins": list_progress_checkins(user_id, limit=1000),
+        "weekly_update": get_latest_weekly_update(user_id),
+        "nudge_settings": get_nudge_settings(user_id),
+        "private_messages": [dict(row) for row in messages],
+        "audit_logs": list_audit_logs_for_user(user_id),
+    }
+
+
+def delete_user_account_data(user_id: str):
+    with engine.begin() as conn:
+        for stmt in [
+            "DELETE FROM feedback WHERE user_id = :uid",
+            "DELETE FROM users WHERE user_id = :uid",
+            "DELETE FROM user_plans WHERE user_id = :uid",
+            "DELETE FROM calendar_events WHERE user_id = :uid",
+            "DELETE FROM auth_sessions WHERE user_id = :uid",
+            "DELETE FROM google_calendar_tokens WHERE user_id = :uid",
+            "DELETE FROM google_oauth_states WHERE user_id = :uid",
+            "DELETE FROM auth_password_resets WHERE user_id = :uid",
+            "DELETE FROM user_nudge_settings WHERE user_id = :uid",
+            "DELETE FROM progress_checkins WHERE user_id = :uid",
+            "DELETE FROM weekly_updates WHERE user_id = :uid",
+            "DELETE FROM private_messages WHERE sender_user_id = :uid OR recipient_user_id = :uid",
+            "DELETE FROM audit_logs WHERE actor_user_id = :uid OR target_user_id = :uid",
+            "UPDATE auth_users SET managed_by_user_id = NULL WHERE managed_by_user_id = :uid",
+            "DELETE FROM auth_users WHERE user_id = :uid",
+        ]:
+            conn.execute(text(stmt), {"uid": user_id})
