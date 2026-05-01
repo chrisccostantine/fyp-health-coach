@@ -3,12 +3,18 @@ from services.diet_agent import app as diet_app
 from services.diet_agent.kaggle_recipe_db import load_kaggle_recipe_catalog
 from services.diet_agent.nutrition_db import RECIPE_CATALOG, calculate_recipe_nutrition
 from services.exercise_agent.app import WORKOUT_LIBRARY, build_rule_based_exercise
+from services.exercise_agent.workout_csv_db import load_workout_catalog
 from services.gateway.app import _build_day_workouts, _build_month_plan
 
 
 def use_local_recipe_catalog(monkeypatch):
     monkeypatch.setenv("KAGGLE_RECIPE_CSV", "__missing_test_recipe_file__.csv")
     load_kaggle_recipe_catalog.cache_clear()
+
+
+def use_local_workout_catalog(monkeypatch):
+    monkeypatch.setenv("WORKOUT_CSV", "__missing_test_workout_file__.csv")
+    load_workout_catalog.cache_clear()
 
 
 def test_local_recipe_catalog_has_at_least_100_structured_recipes():
@@ -23,6 +29,35 @@ def test_workout_catalog_has_at_least_200_described_workouts():
     assert len(all_workouts) >= 200
     assert all(workout.get("description") for workout in all_workouts)
     assert all(str(workout.get("video_url", "")).startswith("https://www.youtube.com/results?") for workout in all_workouts)
+
+
+def test_exercise_can_use_mega_gym_csv(monkeypatch, tmp_path):
+    csv_path = tmp_path / "megaGymDataset.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                ",Title,Desc,Type,BodyPart,Equipment,Level,Rating,RatingDesc",
+                "0,Banded crunch,Core exercise with a band.,Strength,Abdominals,Bands,Beginner,4.0,Good",
+                "1,Dumbbell bench press,Press dumbbells from a bench.,Strength,Chest,Dumbbell,Intermediate,4.5,Great",
+                "2,Treadmill run,Run at a steady pace.,Cardio,Quadriceps,Machine,Beginner,4.1,Good",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WORKOUT_CSV", str(csv_path))
+    load_workout_catalog.cache_clear()
+
+    plan = build_rule_based_exercise(
+        {"preferences": {"workout_location": "home", "workout_duration_pref": "20_30"}},
+        {"type": "muscle_gain"},
+        ["bands", "dumbbells"],
+    )
+
+    assert plan["workout_source"] == "mega_gym"
+    assert plan["workouts"]
+    assert all(workout["description"] for workout in plan["workouts"])
+    assert all(workout["video_url"].startswith("https://www.youtube.com/results?") for workout in plan["workouts"])
+    load_workout_catalog.cache_clear()
 
 
 def test_recipe_nutrition_is_calculated_from_ingredient_grams():
@@ -225,7 +260,8 @@ def test_day_workouts_are_two_or_three_parts_at_preferred_time():
     assert sum(workout["duration_min"] for workout in day_workouts) == 45
 
 
-def test_exercise_respects_home_duration_and_beginner_level():
+def test_exercise_respects_home_duration_and_beginner_level(monkeypatch):
+    use_local_workout_catalog(monkeypatch)
     plan = build_rule_based_exercise(
         {
             "preferences": {
@@ -246,7 +282,8 @@ def test_exercise_respects_home_duration_and_beginner_level():
     assert all(workout["video_url"].startswith("https://www.youtube.com/results?") for workout in plan["workouts"])
 
 
-def test_exercise_avoids_injury_contraindications():
+def test_exercise_avoids_injury_contraindications(monkeypatch):
+    use_local_workout_catalog(monkeypatch)
     plan = build_rule_based_exercise(
         {
             "injuries": ["shoulder"],

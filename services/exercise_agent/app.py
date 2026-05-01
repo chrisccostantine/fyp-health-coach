@@ -6,6 +6,7 @@ from urllib.parse import quote_plus
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from openai import OpenAI
+from services.exercise_agent.workout_csv_db import load_workout_catalog, workouts_by_goal
 
 # -------------------- SETUP --------------------
 BASE_DIR = os.path.dirname(__file__)
@@ -334,7 +335,9 @@ def build_rule_based_exercise(
 ) -> Dict[str, Any]:
     _ = profile
     goal_key = _goal_key(goal)
-    preferred = WORKOUT_LIBRARY.get(goal_key, WORKOUT_LIBRARY["general_health"])
+    external_workouts = load_workout_catalog()
+    active_library = workouts_by_goal(external_workouts) if external_workouts else WORKOUT_LIBRARY
+    preferred = active_library.get(goal_key, active_library["general_health"])
 
     equipment_set = _normalize_equipment(equipment)
     prefs = _profile_preferences(profile)
@@ -350,11 +353,11 @@ def build_rule_based_exercise(
         matched = [w for w in preferred if not w.get("equipment") and _workout_matches_preferences(w, prefs)]
 
     if not matched:
-        matched = WORKOUT_LIBRARY["general_health"]
+        matched = active_library["general_health"]
 
     workouts = [_personalize_workout(w, prefs) for w in matched[:35]]
 
-    return {"workouts": workouts}
+    return {"workouts": workouts, "workout_source": "mega_gym" if external_workouts else "local"}
 
 
 # -------------------- RULE-BASED API --------------------
