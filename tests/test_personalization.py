@@ -1,5 +1,19 @@
 from services.diet_agent.app import build_rule_based_diet
+from services.diet_agent.nutrition_db import RECIPE_CATALOG, calculate_recipe_nutrition
 from services.exercise_agent.app import build_rule_based_exercise
+
+
+def test_local_recipe_catalog_has_at_least_100_structured_recipes():
+    assert len(RECIPE_CATALOG) >= 100
+    sample = RECIPE_CATALOG[0]
+    assert sample["ingredients_detail"]
+    assert {"calories", "protein", "carbs", "fat"}.issubset(sample["nutrition"])
+
+
+def test_recipe_nutrition_is_calculated_from_ingredient_grams():
+    recipe = RECIPE_CATALOG[0]
+    calculated = calculate_recipe_nutrition(recipe["ingredients_detail"])
+    assert calculated == recipe["nutrition"]
 
 
 def test_diet_respects_vegan_preference_and_preferred_vegetables():
@@ -23,6 +37,7 @@ def test_diet_respects_vegan_preference_and_preferred_vegetables():
     assert any("Tofu" in name or "Chickpea" in name or "Lentil" in name for name in meal_names)
     assert all("Chicken" not in name and "Tuna" not in name and "Salmon" not in name for name in meal_names)
     assert all("Yogurt" not in name and "Eggs" not in name for name in meal_names)
+    assert all(meal["ingredients"] for meal in plan["meals"])
 
 
 def test_diet_filters_allergy_ingredients():

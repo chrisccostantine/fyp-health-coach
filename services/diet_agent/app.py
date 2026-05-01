@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
+from services.diet_agent.nutrition_db import RECIPE_CATALOG, scale_recipe_to_calories
+
 # -------------------- SETUP --------------------
 BASE_DIR = os.path.dirname(__file__)
 load_dotenv(os.path.join(BASE_DIR, "diet.env"))
@@ -34,64 +36,6 @@ def tdee(profile: Dict[str, Any]) -> int:
     }.get(profile.get("activity_level", "light"), 1.375)
 
     return int(bmr * mult)
-
-# -------------------- STATIC RECIPES --------------------
-RECIPES = [
-    {
-        "name": "Greek Yogurt + Berries + Oats",
-        "macros": {"protein": 35, "carbs": 50, "fat": 8},
-        "tags": {"vegetarian", "mediterranean"},
-        "ingredients": {"yogurt", "berries", "oats"},
-    },
-    {
-        "name": "Chicken Quinoa Bowl",
-        "macros": {"protein": 45, "carbs": 55, "fat": 12},
-        "tags": {"high_protein", "mediterranean"},
-        "ingredients": {"chicken", "quinoa", "spinach", "tomato"},
-    },
-    {
-        "name": "Tuna Salad Wrap",
-        "macros": {"protein": 30, "carbs": 35, "fat": 10},
-        "tags": {"high_protein", "mediterranean"},
-        "ingredients": {"tuna", "wrap", "cucumber", "tomato"},
-    },
-    {
-        "name": "Lentil Veggie Stew",
-        "macros": {"protein": 24, "carbs": 40, "fat": 7},
-        "tags": {"vegetarian", "vegan", "mediterranean"},
-        "ingredients": {"lentils", "carrot", "tomato", "onion", "spinach"},
-    },
-    {
-        "name": "Salmon + Rice + Greens",
-        "macros": {"protein": 42, "carbs": 60, "fat": 14},
-        "tags": {"high_protein", "mediterranean"},
-        "ingredients": {"salmon", "rice", "spinach", "asparagus"},
-    },
-    {
-        "name": "Tofu Veggie Stir Fry",
-        "macros": {"protein": 30, "carbs": 42, "fat": 13},
-        "tags": {"vegetarian", "vegan"},
-        "ingredients": {"tofu", "broccoli", "bell pepper", "rice"},
-    },
-    {
-        "name": "Chickpea Cucumber Tomato Bowl",
-        "macros": {"protein": 22, "carbs": 48, "fat": 11},
-        "tags": {"vegetarian", "vegan", "mediterranean"},
-        "ingredients": {"chickpeas", "cucumber", "tomato", "onion"},
-    },
-    {
-        "name": "Eggs + Avocado + Cucumber Plate",
-        "macros": {"protein": 28, "carbs": 12, "fat": 28},
-        "tags": {"vegetarian", "keto"},
-        "ingredients": {"eggs", "avocado", "cucumber"},
-    },
-    {
-        "name": "Grilled Chicken + Avocado Salad",
-        "macros": {"protein": 44, "carbs": 14, "fat": 24},
-        "tags": {"keto", "high_protein"},
-        "ingredients": {"chicken", "avocado", "cucumber", "spinach"},
-    },
-]
 
 MEAL_TIMES = ["08:00", "13:00", "19:00"]
 
@@ -147,17 +91,23 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict
     per = target // 3
     meals = []
     prefs = _diet_preferences(profile)
-    candidates = [recipe for recipe in RECIPES if _recipe_matches(recipe, prefs)]
+    candidates = [recipe for recipe in RECIPE_CATALOG if _recipe_matches(recipe, prefs)]
     if len(candidates) < 3 and prefs["preference"] == "none":
-        candidates = [recipe for recipe in RECIPES if not set(recipe.get("ingredients", set())).intersection(set(prefs["allergies"]))]
-    candidates = _rank_recipes(candidates or RECIPES, prefs)
+        candidates = [
+            recipe
+            for recipe in RECIPE_CATALOG
+            if not set(recipe.get("ingredients", set())).intersection(set(prefs["allergies"]))
+        ]
+    candidates = _rank_recipes(candidates or RECIPE_CATALOG, prefs)
 
     total_p = total_c = total_f = 0
 
     for idx, r in enumerate(candidates[:3]):
-        p = float(r["macros"]["protein"])
-        c = float(r["macros"]["carbs"])
-        f = float(r["macros"]["fat"])
+        scaled = scale_recipe_to_calories(r, per)
+        p = float(scaled["macros"]["protein"])
+        c = float(scaled["macros"]["carbs"])
+        f = float(scaled["macros"]["fat"])
+        calories = int(round(scaled["nutrition"]["calories"]))
 
         total_p += p
         total_c += c
@@ -165,10 +115,11 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict
 
         meals.append(
             {
-                "name": r["name"],
-                "calories": int(per),
+                "name": scaled["name"],
+                "calories": calories,
                 "macros": {"protein": p, "carbs": c, "fat": f},
                 "when": MEAL_TIMES[idx] if idx < len(MEAL_TIMES) else None,
+                "ingredients": scaled["ingredients_detail"],
                 "protein": p,
                 "carbs": c,
                 "fat": f,
@@ -177,7 +128,7 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict
 
     return {
         "daily_calories": int(target),
-        "macros": {"protein": total_p, "carbs": total_c, "fat": total_f},
+        "macros": {"protein": round(total_p, 1), "carbs": round(total_c, 1), "fat": round(total_f, 1)},
         "meals": meals,
     }
 
@@ -207,6 +158,7 @@ def diet_suggest():
                     "calories": int(m["calories"]),
                     "macros": m["macros"],
                     "when": m.get("when"),
+                    "ingredients": m.get("ingredients", []),
                 }
                 for m in plan["meals"]
             ],
