@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
+from services.diet_agent.kaggle_recipe_db import load_kaggle_recipe_catalog
 from services.diet_agent.nutrition_db import RECIPE_CATALOG, scale_recipe_to_calories
 
 # -------------------- SETUP --------------------
@@ -78,15 +79,35 @@ def _recipe_matches(recipe: Dict[str, Any], prefs: Dict[str, Any]) -> bool:
 
 def _rank_recipes(recipes: list[Dict[str, Any]], prefs: Dict[str, Any]) -> list[Dict[str, Any]]:
     preferred_vegetables = set(prefs["preferred_vegetables"])
+    health_tags = {"healthy", "quick and healthy", "low cal", "low fat", "low sodium", "low sugar", "high fiber"}
+    avoid_tags = {"dessert", "cake", "cookie", "cookies", "candy", "cocktail", "drink", "drinks", "alcoholic"}
 
     def score(recipe: Dict[str, Any]) -> int:
         ingredients = {str(item).lower() for item in recipe.get("ingredients", set())}
-        return len(ingredients.intersection(preferred_vegetables))
+        tags = {str(item).lower() for item in recipe.get("tags", set())}
+        nutrition = recipe.get("nutrition") or {}
+        nutrition_score = 0
+        if float(nutrition.get("calories") or 0) <= 650:
+            nutrition_score += 2
+        if float(nutrition.get("protein") or 0) >= 15:
+            nutrition_score += 2
+        if float(nutrition.get("fat") or 0) <= 25:
+            nutrition_score += 1
+        if float(nutrition.get("sodium") or 0) <= 800:
+            nutrition_score += 1
+        return (
+            len(ingredients.intersection(preferred_vegetables)) * 4
+            + len(tags.intersection(health_tags)) * 3
+            + nutrition_score
+            - len(tags.intersection(avoid_tags)) * 8
+        )
 
     return sorted(recipes, key=score, reverse=True)
 
 
 def _meal_description(meal: Dict[str, Any]) -> str:
+    if meal.get("description") and meal.get("source") == "kaggle":
+        return str(meal.get("description"))
     ingredients = meal.get("ingredients_detail") or []
     visible = [
         f"{item.get('name', item.get('key', 'ingredient'))} ({round(float(item.get('grams', 0)))}g)"
@@ -102,7 +123,26 @@ def _meal_description(meal: Dict[str, Any]) -> str:
 
 
 def _meal_from_recipe(recipe: Dict[str, Any], calories_target: int, when: str | None = None) -> Dict[str, Any]:
-    scaled = scale_recipe_to_calories(recipe, calories_target)
+    if recipe.get("source") == "kaggle":
+        current = float(recipe.get("nutrition", {}).get("calories") or 1)
+        factor = max(0.70, min(1.15, float(calories_target) / current))
+        scaled = {
+            **recipe,
+            "nutrition": {
+                "calories": round(current * factor, 1),
+                "protein": round(float(recipe.get("macros", {}).get("protein", 0)) * factor, 1),
+                "carbs": round(float(recipe.get("macros", {}).get("carbs", 0)) * factor, 1),
+                "fat": round(float(recipe.get("macros", {}).get("fat", 0)) * factor, 1),
+                "sodium": round(float(recipe.get("nutrition", {}).get("sodium", 0)) * factor, 1),
+            },
+        }
+        scaled["macros"] = {
+            "protein": scaled["nutrition"]["protein"],
+            "carbs": scaled["nutrition"]["carbs"],
+            "fat": scaled["nutrition"]["fat"],
+        }
+    else:
+        scaled = scale_recipe_to_calories(recipe, calories_target)
     p = float(scaled["macros"]["protein"])
     c = float(scaled["macros"]["carbs"])
     f = float(scaled["macros"]["fat"])
@@ -128,14 +168,16 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict
     per = max(330, min(650, meal_calorie_budget // 3))
     meals = []
     prefs = _diet_preferences(profile)
-    candidates = [recipe for recipe in RECIPE_CATALOG if _recipe_matches(recipe, prefs)]
+    external_catalog = list(load_kaggle_recipe_catalog())
+    recipe_catalog = external_catalog or RECIPE_CATALOG
+    candidates = [recipe for recipe in recipe_catalog if _recipe_matches(recipe, prefs)]
     if len(candidates) < 3 and prefs["preference"] == "none":
         candidates = [
             recipe
-            for recipe in RECIPE_CATALOG
+            for recipe in recipe_catalog
             if not set(recipe.get("ingredients", set())).intersection(set(prefs["allergies"]))
         ]
-    candidates = _rank_recipes(candidates or RECIPE_CATALOG, prefs)
+    candidates = _rank_recipes(candidates or recipe_catalog, prefs)
 
     total_p = total_c = total_f = 0
 
@@ -162,6 +204,7 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict
         "macros": {"protein": round(total_p, 1), "carbs": round(total_c, 1), "fat": round(total_f, 1)},
         "meals": meals,
         "meal_pool": meal_pool,
+        "recipe_source": "kaggle" if external_catalog else "local",
     }
 
 # -------------------- RULE-BASED DIET --------------------
