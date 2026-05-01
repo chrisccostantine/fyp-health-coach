@@ -1505,6 +1505,21 @@ pre.out {
   max-width: 68ch;
 }
 
+.result-video-link{
+  display:inline-flex;
+  align-items:center;
+  margin-top: 10px;
+  color: var(--success);
+  font-size: .9rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.result-video-link:hover{
+  color: #8ff0bf;
+  text-decoration: underline;
+}
+
 .time-pill{
   padding: 6px 12px;
   border-radius: 12px;

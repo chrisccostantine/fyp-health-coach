@@ -31,6 +31,7 @@ class PlanWorkout(BaseModel):
     intensity: Literal["low","medium","high"] = "medium"
     when: Optional[str] = None
     description: Optional[str] = None
+    video_url: Optional[str] = None
 
 class DayPlan(BaseModel):
     user_id: str

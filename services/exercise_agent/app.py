@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
@@ -193,6 +194,14 @@ def _workout_description(name: str, style_note: str, equipment: list[str]) -> st
     )
 
 
+def _workout_video_url(name: str, equipment: list[str] | None = None) -> str:
+    equipment_text = " ".join(str(item).replace("_", " ") for item in (equipment or []) if item)
+    query = f"{name} exercise demonstration proper form"
+    if equipment_text:
+        query = f"{name} {equipment_text} exercise demonstration proper form"
+    return f"https://www.youtube.com/results?search_query={quote_plus(query)}"
+
+
 def _build_workout_library() -> Dict[str, List[Dict[str, Any]]]:
     library: Dict[str, List[Dict[str, Any]]] = {goal: list(items) for goal, items in WORKOUT_LIBRARY.items()}
     times = ["07:00", "08:00", "12:30", "17:30", "18:00", "19:00", "20:00"]
@@ -210,6 +219,7 @@ def _build_workout_library() -> Dict[str, List[Dict[str, Any]]]:
                         "locations": locations,
                         "avoid_injuries": avoid_injuries,
                         "description": _workout_description(name, style_note, equipment),
+                        "video_url": _workout_video_url(name, equipment),
                     }
                 )
     for workouts in library.values():
@@ -218,6 +228,11 @@ def _build_workout_library() -> Dict[str, List[Dict[str, Any]]]:
                 workout["description"] = _workout_description(
                     workout["name"],
                     "Move with control, keep breathing steady, and adjust the pace if form drops.",
+                    workout.get("equipment", []),
+                )
+            if not workout.get("video_url"):
+                workout["video_url"] = _workout_video_url(
+                    workout["name"],
                     workout.get("equipment", []),
                 )
     return library
@@ -307,6 +322,10 @@ def _personalize_workout(workout: Dict[str, Any], prefs: Dict[str, Any]) -> Dict
             "Move with control and stop if pain appears.",
             workout.get("equipment", []),
         ),
+        "video_url": workout.get("video_url") or _workout_video_url(
+            workout["name"],
+            workout.get("equipment", []),
+        ),
     }
 
 
@@ -380,7 +399,8 @@ Return ONLY valid JSON in this format:
       "duration_min": number,
       "intensity": "low" | "medium" | "high",
       "when": "HH:MM",
-      "description": string
+      "description": string,
+      "video_url": string
     }}
   ]
 }}
@@ -448,6 +468,10 @@ def _normalize_workouts(workouts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "intensity": intensity,
                 "when": workout.get("when") or workout.get("time"),
                 "description": workout.get("description") or workout.get("instructions"),
+                "video_url": workout.get("video_url") or _workout_video_url(
+                    workout.get("name") or workout.get("title") or f"Workout {i+1}",
+                    workout.get("equipment", []),
+                ),
             }
         )
 
@@ -482,7 +506,8 @@ Return ONLY JSON:
         "duration_min": 0,
         "intensity": "low|medium|high",
         "when": "HH:MM",
-        "description": "string"
+        "description": "string",
+        "video_url": "string"
       }
     ]
   }

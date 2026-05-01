@@ -15,6 +15,7 @@ def test_workout_catalog_has_at_least_200_described_workouts():
     all_workouts = [workout for workouts in WORKOUT_LIBRARY.values() for workout in workouts]
     assert len(all_workouts) >= 200
     assert all(workout.get("description") for workout in all_workouts)
+    assert all(str(workout.get("video_url", "")).startswith("https://www.youtube.com/results?") for workout in all_workouts)
 
 
 def test_recipe_nutrition_is_calculated_from_ingredient_grams():
@@ -97,6 +98,7 @@ def test_exercise_respects_home_duration_and_beginner_level():
     assert all(workout["duration_min"] <= 15 for workout in plan["workouts"])
     assert all(workout["intensity"] in {"low", "medium"} for workout in plan["workouts"])
     assert all(workout["description"] for workout in plan["workouts"])
+    assert all(workout["video_url"].startswith("https://www.youtube.com/results?") for workout in plan["workouts"])
 
 
 def test_exercise_avoids_injury_contraindications():

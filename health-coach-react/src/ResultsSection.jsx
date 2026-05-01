@@ -492,6 +492,16 @@ export default function ResultsSection({
                                 {w.description ? (
                                   <div className="result-description">{w.description}</div>
                                 ) : null}
+                                {w.video_url ? (
+                                  <a
+                                    className="result-video-link"
+                                    href={w.video_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    Watch Demo
+                                  </a>
+                                ) : null}
                               </div>
                             </div>
 
