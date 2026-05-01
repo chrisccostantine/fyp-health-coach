@@ -90,3 +90,26 @@ def test_signup_rejects_duplicate_email(gateway_client):
     )
     assert second.status_code == 409
     assert "already exists" in second.get_json()["error"]
+
+
+def test_plan_today_blocks_unsafe_minor_profile(gateway_client):
+    res = gateway_client.post(
+        "/plan/today",
+        json={
+            "user_id": "demo-user",
+            "profile": {
+                "age": 15,
+                "sex": "M",
+                "height_cm": 170,
+                "weight_kg": 65,
+                "activity_level": "moderate",
+            },
+            "goal": {"type": "general_health", "deficit_kcal": 0},
+            "equipment": [],
+        },
+    )
+
+    assert res.status_code == 422
+    data = res.get_json()
+    assert data["safety"]["blocked"] is True
+    assert "under 16" in data["safety"]["blocks"][0]

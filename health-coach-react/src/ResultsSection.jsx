@@ -118,6 +118,9 @@ export default function ResultsSection({
   const chatMessages = Array.isArray(dietChatMessages) ? dietChatMessages : [];
   const totalMealCalories = sumBy(meals, ["kcal", "calories"]);
   const totalWorkoutMinutes = sumBy(workouts, ["duration", "duration_min"]);
+  const safety = plan?.safety || {};
+  const safetyWarnings = Array.isArray(safety?.warnings) ? safety.warnings : [];
+  const safetyDisclaimer = safety?.disclaimer || "";
   const activeDateLabel = activeDate
     ? new Date(`${activeDate}T00:00:00`).toLocaleDateString([], {
         weekday: "long",
@@ -159,6 +162,21 @@ export default function ResultsSection({
                   <div className="alert alert-info mt-3 mb-0 small">
                     Viewing {viewedAccount.display_name || viewedAccount.email}'s plan in read-only mode.
                     Only the client account can generate or change this plan.
+                  </div>
+                ) : null}
+                {safetyWarnings.length > 0 ? (
+                  <div className="alert alert-warning mt-3 mb-0 small">
+                    <div className="fw-semibold mb-1">Safety notes</div>
+                    <ul className="mb-0 ps-3">
+                      {safetyWarnings.map((warning, idx) => (
+                        <li key={idx}>{warning}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {safetyDisclaimer ? (
+                  <div className="alert alert-info mt-3 mb-0 small">
+                    {safetyDisclaimer}
                   </div>
                 ) : null}
               </div>

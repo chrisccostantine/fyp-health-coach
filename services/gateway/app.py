@@ -1,3 +1,4 @@
+import json
 import os
 import traceback
 import uuid
@@ -67,6 +68,11 @@ BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "").strip()
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "Health Coach").strip()
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 PLAN_SPAN_DAYS = max(1, int(os.environ.get("PLAN_SPAN_DAYS", "30") or 30))
+HEALTH_SAFETY_DISCLAIMER = (
+    "Health Coach provides general wellness guidance, not medical advice. "
+    "Consult a qualified clinician before changing diet or exercise if you have "
+    "a medical condition, injury, pregnancy, disordered eating history, or concerning symptoms."
+)
 MEAL_VARIANT_LABELS = [
     "Mediterranean Style",
     "Fresh Bowl",
@@ -370,6 +376,108 @@ def _fallback_fitness_summary(assessment: dict):
         "Your current fitness score suggests your body would benefit from more regular training, better recovery habits, and steady daily movement.\n\n"
         "The good news is that this type of score usually improves quickly once you follow a structured plan consistently."
     )
+
+
+def _safe_float(value, default: float | None = None):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number == number else default
+
+
+def _profile_bmi(profile: UserProfile) -> float | None:
+    height_cm = _safe_float(profile.height_cm)
+    weight_kg = _safe_float(profile.weight_kg)
+    if not height_cm or not weight_kg or height_cm <= 0 or weight_kg <= 0:
+        return None
+    height_m = height_cm / 100
+    return round(weight_kg / (height_m * height_m), 1)
+
+
+def _normalized_profile_flags(profile: UserProfile):
+    diet_data = profile.diet if isinstance(profile.diet, dict) else {}
+    raw_flags = []
+    for key in ("conditions", "medical_conditions", "medications", "allergies", "contraindications"):
+        value = diet_data.get(key)
+        if isinstance(value, list):
+            raw_flags.extend(value)
+        elif value:
+            raw_flags.append(value)
+    raw_flags.extend(profile.injuries or [])
+    return [str(flag).strip().lower() for flag in raw_flags if str(flag).strip()]
+
+
+def _assess_plan_safety(profile: UserProfile, goal: Goal):
+    warnings = []
+    blocks = []
+    bmi = _profile_bmi(profile)
+    age = profile.age
+    height_cm = _safe_float(profile.height_cm)
+    weight_kg = _safe_float(profile.weight_kg)
+    deficit = int(goal.deficit_kcal or 0)
+    flags = _normalized_profile_flags(profile)
+
+    if age is None or height_cm is None or weight_kg is None:
+        blocks.append("Age, height, and weight are required before generating a health plan.")
+    else:
+        if age < 16:
+            blocks.append("Personalized diet and exercise plans are not available for users under 16.")
+        elif age < 18:
+            warnings.append("Users under 18 should follow this plan only with parent/guardian and clinician guidance.")
+
+        if height_cm < 120 or height_cm > 230 or weight_kg < 35 or weight_kg > 250:
+            blocks.append("The profile numbers are outside the safe range this coach can plan for.")
+
+    if bmi is not None:
+        if bmi < 18.5 and goal.type == "fat_loss":
+            blocks.append("Fat-loss plans are not appropriate for an underweight BMI.")
+        elif bmi < 18.5:
+            warnings.append("Your BMI is below the typical healthy range; get medical guidance before changing diet or training.")
+        elif bmi >= 40:
+            warnings.append("A BMI in this range can need medical supervision for diet and exercise changes.")
+
+    if deficit > 1000:
+        blocks.append("The requested calorie deficit is too aggressive for a general wellness plan.")
+    elif deficit > 750:
+        warnings.append("This calorie deficit is aggressive; consider a slower pace unless supervised by a clinician.")
+    elif deficit < 0:
+        warnings.append("A negative calorie deficit was provided, so nutrition targets may support weight gain.")
+
+    high_risk_terms = {
+        "pregnant",
+        "pregnancy",
+        "diabetes",
+        "heart disease",
+        "hypertension",
+        "kidney disease",
+        "eating disorder",
+        "anorexia",
+        "bulimia",
+        "chest pain",
+    }
+    matched_flags = sorted({term for term in high_risk_terms for flag in flags if term in flag})
+    if matched_flags:
+        warnings.append(
+            "Your profile mentions medical factors that require professional guidance before following a plan."
+        )
+
+    return {
+        "blocked": bool(blocks),
+        "blocks": blocks,
+        "warnings": warnings,
+        "bmi": bmi,
+        "disclaimer": HEALTH_SAFETY_DISCLAIMER,
+    }
+
+
+def _plan_safety_payload(assessment: dict):
+    return {
+        "blocked": bool(assessment.get("blocked")),
+        "warnings": assessment.get("warnings", []),
+        "bmi": assessment.get("bmi"),
+        "disclaimer": assessment.get("disclaimer", HEALTH_SAFETY_DISCLAIMER),
+    }
 
 
 def _ai_fitness_summary(payload: dict, assessment: dict):
@@ -1379,6 +1487,15 @@ def plan_today():
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
 
+    safety = _assess_plan_safety(profile, goal)
+    if safety["blocked"]:
+        return jsonify(
+            {
+                "error": "This plan needs clinician review before Health Coach can generate it.",
+                "safety": safety,
+            }
+        ), 422
+
     diet_res = requests.post(
         f"{DIET_URL}/diet/suggest",
         json={
@@ -1418,7 +1535,7 @@ def plan_today():
     )
     save_plan(user_id, plan_payload)
     calendar = _sync_calendar_for_plan(user_id, plan_payload)
-    return jsonify({**plan_payload, "calendar": calendar})
+    return jsonify({**plan_payload, "calendar": calendar, "safety": _plan_safety_payload(safety)})
 
 
 @app.post("/diet/chat")
