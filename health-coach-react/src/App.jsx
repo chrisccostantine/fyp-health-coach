@@ -195,7 +195,7 @@ function NudgeView({ result, tone, goal }) {
 
 const PROFILE_KEY = "hc_profile_v1";
 const ACTIVE_QUIZ_STEPS = [
-  0, 1, 3, 7, 8, 9, 10, 11, 12, 13, 20, 21, 22, 23, 28, 29, 27,
+  0, 1, 3, 7, 8, 9, 10, 11, 12, 13, 20, 21, 22, 30, 23, 28, 29, 27,
 ];
 
 function loadProfileDefaults() {
@@ -689,6 +689,7 @@ export default function App() {
   const [workoutLocation, setWorkoutLocation] = useState(""); // home|gym|mixed
   const [trainingFreq, setTrainingFreq] = useState(""); // not_at_all|1_2|3|more_3
   const [workoutDurationPref, setWorkoutDurationPref] = useState(""); // 10_15|20_30|30_40|40_60|auto
+  const [workoutTimePref, setWorkoutTimePref] = useState(""); // morning|midday|evening
 
   const [letFoodDecide, setLetFoodDecide] = useState(false);
   const [veggies, setVeggies] = useState([]);
@@ -889,6 +890,7 @@ export default function App() {
             workout_location: workoutLocation,
             training_freq: trainingFreq,
             workout_duration_pref: workoutDurationPref,
+            workout_time_pref: workoutTimePref,
             additional_goals: additionalGoals,
             pushups_level: pushupsLevel,
             pullups_level: pullupsLevel,
@@ -925,6 +927,7 @@ export default function App() {
         quizData: {
           ageBand, gender, bodyType, goalPick, targetBody, dietPref,
           fitnessLevel, workoutLocation, trainingFreq, workoutDurationPref,
+          workoutTimePref,
           targetWeight, heightUnit, weightUnit, sugarFreq, waterIntake,
           additionalGoals, pushupsLevel, pullupsLevel, allergiesInput,
           medicalConditionsInput, injuriesInput,
@@ -1426,6 +1429,11 @@ export default function App() {
       setCurrentWeight(String(p.weight_kg));
     }
     if (p.activity_level) setActivity(p.activity_level);
+    const prefs = p.preferences || {};
+    if (prefs.workout_location) setWorkoutLocation(prefs.workout_location);
+    if (prefs.training_freq) setTrainingFreq(prefs.training_freq);
+    if (prefs.workout_duration_pref) setWorkoutDurationPref(prefs.workout_duration_pref);
+    if (prefs.workout_time_pref) setWorkoutTimePref(prefs.workout_time_pref);
     if (g.type) {
       setGoalType(g.type);
       setGoalPick(g.type);
@@ -3867,6 +3875,38 @@ export default function App() {
                       >
                         Let Health Coach decide
                       </button>
+                    </div>
+                  </>
+                )}
+                {/*Step 30*/}
+                {step === 30 && (
+                  <>
+                    <h3 className="quiz-title">
+                      When do you prefer to train?
+                    </h3>
+                    <p className="quiz-sub">
+                      Your daily workout will be scheduled as one session at this time.
+                    </p>
+
+                    <div className="grid-2 mt-4">
+                      {[
+                        { k: "morning", t: "Morning", s: "Around 7:00 AM" },
+                        { k: "midday", t: "Midday", s: "Around 12:30 PM" },
+                        { k: "evening", t: "Evening", s: "Around 6:00 PM" },
+                      ].map((o) => (
+                        <button
+                          key={o.k}
+                          className={`grid-card ${workoutTimePref === o.k ? "active" : ""}`}
+                          onClick={() => {
+                            setWorkoutTimePref(o.k);
+                            nextStep();
+                          }}
+                          type="button"
+                        >
+                          <div>{o.t}</div>
+                          <div className="grid-card-sub">{o.s}</div>
+                        </button>
+                      ))}
                     </div>
                   </>
                 )}

@@ -1,7 +1,7 @@
 from services.diet_agent.app import build_rule_based_diet
 from services.diet_agent.nutrition_db import RECIPE_CATALOG, calculate_recipe_nutrition
 from services.exercise_agent.app import WORKOUT_LIBRARY, build_rule_based_exercise
-from services.gateway.app import _build_month_plan
+from services.gateway.app import _build_day_workouts, _build_month_plan
 
 
 def test_local_recipe_catalog_has_at_least_100_structured_recipes():
@@ -78,6 +78,17 @@ def test_month_plan_does_not_repeat_meals_within_first_week():
         for meal in day["meals"]
     ]
     assert len(names) == len(set(names))
+
+
+def test_day_workout_is_single_session_at_preferred_time():
+    workouts = [
+        {"name": f"Workout {idx}", "duration_min": 30, "intensity": "medium", "when": "07:00"}
+        for idx in range(5)
+    ]
+    day_workouts = _build_day_workouts(workouts, offset=2, target_minutes=45, workout_time="18:00")
+    assert len(day_workouts) == 1
+    assert day_workouts[0]["when"] == "18:00"
+    assert day_workouts[0]["duration_min"] == 45
 
 
 def test_exercise_respects_home_duration_and_beginner_level():

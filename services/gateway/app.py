@@ -105,12 +105,11 @@ SNACK_POOL = [
     {"name": "Edamame + Fruit", "calories": 240, "macros": {"protein": 15, "carbs": 30, "fat": 6}, "when": "15:45", "description": "Steam edamame, season lightly, and pair with one piece of fruit."},
     {"name": "Almonds + Protein Yogurt", "calories": 290, "macros": {"protein": 22, "carbs": 18, "fat": 14}, "when": "12:00", "description": "Measure almonds and mix them into high-protein yogurt for a balanced snack."},
 ]
-WORKOUT_SLOTS = [
-    ("Morning Mobility Flow", "07:00", "low"),
-    ("Midday Booster Circuit", "12:30", "medium"),
-    ("Main Training Session", "18:00", None),
-    ("Evening Walk + Stretch", "20:00", "low"),
-]
+WORKOUT_TIME_PREFS = {
+    "morning": "07:00",
+    "midday": "12:30",
+    "evening": "18:00",
+}
 
 app = Flask(__name__)
 CORS(app)
@@ -849,40 +848,28 @@ def _build_day_meals(base_meals: list[dict], offset: int):
     return meals
 
 
-def _build_day_workouts(base_workouts: list[dict], offset: int, target_minutes: int):
+def _workout_time_from_quiz(quiz_data: dict):
+    pref = str(
+        quiz_data.get("workoutTimePref")
+        or quiz_data.get("workout_time_pref")
+        or ""
+    ).strip().lower()
+    if pref in WORKOUT_TIME_PREFS:
+        return WORKOUT_TIME_PREFS[pref]
+    return "18:00"
+
+
+def _build_day_workouts(base_workouts: list[dict], offset: int, target_minutes: int, workout_time: str = "18:00"):
     if not base_workouts:
         return []
 
     rotated = base_workouts[(offset * 3) % len(base_workouts) :] + base_workouts[: (offset * 3) % len(base_workouts)]
     total_target = max(15, int(target_minutes or 30))
-    slot_count = 4 if total_target >= 45 else 3
-    slot_templates = WORKOUT_SLOTS[:slot_count]
-    remaining = total_target
-    workouts = []
-
-    for idx, (slot_label, slot_time, slot_intensity) in enumerate(slot_templates):
-        slots_left = slot_count - idx
-        min_for_this = 8 if idx < slot_count - 1 else max(8, remaining)
-        block_duration = max(min_for_this, round(remaining / slots_left))
-        if idx < slot_count - 1:
-            max_allowed = remaining - 8 * (slots_left - 1)
-            block_duration = min(block_duration, max_allowed)
-        block_duration = max(8, block_duration)
-
-        template = dict(rotated[idx % len(rotated)])
-        base_name = str(template.get("name") or template.get("title") or f"Workout {idx + 1}").strip()
-        template["name"] = base_name if idx == 1 else f"{slot_label}: {base_name}"
-        template["when"] = slot_time if idx != 1 else (template.get("when") or slot_time)
-        template["duration_min"] = block_duration
-        if slot_intensity:
-            template["intensity"] = slot_intensity
-        workouts.append(template)
-        remaining -= block_duration
-
-    if remaining > 0:
-        workouts[-1]["duration_min"] = int(workouts[-1].get("duration_min", 0) or 0) + remaining
-
-    return workouts
+    template = dict(rotated[0])
+    template["name"] = str(template.get("name") or template.get("title") or "Training Session").strip()
+    template["when"] = workout_time
+    template["duration_min"] = total_target
+    return [template]
 
 
 def _plan_days(plan: dict | None):
@@ -929,12 +916,13 @@ def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], spa
     quiz_data = user_data.get("quiz_data") or {}
     goal_data = user_data.get("goal") or {}
     workout_target = _duration_target_minutes(quiz_data, goal_data)
+    workout_time = _workout_time_from_quiz(quiz_data)
     plan_days = []
 
     for offset in range(max(1, span_days)):
         current_date = (today + timedelta(days=offset)).isoformat()
         day_meals = _build_day_meals(base_meals, offset)
-        day_workouts = _build_day_workouts(base_workouts, offset, workout_target)
+        day_workouts = _build_day_workouts(base_workouts, offset, workout_target, workout_time)
 
         plan_days.append(
             {
