@@ -995,6 +995,10 @@ export default function App() {
 
       const updatedPlan = exerciseData?.updated_plan || nextPlan;
       const nextCalendar = exerciseData?.calendar || dietData?.calendar || null;
+      const requiresReview =
+        updatedPlan?.review?.required &&
+        updatedPlan?.review?.status !== "approved" &&
+        currentUser?.role !== "dietitian";
       setPlan(updatedPlan);
       setSelectedPlanDate(getActivePlanDate(updatedPlan, activePlanSlice.activeDate || selectedPlanDate));
       cachePlan(updatedPlan);
@@ -1006,7 +1010,10 @@ export default function App() {
         ...prev,
         {
           role: "assistant",
-          text: combineAssistantReplies(
+          text: requiresReview ? `${combineAssistantReplies(
+            dietData?.assistant_reply,
+            exerciseData?.assistant_reply,
+          )} Your requested change is pending dietitian approval before it appears in your plan.` : combineAssistantReplies(
             dietData?.assistant_reply,
             exerciseData?.assistant_reply,
           ),

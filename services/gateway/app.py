@@ -181,6 +181,21 @@ def _resolve_write_user_id(session: dict | None, requested_user_id: str | None):
     return None
 
 
+def _resolve_plan_edit_user_id(session: dict | None, requested_user_id: str | None):
+    if not session:
+        return requested_user_id or "anon", "anonymous"
+
+    own_user_id = session["user_id"]
+    target_user_id = (requested_user_id or own_user_id or "").strip() or own_user_id
+    if target_user_id == own_user_id:
+        return target_user_id, "client"
+
+    if (session.get("role") or "user") == "dietitian" and is_managed_by(own_user_id, target_user_id):
+        return target_user_id, "dietitian"
+
+    return None, None
+
+
 def _resolve_private_chat_partner(session: dict | None, partner_user_id: str | None):
     if not session:
         return None
@@ -528,6 +543,32 @@ def _append_plan_review(plan: dict, *, reviewer_user_id: str, status: str, note:
             "reviewed_at": event["at"],
             "note": note,
             "history": history,
+        }
+    )
+    return {**plan, "review": review}
+
+
+def _mark_plan_pending_review(plan: dict, *, actor_user_id: str, actor_role: str, note: str):
+    review = dict(plan.get("review") or {})
+    if not review.get("required"):
+        return plan
+    history = list(review.get("history") or [])
+    event = {
+        "status": "pending_review",
+        "by_user_id": actor_user_id,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "note": note,
+    }
+    history.append(event)
+    review.update(
+        {
+            "required": True,
+            "status": "pending_review",
+            "reviewed_by_user_id": None,
+            "reviewed_at": None,
+            "note": note,
+            "history": history,
+            "last_edited_by_role": actor_role,
         }
     )
     return {**plan, "review": review}
@@ -1763,9 +1804,10 @@ def plan_today():
 def diet_chat():
     body = request.get_json(force=True)
     session = _get_current_session()
-    user_id = _resolve_write_user_id(session, body.get("user_id", "anon"))
+    user_id, edit_actor = _resolve_plan_edit_user_id(session, body.get("user_id", "anon"))
     if user_id is None:
-        return jsonify({"error": "Only the client can update this plan."}), 403
+        return jsonify({"error": "Only the client or assigned dietitian can update this plan."}), 403
+    body["user_id"] = user_id
     selected_date = str(body.get("selected_date") or "").strip() or None
     res = requests.post(f"{DIET_URL}/diet/chat", json=body, timeout=30)
     data = res.json()
@@ -1774,6 +1816,18 @@ def diet_chat():
         updated_plan["user_id"] = user_id
         existing_plan = get_latest_plan(user_id)
         next_plan = _merge_updated_day_into_plan(existing_plan, selected_date, updated_plan, user_id)
+        if next_plan.get("review", {}).get("required"):
+            note = (
+                "Dietitian edited the plan. Review is still required before the client can view it."
+                if edit_actor == "dietitian"
+                else "Client requested a plan change. Dietitian approval is required before the updated plan is visible."
+            )
+            next_plan = _mark_plan_pending_review(
+                next_plan,
+                actor_user_id=session["user_id"] if session else user_id,
+                actor_role=edit_actor or "client",
+                note=note,
+            )
         save_plan(user_id, next_plan)
         data["updated_plan"] = next_plan
         data["calendar"] = _sync_calendar_for_plan(user_id, next_plan)
@@ -1784,9 +1838,10 @@ def diet_chat():
 def exercise_chat():
     body = request.get_json(force=True)
     session = _get_current_session()
-    user_id = _resolve_write_user_id(session, body.get("user_id", "anon"))
+    user_id, edit_actor = _resolve_plan_edit_user_id(session, body.get("user_id", "anon"))
     if user_id is None:
-        return jsonify({"error": "Only the client can update this plan."}), 403
+        return jsonify({"error": "Only the client or assigned dietitian can update this plan."}), 403
+    body["user_id"] = user_id
     selected_date = str(body.get("selected_date") or "").strip() or None
     res = requests.post(f"{EXERCISE_URL}/exercise/chat", json=body, timeout=30)
     data = res.json()
@@ -1795,6 +1850,18 @@ def exercise_chat():
         updated_plan["user_id"] = user_id
         existing_plan = get_latest_plan(user_id)
         next_plan = _merge_updated_day_into_plan(existing_plan, selected_date, updated_plan, user_id)
+        if next_plan.get("review", {}).get("required"):
+            note = (
+                "Dietitian edited the plan. Review is still required before the client can view it."
+                if edit_actor == "dietitian"
+                else "Client requested a plan change. Dietitian approval is required before the updated plan is visible."
+            )
+            next_plan = _mark_plan_pending_review(
+                next_plan,
+                actor_user_id=session["user_id"] if session else user_id,
+                actor_role=edit_actor or "client",
+                note=note,
+            )
         save_plan(user_id, next_plan)
         data["updated_plan"] = next_plan
         data["calendar"] = _sync_calendar_for_plan(user_id, next_plan)

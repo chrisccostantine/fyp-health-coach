@@ -216,6 +216,25 @@ def test_managed_client_plan_requires_dietitian_review(gateway_client, monkeypat
             )
         if url.endswith("/calendar/sync"):
             return DummyResponse({"ok": True, "events": []})
+        if url.endswith("/diet/chat"):
+            current_plan = json.get("current_plan", {}) if isinstance(json, dict) else {}
+            return DummyResponse(
+                {
+                    "assistant_reply": "Updated meal timing.",
+                    "updated_plan": {
+                        "user_id": current_plan.get("user_id", "anon"),
+                        "meals": [
+                            {
+                                "name": "Dietitian Edited Bowl",
+                                "calories": 520,
+                                "macros": {"protein": 38, "carbs": 45, "fat": 16},
+                                "when": "12:30",
+                            }
+                        ],
+                        "workouts": current_plan.get("workouts", []),
+                    },
+                }
+            )
         return DummyResponse({"ok": True})
 
     monkeypatch.setattr(gateway_module.requests, "post", fake_post)
@@ -293,6 +312,21 @@ def test_managed_client_plan_requires_dietitian_review(gateway_client, monkeypat
     review = review_res.get_json()["review"]
     assert review["status"] == "approved"
     assert review["note"] == "Looks appropriate for this week."
+
+    diet_chat_res = gateway_client.post(
+        "/diet/chat",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={
+            "user_id": login_res.get_json()["user"]["user_id"],
+            "message": "Move lunch earlier",
+            "current_plan": plan,
+        },
+    )
+    assert diet_chat_res.status_code == 200
+    edited_plan = diet_chat_res.get_json()["updated_plan"]
+    assert edited_plan["meals"][0]["name"] == "Dietitian Edited Bowl"
+    assert edited_plan["review"]["status"] == "pending_review"
+    assert edited_plan["review"]["last_edited_by_role"] == "dietitian"
 
     reject_res = gateway_client.post(
         "/plan/review",

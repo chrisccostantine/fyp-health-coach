@@ -165,6 +165,10 @@ export default function ResultsSection({
   const planReview = plan?.review || null;
   const planReviewStatus = planReview?.status || "";
   const planReviewLabel = reviewStatusLabel(planReviewStatus);
+  const planLockedForClient =
+    Boolean(planReview?.required) &&
+    planReviewStatus !== "approved" &&
+    !isReadOnlyClientView;
   const activeDateLabel = activeDate
     ? new Date(`${activeDate}T00:00:00`).toLocaleDateString([], {
         weekday: "long",
@@ -279,6 +283,18 @@ export default function ResultsSection({
                 >
                   {isReadOnlyClientView ? "Client Must Log In" : "Start My Plan"}
                 </button>
+              </div>
+            ) : planLockedForClient ? (
+              <div className="empty-state mt-4">
+                <div className="empty-state-title">Plan locked for dietitian review</div>
+                <p className="text-muted mb-3">
+                  Your plan is hidden until your dietitian approves the latest version.
+                </p>
+                {planReview?.note ? (
+                  <div className="alert alert-warning mt-3 mb-0 small">
+                    {planReview.note}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <>
@@ -452,13 +468,13 @@ export default function ResultsSection({
                         onKeyDown={(e) => {
                           if (e.key === "Enter") handleDietChat();
                         }}
-                        disabled={isReadOnlyClientView}
+                        disabled={planLockedForClient}
                       />
                       <button
                         className="btn btn-primary fw-bold"
                         type="button"
                         onClick={handleDietChat}
-                        disabled={isDietChatting || isReadOnlyClientView}
+                        disabled={isDietChatting || planLockedForClient}
                       >
                         {isDietChatting ? <Loading label="Sending..." /> : "Send"}
                       </button>
@@ -466,7 +482,7 @@ export default function ResultsSection({
 
                     {isReadOnlyClientView ? (
                       <StatusAlert variant="info">
-                        Dietitians can review client plans here, but only the client can change meals or workouts.
+                        Dietitians can edit this plan here, then approve it for the client.
                       </StatusAlert>
                     ) : null}
                     <StatusAlert variant="warning">{dietChatMsg}</StatusAlert>
