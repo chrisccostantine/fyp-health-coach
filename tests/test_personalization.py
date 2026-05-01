@@ -1,4 +1,5 @@
 from services.diet_agent.app import build_rule_based_diet
+from services.diet_agent import app as diet_app
 from services.diet_agent.kaggle_recipe_db import load_kaggle_recipe_catalog
 from services.diet_agent.nutrition_db import RECIPE_CATALOG, calculate_recipe_nutrition
 from services.exercise_agent.app import WORKOUT_LIBRARY, build_rule_based_exercise
@@ -6,7 +7,7 @@ from services.gateway.app import _build_day_workouts, _build_month_plan
 
 
 def use_local_recipe_catalog(monkeypatch):
-    monkeypatch.delenv("KAGGLE_RECIPE_CSV", raising=False)
+    monkeypatch.setenv("KAGGLE_RECIPE_CSV", "__missing_test_recipe_file__.csv")
     load_kaggle_recipe_catalog.cache_clear()
 
 
@@ -161,6 +162,42 @@ def test_diet_can_use_epicurious_one_hot_csv(monkeypatch, tmp_path):
     assert all(meal["macros"]["carbs"] >= 0 for meal in plan["meals"])
     assert all(meal["ingredients"] for meal in plan["meals"])
     load_kaggle_recipe_catalog.cache_clear()
+
+
+def test_missing_csv_preparation_gets_generated_fallback(monkeypatch, tmp_path):
+    csv_path = tmp_path / "epi_r.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "title,rating,calories,protein,fat,sodium,healthy,vegetarian,lentil,tomato",
+                "\"Lentil Tomato Soup\",4.2,360,21,8,480,1,1,1,1",
+                "\"Tomato Lentil Bowl\",4.0,410,24,10,520,1,1,1,1",
+                "\"Warm Lentil Salad\",4.3,390,20,9,500,1,1,1,1",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("KAGGLE_RECIPE_CSV", str(csv_path))
+    monkeypatch.setattr(diet_app, "client", None)
+    load_kaggle_recipe_catalog.cache_clear()
+    diet_app._ai_prep_description_cached.cache_clear()
+
+    plan = build_rule_based_diet(
+        {
+            "age": 30,
+            "sex": "F",
+            "height_cm": 165,
+            "weight_kg": 62,
+            "activity_level": "light",
+            "diet": {"preference": "vegetarian"},
+        },
+        {"type": "general_health", "deficit_kcal": 0},
+    )
+
+    assert all("Prepare" in meal["description"] for meal in plan["meals"])
+    assert all("nutrition values" not in meal["description"] for meal in plan["meals"])
+    load_kaggle_recipe_catalog.cache_clear()
+    diet_app._ai_prep_description_cached.cache_clear()
 
 
 def test_month_plan_does_not_repeat_meals_within_first_week():

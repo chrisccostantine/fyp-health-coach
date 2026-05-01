@@ -1,5 +1,6 @@
 import os
 import json
+from functools import lru_cache
 from dotenv import load_dotenv
 from typing import Dict, Any, Optional
 from flask import Flask, request, jsonify
@@ -106,7 +107,7 @@ def _rank_recipes(recipes: list[Dict[str, Any]], prefs: Dict[str, Any]) -> list[
 
 
 def _meal_description(meal: Dict[str, Any]) -> str:
-    if meal.get("description") and meal.get("source") == "kaggle":
+    if meal.get("description") and not meal.get("needs_prep_ai"):
         return str(meal.get("description"))
     ingredients = meal.get("ingredients_detail") or []
     visible = [
@@ -119,6 +120,75 @@ def _meal_description(meal: Dict[str, Any]) -> str:
     return (
         f"Prepare and portion: {ingredient_text}. Cook proteins and grains if needed, "
         "add vegetables, then season with herbs, lemon, vinegar, or low-calorie sauce."
+    )
+
+
+def _fallback_ai_prep_description(name: str, ingredients: list[str], calories: float, macros: Dict[str, Any]) -> str:
+    ingredient_text = ", ".join(ingredients[:6]) if ingredients else "the listed ingredients"
+    protein = macros.get("protein", 0)
+    carbs = macros.get("carbs", 0)
+    fat = macros.get("fat", 0)
+    return (
+        f"Prepare {name} by cooking or assembling {ingredient_text}. "
+        "Use light seasoning, keep added oils measured, and portion it to match "
+        f"about {round(float(calories or 0))} kcal with P {protein}g, C {carbs}g, F {fat}g."
+    )
+
+
+@lru_cache(maxsize=512)
+def _ai_prep_description_cached(name: str, ingredients_key: str, calories: int, protein: float, carbs: float, fat: float) -> str:
+    ingredients = [item for item in ingredients_key.split("|") if item]
+    macros = {"protein": protein, "carbs": carbs, "fat": fat}
+    if client is None:
+        return _fallback_ai_prep_description(name, ingredients, calories, macros)
+
+    prompt = {
+        "recipe_name": name,
+        "ingredients_or_tags": ingredients,
+        "nutrition": {
+            "calories": calories,
+            "protein_g": protein,
+            "carbs_g": carbs,
+            "fat_g": fat,
+        },
+        "instruction": (
+            "Write one concise, practical meal preparation instruction. "
+            "Do not change the nutrition values. Do not invent exact grams. "
+            "Mention measuring oils/sauces lightly if relevant."
+        ),
+    }
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": "You write safe, concise meal-prep instructions from recipe names and ingredient tags."},
+                {"role": "user", "content": json.dumps(prompt)},
+            ],
+        )
+        content = resp.choices[0].message.content if resp.choices else ""
+        clean = str(content or "").strip()
+        return clean or _fallback_ai_prep_description(name, ingredients, calories, macros)
+    except Exception:
+        return _fallback_ai_prep_description(name, ingredients, calories, macros)
+
+
+def _prep_description_for_meal(meal: Dict[str, Any]) -> str:
+    if meal.get("description") and not meal.get("needs_prep_ai"):
+        return str(meal.get("description"))
+    ingredients = [
+        str(item.get("name") or item.get("key") or "").strip()
+        for item in (meal.get("ingredients_detail") or [])
+        if str(item.get("name") or item.get("key") or "").strip()
+    ]
+    macros = meal.get("macros") or {}
+    return _ai_prep_description_cached(
+        str(meal.get("name") or "Meal"),
+        "|".join(ingredients[:12]),
+        int(round(float(meal.get("nutrition", {}).get("calories") or 0))),
+        float(macros.get("protein") or 0),
+        float(macros.get("carbs") or 0),
+        float(macros.get("fat") or 0),
     )
 
 
@@ -153,7 +223,7 @@ def _meal_from_recipe(recipe: Dict[str, Any], calories_target: int, when: str | 
         "macros": {"protein": p, "carbs": c, "fat": f},
         "when": when,
         "ingredients": scaled["ingredients_detail"],
-        "description": _meal_description(scaled),
+        "description": _prep_description_for_meal(scaled),
         "protein": p,
         "carbs": c,
         "fat": f,

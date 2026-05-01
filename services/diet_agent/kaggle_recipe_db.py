@@ -109,8 +109,6 @@ def _recipe_from_row(row: dict[str, Any]) -> dict[str, Any] | None:
         _first(row, ["description", "directions", "instructions", "steps", "cooking instructions"], "")
         or ""
     ).strip()
-    if not description:
-        description = "Prepare this recipe using the listed ingredients and keep portions aligned with the nutrition values."
 
     return {
         "name": name,
@@ -131,6 +129,7 @@ def _recipe_from_row(row: dict[str, Any]) -> dict[str, Any] | None:
             "fat": round(fat, 1),
         },
         "description": description,
+        "needs_prep_ai": not bool(description),
     }
 
 
