@@ -271,6 +271,15 @@ def test_managed_client_plan_requires_dietitian_review(gateway_client, monkeypat
     assert plan["review"]["required"] is True
     assert plan["review"]["status"] == "pending_review"
 
+    clients_res = gateway_client.get(
+        "/dietitian/clients",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+    )
+    assert clients_res.status_code == 200
+    listed_client = clients_res.get_json()["clients"][0]
+    assert listed_client["has_plan"] is True
+    assert listed_client["plan_review"]["status"] == "pending_review"
+
     review_res = gateway_client.post(
         "/plan/review",
         headers={"Authorization": f"Bearer {dietitian_token}"},
@@ -284,3 +293,15 @@ def test_managed_client_plan_requires_dietitian_review(gateway_client, monkeypat
     review = review_res.get_json()["review"]
     assert review["status"] == "approved"
     assert review["note"] == "Looks appropriate for this week."
+
+    reject_res = gateway_client.post(
+        "/plan/review",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={
+            "client_user_id": login_res.get_json()["user"]["user_id"],
+            "status": "rejected",
+            "note": "Needs a safer version.",
+        },
+    )
+    assert reject_res.status_code == 200
+    assert reject_res.get_json()["review"]["status"] == "rejected"

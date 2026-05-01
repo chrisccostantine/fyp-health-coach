@@ -1175,6 +1175,7 @@ export default function App() {
   const [reviewNote, setReviewNote] = useState("");
   const [reviewMsg, setReviewMsg] = useState("");
   const [isReviewingPlan, setIsReviewingPlan] = useState(false);
+  const [clientReviewNotes, setClientReviewNotes] = useState({});
 
   useEffect(() => {
     if (stage !== "results" || !userId?.trim()) return;
@@ -1317,6 +1318,36 @@ export default function App() {
       setReviewMsg(status === "approved" ? "Plan approved." : "Changes requested.");
     } catch (e) {
       setReviewMsg(`Error: ${e.message}`);
+    } finally {
+      setIsReviewingPlan(false);
+    }
+  }
+
+  async function handleDashboardPlanReview(client, status) {
+    if (!client?.user_id) return;
+    setIsReviewingPlan(true);
+    setClientMsg("");
+    try {
+      const note = clientReviewNotes[client.user_id] || "";
+      const data = await api.reviewPlan({
+        client_user_id: client.user_id,
+        status,
+        note,
+      });
+      setManagedClients((prev) =>
+        prev.map((entry) =>
+          entry.user_id === client.user_id
+            ? { ...entry, plan_review: data?.review || data?.plan?.review || entry.plan_review, has_plan: true }
+            : entry,
+        ),
+      );
+      if (viewedAccount?.user_id === client.user_id && data?.plan) {
+        setPlan(data.plan);
+      }
+      setClientReviewNotes((prev) => ({ ...prev, [client.user_id]: "" }));
+      setClientMsg(status === "approved" ? "Plan approved." : status === "rejected" ? "Plan rejected." : "Changes requested.");
+    } catch (e) {
+      setClientMsg(`Error: ${e.message}`);
     } finally {
       setIsReviewingPlan(false);
     }
@@ -1815,6 +1846,35 @@ export default function App() {
     currentUser?.role === "dietitian" &&
     viewedAccount?.user_id &&
     viewedAccount.user_id !== currentUser.user_id;
+
+  function clientReviewLabel(review) {
+    switch (review?.status) {
+      case "pending_review":
+        return "Pending review";
+      case "approved":
+        return "Approved";
+      case "changes_requested":
+        return "Changes requested";
+      case "rejected":
+        return "Rejected";
+      default:
+        return "No plan";
+    }
+  }
+
+  function clientReviewClass(review) {
+    switch (review?.status) {
+      case "approved":
+        return "text-bg-success";
+      case "changes_requested":
+      case "rejected":
+        return "text-bg-warning";
+      case "pending_review":
+        return "text-bg-info";
+      default:
+        return "text-bg-secondary";
+    }
+  }
 
   const defaultHomeStage = homeStageFor(currentUser);
 
@@ -2463,12 +2523,60 @@ export default function App() {
                     ) : (
                       managedClients.map((client) => (
                         <div key={client.user_id} className="list-group-item">
-                          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                          <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3">
                             <div>
                               <div className="fw-semibold">{client.display_name || "Client account"}</div>
                               <div className="small text-muted">{client.email}</div>
+                              <span className={`badge ${clientReviewClass(client.plan_review)} mt-2`}>
+                                {clientReviewLabel(client.plan_review)}
+                              </span>
+                              {client.plan_review?.note ? (
+                                <div className="small text-muted mt-2">
+                                  Last note: {client.plan_review.note}
+                                </div>
+                              ) : null}
                             </div>
-                            <div className="d-flex gap-2">
+                            <div className="d-flex flex-column gap-2 client-review-actions">
+                              <textarea
+                                className="form-control form-control-sm"
+                                rows="2"
+                                value={clientReviewNotes[client.user_id] || ""}
+                                onChange={(e) =>
+                                  setClientReviewNotes((prev) => ({
+                                    ...prev,
+                                    [client.user_id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Review note or requested edit"
+                                disabled={!client.has_plan || isReviewingPlan}
+                              />
+                              <div className="d-flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => handleDashboardPlanReview(client, "approved")}
+                                  disabled={!client.has_plan || isReviewingPlan}
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-light btn-sm"
+                                  onClick={() => handleDashboardPlanReview(client, "changes_requested")}
+                                  disabled={!client.has_plan || isReviewingPlan}
+                                >
+                                  Request Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline-danger btn-sm"
+                                  onClick={() => handleDashboardPlanReview(client, "rejected")}
+                                  disabled={!client.has_plan || isReviewingPlan}
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                              <div className="d-flex flex-wrap gap-2">
                               <button
                                 type="button"
                                 className="btn btn-outline-light btn-sm"
@@ -2490,6 +2598,7 @@ export default function App() {
                               >
                                 Cancel Subscription
                               </button>
+                              </div>
                             </div>
                           </div>
                         </div>

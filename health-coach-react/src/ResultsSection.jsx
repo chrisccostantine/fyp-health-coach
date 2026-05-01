@@ -42,6 +42,8 @@ function reviewStatusLabel(status) {
       return "Approved by dietitian";
     case "changes_requested":
       return "Changes requested";
+    case "rejected":
+      return "Rejected by dietitian";
     default:
       return "";
   }
@@ -211,7 +213,7 @@ export default function ResultsSection({
                     className={`alert ${
                       planReviewStatus === "approved"
                         ? "alert-success"
-                        : planReviewStatus === "changes_requested"
+                        : planReviewStatus === "changes_requested" || planReviewStatus === "rejected"
                           ? "alert-warning"
                           : "alert-info"
                     } mt-3 mb-0 small`}
@@ -502,6 +504,14 @@ export default function ResultsSection({
                         disabled={isReviewingPlan}
                       >
                         Request Changes
+                      </button>
+                      <button
+                        className="btn btn-outline-danger"
+                        type="button"
+                        onClick={() => handlePlanReview?.("rejected")}
+                        disabled={isReviewingPlan}
+                      >
+                        Reject Plan
                       </button>
                     </div>
 

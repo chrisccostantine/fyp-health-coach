@@ -533,6 +533,18 @@ def _append_plan_review(plan: dict, *, reviewer_user_id: str, status: str, note:
     return {**plan, "review": review}
 
 
+def _client_with_plan_review(client: dict):
+    payload = _serialize_auth_user(client)
+    plan = get_latest_plan(client["user_id"])
+    if isinstance(plan, dict):
+        payload["plan_review"] = plan.get("review")
+        payload["has_plan"] = True
+    else:
+        payload["plan_review"] = None
+        payload["has_plan"] = False
+    return payload
+
+
 def _clamp_int(value, minimum: int, maximum: int, default: int | None = None):
     try:
         number = int(value)
@@ -1522,7 +1534,7 @@ def dietitian_clients():
     if role_error:
         return role_error
     clients = list_managed_auth_users(session["user_id"])
-    return jsonify({"ok": True, "clients": [_serialize_auth_user(client) for client in clients]})
+    return jsonify({"ok": True, "clients": [_client_with_plan_review(client) for client in clients]})
 
 
 @app.post("/dietitian/clients")
@@ -1803,8 +1815,8 @@ def plan_review():
     status = str(body.get("status") or "").strip()
     note = str(body.get("note") or "").strip()
 
-    if status not in {"approved", "changes_requested"}:
-        return jsonify({"error": "Status must be 'approved' or 'changes_requested'."}), 400
+    if status not in {"approved", "changes_requested", "rejected"}:
+        return jsonify({"error": "Status must be 'approved', 'changes_requested', or 'rejected'."}), 400
     if not client_user_id or not is_managed_by(session["user_id"], client_user_id):
         return jsonify({"error": "Client is not managed by this dietitian."}), 403
 

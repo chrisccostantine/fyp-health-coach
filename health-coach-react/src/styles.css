@@ -46,6 +46,34 @@ body {
   color: var(--muted) !important;
 }
 
+.alert {
+  border-radius: 12px;
+}
+
+.alert-info {
+  background: rgba(255, 255, 255, 0.055) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #e5e7eb !important;
+}
+
+.alert-warning {
+  background: rgba(255, 77, 0, 0.12) !important;
+  border: 1px solid rgba(255, 77, 0, 0.4) !important;
+  color: #ffd8c7 !important;
+}
+
+.alert-success {
+  background: rgba(34, 197, 94, 0.12) !important;
+  border: 1px solid rgba(34, 197, 94, 0.38) !important;
+  color: #c8f7d8 !important;
+}
+
+.alert-dark {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid var(--border) !important;
+  color: #e5e7eb !important;
+}
+
 /* ===== Top bar ===== */
 .topbar {
   position: sticky;
@@ -109,6 +137,10 @@ body {
 
 .list-group-soft .list-group-item + .list-group-item {
   margin-top: 10px;
+}
+
+.client-review-actions {
+  min-width: min(100%, 360px);
 }
 
 /* ===== Forms ===== */
