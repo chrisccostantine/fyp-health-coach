@@ -2,7 +2,7 @@ import json
 import os
 import traceback
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
@@ -601,6 +601,43 @@ def _weekly_update_summary(goal_type: str, calorie_adjustment: int, workout_adju
     if goal_type == "general_health":
         nutrition = "Keep meals consistent and focus on repeatable habits."
     return f"{nutrition} {workout}"
+
+
+def _parse_iso_date(value: str | None):
+    try:
+        return date.fromisoformat(str(value or "").strip())
+    except Exception:
+        return None
+
+
+def _week_key(value: str | None):
+    parsed = _parse_iso_date(value)
+    if not parsed:
+        return None
+    iso_year, iso_week, _ = parsed.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
+
+
+def _progress_lock_status(checkins: list[dict], today: str | None = None):
+    current_date = today or _today_iso_date()
+    current_week = _week_key(current_date)
+    this_week_checkin = None
+    for checkin in checkins:
+        if _week_key(checkin.get("checked_in_on")) == current_week:
+            this_week_checkin = checkin
+            break
+    return {
+        "current_week": current_week,
+        "locked": bool(this_week_checkin),
+        "available_on": _next_week_start(current_date) if this_week_checkin else current_date,
+        "checkin": this_week_checkin,
+    }
+
+
+def _next_week_start(value: str):
+    parsed = _parse_iso_date(value) or datetime.now(timezone.utc).date()
+    days_until_next_monday = 7 - parsed.weekday()
+    return (parsed + timedelta(days=days_until_next_monday)).isoformat()
 
 
 def _ai_fitness_summary(payload: dict, assessment: dict):
@@ -1935,6 +1972,7 @@ def progress_list():
             "ok": True,
             "user_id": user_id,
             "checkins": checkins,
+            "weekly_lock": _progress_lock_status(checkins),
             "weekly_update": latest_update["recommendation"] if latest_update else None,
         }
     )
@@ -1960,6 +1998,16 @@ def progress_check_in():
     if meal_adherence is None or workout_adherence is None or energy_level is None:
         return jsonify({"error": "Meal adherence, workout adherence, and energy level are required."}), 400
 
+    existing_checkins = list_progress_checkins(user_id, limit=12)
+    lock = _progress_lock_status(existing_checkins, checked_in_on)
+    if lock["locked"]:
+        return jsonify(
+            {
+                "error": f"Weekly check-in already saved for {lock['current_week']}.",
+                "weekly_lock": lock,
+            }
+        ), 409
+
     record_progress_checkin(
         user_id,
         weight_kg=weight_kg,
@@ -1970,7 +2018,14 @@ def progress_check_in():
         checked_in_on=checked_in_on,
     )
     checkins = list_progress_checkins(user_id, limit=12)
-    return jsonify({"ok": True, "user_id": user_id, "checkins": checkins}), 201
+    return jsonify(
+        {
+            "ok": True,
+            "user_id": user_id,
+            "checkins": checkins,
+            "weekly_lock": _progress_lock_status(checkins, checked_in_on),
+        }
+    ), 201
 
 
 @app.post("/progress/weekly-update")

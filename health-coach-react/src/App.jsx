@@ -1168,6 +1168,7 @@ export default function App() {
   const [energyLevel, setEnergyLevel] = useState(3);
   const [progressNotes, setProgressNotes] = useState("");
   const [progressHistory, setProgressHistory] = useState([]);
+  const [weeklyLock, setWeeklyLock] = useState(null);
   const [weeklyUpdate, setWeeklyUpdate] = useState(null);
   const [progressMsg, setProgressMsg] = useState("");
   const [isProgressBusy, setIsProgressBusy] = useState(false);
@@ -1181,6 +1182,7 @@ export default function App() {
       .then((data) => {
         if (cancelled) return;
         setProgressHistory(Array.isArray(data?.checkins) ? data.checkins : []);
+        setWeeklyLock(data?.weekly_lock || null);
         setWeeklyUpdate(data?.weekly_update || null);
       })
       .catch(() => {
@@ -1270,6 +1272,7 @@ export default function App() {
       });
 
       setProgressHistory(Array.isArray(data?.checkins) ? data.checkins : []);
+      setWeeklyLock(data?.weekly_lock || null);
       setProgressNotes("");
       setProgressMsg("Progress check-in saved.");
     } catch (e) {
@@ -4041,6 +4044,7 @@ export default function App() {
           progressNotes={progressNotes}
           setProgressNotes={setProgressNotes}
           progressHistory={progressHistory}
+          weeklyLock={weeklyLock}
           weeklyUpdate={weeklyUpdate}
           progressMsg={progressMsg}
           isProgressBusy={isProgressBusy}

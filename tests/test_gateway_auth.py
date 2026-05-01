@@ -140,6 +140,21 @@ def test_progress_checkin_and_weekly_update(gateway_client):
     )
     assert checkin_res.status_code == 201
     assert checkin_res.get_json()["checkins"][0]["meal_adherence"] == 55
+    assert checkin_res.get_json()["weekly_lock"]["locked"] is True
+
+    duplicate_checkin_res = gateway_client.post(
+        "/progress/check-in",
+        json={
+            "user_id": "demo-user",
+            "weight_kg": 81.7,
+            "meal_adherence": 75,
+            "workout_adherence": 70,
+            "energy_level": 3,
+            "checked_in_on": "2026-05-03",
+        },
+    )
+    assert duplicate_checkin_res.status_code == 409
+    assert duplicate_checkin_res.get_json()["weekly_lock"]["locked"] is True
 
     weekly_res = gateway_client.post(
         "/progress/weekly-update",

@@ -72,6 +72,7 @@ export default function ResultsSection({
   progressNotes,
   setProgressNotes,
   progressHistory,
+  weeklyLock,
   weeklyUpdate,
   progressMsg,
   isProgressBusy,
@@ -140,6 +141,7 @@ export default function ResultsSection({
   const safetyWarnings = Array.isArray(safety?.warnings) ? safety.warnings : [];
   const safetyDisclaimer = safety?.disclaimer || "";
   const recentProgress = Array.isArray(progressHistory) ? progressHistory.slice(0, 3) : [];
+  const weeklyCheckInLocked = Boolean(weeklyLock?.locked);
   const activeDateLabel = activeDate
     ? new Date(`${activeDate}T00:00:00`).toLocaleDateString([], {
         weekday: "long",
@@ -530,7 +532,14 @@ export default function ResultsSection({
         <div className="card card-soft">
           <div className="card-body p-4">
             <details className="details-soft compact-details" open>
-              <summary className="details-summary">Progress</summary>
+              <summary className="details-summary">Weekly Check-In</summary>
+
+              {weeklyCheckInLocked ? (
+                <div className="alert alert-info mt-3 mb-0 small">
+                  This week's check-in is saved. The next check-in opens on{" "}
+                  <strong>{weeklyLock?.available_on || "next week"}</strong>.
+                </div>
+              ) : null}
 
               <div className="row g-3 mt-2">
                 <div className="col-12">
@@ -543,7 +552,7 @@ export default function ResultsSection({
                     step="0.1"
                     value={progressWeight}
                     onChange={(e) => setProgressWeight?.(e.target.value)}
-                    disabled={isReadOnlyClientView}
+                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
                   />
                 </div>
 
@@ -556,7 +565,7 @@ export default function ResultsSection({
                     max="100"
                     value={mealAdherence}
                     onChange={(e) => setMealAdherence?.(e.target.value)}
-                    disabled={isReadOnlyClientView}
+                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
                   />
                 </div>
 
@@ -569,7 +578,7 @@ export default function ResultsSection({
                     max="100"
                     value={workoutAdherence}
                     onChange={(e) => setWorkoutAdherence?.(e.target.value)}
-                    disabled={isReadOnlyClientView}
+                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
                   />
                 </div>
 
@@ -582,7 +591,7 @@ export default function ResultsSection({
                     max="5"
                     value={energyLevel}
                     onChange={(e) => setEnergyLevel?.(e.target.value)}
-                    disabled={isReadOnlyClientView}
+                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
                   />
                 </div>
 
@@ -594,7 +603,7 @@ export default function ResultsSection({
                     value={progressNotes}
                     onChange={(e) => setProgressNotes?.(e.target.value)}
                     placeholder="Sleep, hunger, soreness, missed meals..."
-                    disabled={isReadOnlyClientView}
+                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
                   />
                 </div>
               </div>
@@ -604,9 +613,9 @@ export default function ResultsSection({
                   className="btn btn-primary fw-bold"
                   type="button"
                   onClick={handleProgressCheckIn}
-                  disabled={isProgressBusy || isReadOnlyClientView}
+                  disabled={isProgressBusy || isReadOnlyClientView || weeklyCheckInLocked}
                 >
-                  {isProgressBusy ? <Loading label="Saving..." /> : "Save Check-In"}
+                  {isProgressBusy ? <Loading label="Saving..." /> : weeklyCheckInLocked ? "Locked This Week" : "Save Check-In"}
                 </button>
                 <button
                   className="btn btn-outline-light"
