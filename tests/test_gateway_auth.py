@@ -113,3 +113,45 @@ def test_plan_today_blocks_unsafe_minor_profile(gateway_client):
     data = res.get_json()
     assert data["safety"]["blocked"] is True
     assert "under 16" in data["safety"]["blocks"][0]
+
+
+def test_progress_checkin_and_weekly_update(gateway_client):
+    profile_res = gateway_client.post(
+        "/user/demo-user/profile",
+        json={
+            "profile": {"age": 30, "height_cm": 178, "weight_kg": 82, "activity_level": "light"},
+            "goal": {"type": "fat_loss", "deficit_kcal": 400},
+            "quiz_data": {},
+        },
+    )
+    assert profile_res.status_code == 200
+
+    checkin_res = gateway_client.post(
+        "/progress/check-in",
+        json={
+            "user_id": "demo-user",
+            "weight_kg": 82,
+            "meal_adherence": 55,
+            "workout_adherence": 50,
+            "energy_level": 2,
+            "notes": "hungry and tired",
+            "checked_in_on": "2026-05-01",
+        },
+    )
+    assert checkin_res.status_code == 201
+    assert checkin_res.get_json()["checkins"][0]["meal_adherence"] == 55
+
+    weekly_res = gateway_client.post(
+        "/progress/weekly-update",
+        json={"user_id": "demo-user"},
+    )
+    assert weekly_res.status_code == 200
+    weekly = weekly_res.get_json()["weekly_update"]
+    assert weekly["adjustments"]["calorie_adjustment_kcal"] > 0
+    assert weekly["adjustments"]["workout_adjustment"] in {"reduce_intensity", "reduce_duration"}
+
+    progress_res = gateway_client.get("/progress?user_id=demo-user")
+    assert progress_res.status_code == 200
+    progress = progress_res.get_json()
+    assert len(progress["checkins"]) == 1
+    assert progress["weekly_update"]["summary"]

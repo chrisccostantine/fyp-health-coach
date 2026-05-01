@@ -29,10 +29,12 @@ from services.common.storage import (
     get_auth_session,
     get_auth_user_by_email,
     get_auth_user_by_id,
+    get_latest_weekly_update,
     get_nudge_settings,
     get_password_reset_token,
     is_managed_by,
     get_latest_plan,
+    list_progress_checkins,
     list_private_messages,
     list_managed_auth_users,
     list_all_nudge_settings,
@@ -40,7 +42,9 @@ from services.common.storage import (
     remove_managed_auth_user,
     get_user,
     init_db,
+    record_progress_checkin,
     save_plan,
+    save_weekly_update,
     update_auth_user_password,
     upsert_google_calendar_token,
     upsert_nudge_settings,
@@ -219,11 +223,14 @@ def _google_calendar_enabled() -> bool:
     return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI and FRONTEND_URL)
 
 
-def _safe_zoneinfo(value: str | None) -> ZoneInfo:
+def _safe_zoneinfo(value: str | None):
+    timezone_name = (value or APP_TIMEZONE or "UTC").strip() or "UTC"
+    if timezone_name.upper() == "UTC":
+        return timezone.utc
     try:
-        return ZoneInfo((value or APP_TIMEZONE or "UTC").strip() or "UTC")
+        return ZoneInfo(timezone_name)
     except Exception:
-        return ZoneInfo("UTC")
+        return timezone.utc
 
 
 def _today_iso_date() -> str:
@@ -478,6 +485,122 @@ def _plan_safety_payload(assessment: dict):
         "bmi": assessment.get("bmi"),
         "disclaimer": assessment.get("disclaimer", HEALTH_SAFETY_DISCLAIMER),
     }
+
+
+def _clamp_int(value, minimum: int, maximum: int, default: int | None = None):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, number))
+
+
+def _latest_weight_delta(checkins: list[dict]):
+    weights = [
+        float(item["weight_kg"])
+        for item in sorted(checkins, key=lambda row: str(row.get("checked_in_on") or ""))
+        if item.get("weight_kg") is not None
+    ]
+    if len(weights) < 2:
+        return None
+    return round(weights[-1] - weights[0], 1)
+
+
+def _average(values: list[int | float | None]):
+    clean = [float(value) for value in values if value is not None]
+    if not clean:
+        return None
+    return round(sum(clean) / len(clean), 1)
+
+
+def _weekly_recommendation(user_id: str, checkins: list[dict], user_data: dict | None, plan: dict | None):
+    user_data = user_data or {}
+    goal = user_data.get("goal") or {}
+    profile = user_data.get("profile") or {}
+    goal_type = str(goal.get("type") or "general_health")
+    deficit = int(goal.get("deficit_kcal") or 0)
+    weight_delta = _latest_weight_delta(checkins)
+    avg_meal = _average([row.get("meal_adherence") for row in checkins])
+    avg_workout = _average([row.get("workout_adherence") for row in checkins])
+    avg_energy = _average([row.get("energy_level") for row in checkins])
+    calorie_adjustment = 0
+    workout_adjustment = "keep_current"
+    reasons = []
+
+    if avg_energy is not None and avg_energy <= 2.5:
+        calorie_adjustment += 100
+        workout_adjustment = "reduce_intensity"
+        reasons.append("Energy has been low, so next week should feel more recoverable.")
+
+    if avg_meal is not None and avg_meal < 60:
+        calorie_adjustment += 100
+        reasons.append("Meal adherence is low; a less aggressive nutrition target may be easier to follow.")
+
+    if avg_workout is not None and avg_workout < 60:
+        workout_adjustment = "reduce_duration"
+        reasons.append("Workout adherence is low; shorter sessions are more realistic for the next week.")
+    elif avg_workout is not None and avg_workout >= 85 and (avg_energy is None or avg_energy >= 3.5):
+        workout_adjustment = "progress_slightly"
+        reasons.append("Workout adherence is strong, so a small progression is reasonable.")
+
+    if weight_delta is not None:
+        if goal_type == "fat_loss" and weight_delta >= 0.2 and avg_meal and avg_meal >= 75:
+            calorie_adjustment -= 100
+            reasons.append("Weight is not trending down despite solid meal adherence.")
+        elif goal_type == "fat_loss" and weight_delta <= -1.2:
+            calorie_adjustment += 100
+            reasons.append("Weight is dropping quickly, so the plan should protect energy and recovery.")
+        elif goal_type == "muscle_gain" and weight_delta <= 0 and avg_meal and avg_meal >= 75:
+            calorie_adjustment += 150
+            reasons.append("Weight is not moving up despite solid meal adherence.")
+
+    if not reasons:
+        reasons.append("Recent check-ins look steady; keep the plan consistent for another week.")
+
+    next_deficit = max(0, deficit - calorie_adjustment) if goal_type == "fat_loss" else deficit
+    if goal_type == "muscle_gain" and calorie_adjustment > 0:
+        next_deficit = deficit - calorie_adjustment
+
+    return {
+        "user_id": user_id,
+        "generated_on": _today_iso_date(),
+        "goal_type": goal_type,
+        "checkins_used": len(checkins),
+        "weight_delta_kg": weight_delta,
+        "averages": {
+            "meal_adherence": avg_meal,
+            "workout_adherence": avg_workout,
+            "energy_level": avg_energy,
+        },
+        "adjustments": {
+            "calorie_adjustment_kcal": calorie_adjustment,
+            "suggested_deficit_kcal": next_deficit,
+            "workout_adjustment": workout_adjustment,
+        },
+        "summary": _weekly_update_summary(goal_type, calorie_adjustment, workout_adjustment),
+        "reasons": reasons,
+        "current_plan_start": (plan or {}).get("plan_start_date"),
+        "current_weight_kg": profile.get("weight_kg"),
+    }
+
+
+def _weekly_update_summary(goal_type: str, calorie_adjustment: int, workout_adjustment: str):
+    nutrition = "Keep nutrition targets steady."
+    if calorie_adjustment > 0:
+        nutrition = "Ease nutrition targets slightly for better adherence and recovery."
+    elif calorie_adjustment < 0:
+        nutrition = "Tighten nutrition targets slightly because progress is slower than expected."
+
+    workout = {
+        "reduce_intensity": "Lower workout intensity next week.",
+        "reduce_duration": "Use shorter workouts next week.",
+        "progress_slightly": "Progress workouts slightly next week.",
+        "keep_current": "Keep workouts steady next week.",
+    }.get(workout_adjustment, "Keep workouts steady next week.")
+
+    if goal_type == "general_health":
+        nutrition = "Keep meals consistent and focus on repeatable habits."
+    return f"{nutrition} {workout}"
 
 
 def _ai_fitness_summary(payload: dict, assessment: dict):
@@ -1795,6 +1918,78 @@ def feedback():
     body = request.get_json(force=True)
     res = requests.post(f"{FEEDBACK_URL}/feedback", json=body)
     return jsonify(res.json()), res.status_code
+
+
+@app.get("/progress")
+def progress_list():
+    session = _get_current_session()
+    requested_user_id = request.args.get("user_id", "anon")
+    user_id = _resolve_view_user_id(session, requested_user_id)
+    if user_id is None:
+        return jsonify({"error": "Forbidden"}), 403
+
+    checkins = list_progress_checkins(user_id, limit=12)
+    latest_update = get_latest_weekly_update(user_id)
+    return jsonify(
+        {
+            "ok": True,
+            "user_id": user_id,
+            "checkins": checkins,
+            "weekly_update": latest_update["recommendation"] if latest_update else None,
+        }
+    )
+
+
+@app.post("/progress/check-in")
+def progress_check_in():
+    body = request.get_json(force=True)
+    session = _get_current_session()
+    user_id = _resolve_write_user_id(session, body.get("user_id", "anon"))
+    if user_id is None:
+        return jsonify({"error": "Only the client can update this progress log."}), 403
+
+    weight_kg = _safe_float(body.get("weight_kg"))
+    meal_adherence = _clamp_int(body.get("meal_adherence"), 0, 100)
+    workout_adherence = _clamp_int(body.get("workout_adherence"), 0, 100)
+    energy_level = _clamp_int(body.get("energy_level"), 1, 5)
+    notes = str(body.get("notes") or "").strip() or None
+    checked_in_on = str(body.get("checked_in_on") or _today_iso_date()).strip() or _today_iso_date()
+
+    if weight_kg is not None and (weight_kg < 30 or weight_kg > 300):
+        return jsonify({"error": "Weight must be between 30kg and 300kg."}), 400
+    if meal_adherence is None or workout_adherence is None or energy_level is None:
+        return jsonify({"error": "Meal adherence, workout adherence, and energy level are required."}), 400
+
+    record_progress_checkin(
+        user_id,
+        weight_kg=weight_kg,
+        meal_adherence=meal_adherence,
+        workout_adherence=workout_adherence,
+        energy_level=energy_level,
+        notes=notes,
+        checked_in_on=checked_in_on,
+    )
+    checkins = list_progress_checkins(user_id, limit=12)
+    return jsonify({"ok": True, "user_id": user_id, "checkins": checkins}), 201
+
+
+@app.post("/progress/weekly-update")
+def progress_weekly_update():
+    body = request.get_json(force=True) if request.data else {}
+    session = _get_current_session()
+    user_id = _resolve_write_user_id(session, body.get("user_id", "anon"))
+    if user_id is None:
+        return jsonify({"error": "Only the client can generate weekly updates."}), 403
+
+    checkins = list_progress_checkins(user_id, limit=8)
+    if len(checkins) < 1:
+        return jsonify({"error": "Add at least one progress check-in first."}), 400
+
+    user_data = get_user(user_id)
+    latest_plan = get_latest_plan(user_id)
+    recommendation = _weekly_recommendation(user_id, checkins, user_data, latest_plan)
+    save_weekly_update(user_id, recommendation)
+    return jsonify({"ok": True, "weekly_update": recommendation})
 
 
 if __name__ == "__main__":

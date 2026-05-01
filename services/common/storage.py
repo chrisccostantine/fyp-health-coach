@@ -128,6 +128,23 @@ CREATE TABLE IF NOT EXISTS private_messages (
     body TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS progress_checkins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    weight_kg REAL,
+    meal_adherence INTEGER,
+    workout_adherence INTEGER,
+    energy_level INTEGER,
+    notes TEXT,
+    checked_in_on TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS weekly_updates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    recommendation TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 '''
 
 SCHEMA_POSTGRES = '''
@@ -229,6 +246,23 @@ CREATE TABLE IF NOT EXISTS private_messages (
     body TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS progress_checkins (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    weight_kg REAL,
+    meal_adherence INTEGER,
+    workout_adherence INTEGER,
+    energy_level INTEGER,
+    notes TEXT,
+    checked_in_on TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS weekly_updates (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    recommendation TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 '''
 
 SCHEMA = SCHEMA_POSTGRES if IS_POSTGRES else SCHEMA_SQLITE
@@ -247,6 +281,8 @@ MIGRATIONS = [
     "ALTER TABLE user_nudge_settings ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE user_nudge_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "CREATE TABLE IF NOT EXISTS private_messages (id SERIAL PRIMARY KEY, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS private_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS progress_checkins (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS progress_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS weekly_updates (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS weekly_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
 ]
 
 def init_db():
@@ -752,3 +788,82 @@ def mark_nudge_sent(user_id: str, sent_on: str):
             """),
             {"uid": user_id, "sent_on": sent_on},
         )
+
+
+def record_progress_checkin(
+    user_id: str,
+    *,
+    weight_kg: float | None,
+    meal_adherence: int | None,
+    workout_adherence: int | None,
+    energy_level: int | None,
+    notes: str | None,
+    checked_in_on: str,
+):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO progress_checkins(
+                    user_id, weight_kg, meal_adherence, workout_adherence,
+                    energy_level, notes, checked_in_on
+                ) VALUES(
+                    :uid, :weight_kg, :meal_adherence, :workout_adherence,
+                    :energy_level, :notes, :checked_in_on
+                )
+            """),
+            {
+                "uid": user_id,
+                "weight_kg": weight_kg,
+                "meal_adherence": meal_adherence,
+                "workout_adherence": workout_adherence,
+                "energy_level": energy_level,
+                "notes": notes,
+                "checked_in_on": checked_in_on,
+            },
+        )
+
+
+def list_progress_checkins(user_id: str, limit: int = 12):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT id, user_id, weight_kg, meal_adherence, workout_adherence,
+                       energy_level, notes, checked_in_on, created_at
+                FROM progress_checkins
+                WHERE user_id = :uid
+                ORDER BY checked_in_on DESC, id DESC
+                LIMIT :limit
+            """),
+            {"uid": user_id, "limit": max(1, int(limit or 12))},
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def save_weekly_update(user_id: str, recommendation: dict):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO weekly_updates(user_id, recommendation)
+                VALUES(:uid, :recommendation)
+            """),
+            {"uid": user_id, "recommendation": json.dumps(recommendation or {})},
+        )
+
+
+def get_latest_weekly_update(user_id: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT id, user_id, recommendation, created_at
+                FROM weekly_updates
+                WHERE user_id = :uid
+                ORDER BY created_at DESC, id DESC
+                LIMIT 1
+            """),
+            {"uid": user_id},
+        ).mappings().first()
+    if not row:
+        return None
+    payload = dict(row)
+    payload["recommendation"] = json.loads(payload.get("recommendation") or "{}")
+    return payload

@@ -60,6 +60,24 @@ export default function ResultsSection({
   feedbackOut,
   copyFeedback,
 
+  // progress
+  progressWeight,
+  setProgressWeight,
+  mealAdherence,
+  setMealAdherence,
+  workoutAdherence,
+  setWorkoutAdherence,
+  energyLevel,
+  setEnergyLevel,
+  progressNotes,
+  setProgressNotes,
+  progressHistory,
+  weeklyUpdate,
+  progressMsg,
+  isProgressBusy,
+  handleProgressCheckIn,
+  handleWeeklyUpdate,
+
   // calendar
   calendar,
   calendarMsg,
@@ -121,6 +139,7 @@ export default function ResultsSection({
   const safety = plan?.safety || {};
   const safetyWarnings = Array.isArray(safety?.warnings) ? safety.warnings : [];
   const safetyDisclaimer = safety?.disclaimer || "";
+  const recentProgress = Array.isArray(progressHistory) ? progressHistory.slice(0, 3) : [];
   const activeDateLabel = activeDate
     ? new Date(`${activeDate}T00:00:00`).toLocaleDateString([], {
         weekday: "long",
@@ -509,6 +528,133 @@ export default function ResultsSection({
       {/* Right column */}
       <div className="col-lg-4">
         <div className="card card-soft">
+          <div className="card-body p-4">
+            <details className="details-soft compact-details" open>
+              <summary className="details-summary">Progress</summary>
+
+              <div className="row g-3 mt-2">
+                <div className="col-12">
+                  <label className="form-label">Current weight (kg)</label>
+                  <input
+                    className="form-control"
+                    type="number"
+                    min="30"
+                    max="300"
+                    step="0.1"
+                    value={progressWeight}
+                    onChange={(e) => setProgressWeight?.(e.target.value)}
+                    disabled={isReadOnlyClientView}
+                  />
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label">Meal adherence: {mealAdherence}%</label>
+                  <input
+                    className="form-range"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={mealAdherence}
+                    onChange={(e) => setMealAdherence?.(e.target.value)}
+                    disabled={isReadOnlyClientView}
+                  />
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label">Workout adherence: {workoutAdherence}%</label>
+                  <input
+                    className="form-range"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={workoutAdherence}
+                    onChange={(e) => setWorkoutAdherence?.(e.target.value)}
+                    disabled={isReadOnlyClientView}
+                  />
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label">Energy: {energyLevel}/5</label>
+                  <input
+                    className="form-range"
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={energyLevel}
+                    onChange={(e) => setEnergyLevel?.(e.target.value)}
+                    disabled={isReadOnlyClientView}
+                  />
+                </div>
+
+                <div className="col-12">
+                  <label className="form-label">Notes</label>
+                  <textarea
+                    className="form-control"
+                    rows="2"
+                    value={progressNotes}
+                    onChange={(e) => setProgressNotes?.(e.target.value)}
+                    placeholder="Sleep, hunger, soreness, missed meals..."
+                    disabled={isReadOnlyClientView}
+                  />
+                </div>
+              </div>
+
+              <div className="d-grid gap-2 mt-3">
+                <button
+                  className="btn btn-primary fw-bold"
+                  type="button"
+                  onClick={handleProgressCheckIn}
+                  disabled={isProgressBusy || isReadOnlyClientView}
+                >
+                  {isProgressBusy ? <Loading label="Saving..." /> : "Save Check-In"}
+                </button>
+                <button
+                  className="btn btn-outline-light"
+                  type="button"
+                  onClick={handleWeeklyUpdate}
+                  disabled={isProgressBusy || isReadOnlyClientView}
+                >
+                  Generate Weekly Update
+                </button>
+              </div>
+
+              <StatusAlert variant={String(progressMsg).startsWith("Error:") ? "warning" : "success"}>
+                {progressMsg}
+              </StatusAlert>
+
+              {weeklyUpdate ? (
+                <div className="alert alert-dark border-0 mt-3 small">
+                  <div className="fw-semibold mb-1">This week's adjustment</div>
+                  <div>{weeklyUpdate.summary}</div>
+                  {weeklyUpdate.adjustments ? (
+                    <div className="text-muted mt-2">
+                      Calories: {weeklyUpdate.adjustments.calorie_adjustment_kcal || 0} kcal |
+                      Workouts: {weeklyUpdate.adjustments.workout_adjustment || "keep_current"}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {recentProgress.length > 0 ? (
+                <div className="list-group list-group-soft mt-3">
+                  {recentProgress.map((item) => (
+                    <div key={item.id} className="list-group-item">
+                      <div className="d-flex justify-content-between gap-2">
+                        <strong>{item.checked_in_on || "Check-in"}</strong>
+                        <span>{item.weight_kg ? `${item.weight_kg} kg` : "No weight"}</span>
+                      </div>
+                      <small className="text-muted">
+                        Meals {item.meal_adherence}% | Workouts {item.workout_adherence}% | Energy {item.energy_level}/5
+                      </small>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </details>
+          </div>
+        </div>
+
+        <div className="card card-soft mt-4">
           <div className="card-body p-4">
             <details className="details-soft compact-details">
               <summary className="details-summary">Calendar</summary>

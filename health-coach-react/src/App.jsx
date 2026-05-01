@@ -1162,6 +1162,37 @@ export default function App() {
   const [feedbackStatus, setFeedbackStatus] = useState("completed");
   const [feedbackOut, setFeedbackOut] = useState("");
   const [isFeedback, setIsFeedback] = useState(false);
+  const [progressWeight, setProgressWeight] = useState(currentWeight || weight || "");
+  const [mealAdherence, setMealAdherence] = useState(80);
+  const [workoutAdherence, setWorkoutAdherence] = useState(80);
+  const [energyLevel, setEnergyLevel] = useState(3);
+  const [progressNotes, setProgressNotes] = useState("");
+  const [progressHistory, setProgressHistory] = useState([]);
+  const [weeklyUpdate, setWeeklyUpdate] = useState(null);
+  const [progressMsg, setProgressMsg] = useState("");
+  const [isProgressBusy, setIsProgressBusy] = useState(false);
+
+  useEffect(() => {
+    if (stage !== "results" || !userId?.trim()) return;
+
+    let cancelled = false;
+    api
+      .getProgress()
+      .then((data) => {
+        if (cancelled) return;
+        setProgressHistory(Array.isArray(data?.checkins) ? data.checkins : []);
+        setWeeklyUpdate(data?.weekly_update || null);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProgressHistory([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stage, userId]);
 
   async function handleFeedback() {
     setIsFeedback(true);
@@ -1221,6 +1252,45 @@ export default function App() {
     setStep(ACTIVE_QUIZ_STEPS[0]);
     setPlanMsg("");
     setCheckUserMsg("");
+  }
+
+  async function handleProgressCheckIn() {
+    setIsProgressBusy(true);
+    setProgressMsg("");
+    try {
+      const weightKg = toMetricWeight(progressWeight || currentWeight || weight, weightUnit);
+      if (!weightKg) throw new Error("Enter a valid weight.");
+
+      const data = await api.submitProgressCheckIn({
+        weight_kg: weightKg,
+        meal_adherence: Number(mealAdherence),
+        workout_adherence: Number(workoutAdherence),
+        energy_level: Number(energyLevel),
+        notes: progressNotes,
+      });
+
+      setProgressHistory(Array.isArray(data?.checkins) ? data.checkins : []);
+      setProgressNotes("");
+      setProgressMsg("Progress check-in saved.");
+    } catch (e) {
+      setProgressMsg(`Error: ${e.message}`);
+    } finally {
+      setIsProgressBusy(false);
+    }
+  }
+
+  async function handleWeeklyUpdate() {
+    setIsProgressBusy(true);
+    setProgressMsg("");
+    try {
+      const data = await api.generateWeeklyUpdate();
+      setWeeklyUpdate(data?.weekly_update || null);
+      setProgressMsg("Weekly update generated.");
+    } catch (e) {
+      setProgressMsg(`Error: ${e.message}`);
+    } finally {
+      setIsProgressBusy(false);
+    }
   }
 
   function hydrateSavedUser(data) {
@@ -3960,6 +4030,22 @@ export default function App() {
           feedbackOut={feedbackOut}
           calendar={calendar}
           calendarMsg={calendarMsg}
+          progressWeight={progressWeight}
+          setProgressWeight={setProgressWeight}
+          mealAdherence={mealAdherence}
+          setMealAdherence={setMealAdherence}
+          workoutAdherence={workoutAdherence}
+          setWorkoutAdherence={setWorkoutAdherence}
+          energyLevel={energyLevel}
+          setEnergyLevel={setEnergyLevel}
+          progressNotes={progressNotes}
+          setProgressNotes={setProgressNotes}
+          progressHistory={progressHistory}
+          weeklyUpdate={weeklyUpdate}
+          progressMsg={progressMsg}
+          isProgressBusy={isProgressBusy}
+          handleProgressCheckIn={handleProgressCheckIn}
+          handleWeeklyUpdate={handleWeeklyUpdate}
           googleCalendar={googleCalendar}
           googleCalendarMsg={googleCalendarMsg}
           isGoogleCalendarBusy={isGoogleCalendarBusy}

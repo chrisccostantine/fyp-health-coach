@@ -347,6 +347,40 @@ export const api = {
     });
   },
 
+  async getProgress() {
+    return await fetchJSON(`/progress?user_id=${encodeURIComponent(getSettings().userId || "anon")}`, {
+      method: "GET",
+    });
+  },
+
+  async submitProgressCheckIn({
+    weight_kg,
+    meal_adherence,
+    workout_adherence,
+    energy_level,
+    notes,
+  }) {
+    return await fetchJSON("/progress/check-in", {
+      method: "POST",
+      body: JSON.stringify(
+        withUserId({
+          weight_kg,
+          meal_adherence,
+          workout_adherence,
+          energy_level,
+          notes,
+        }),
+      ),
+    });
+  },
+
+  async generateWeeklyUpdate() {
+    return await fetchJSON("/progress/weekly-update", {
+      method: "POST",
+      body: JSON.stringify(withUserId({})),
+    });
+  },
+
   async checkUser(userId) {
     return await fetchJSON(`/user/${encodeURIComponent(userId)}`, { method: "GET" });
   },
