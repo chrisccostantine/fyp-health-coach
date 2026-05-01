@@ -194,7 +194,10 @@ function NudgeView({ result, tone, goal }) {
 }
 
 const PROFILE_KEY = "hc_profile_v1";
-const ACTIVE_QUIZ_STEPS = [0, 1, 3, 7, 10, 11, 12, 13, 20, 21, 22, 27];
+const ACTIVE_QUIZ_STEPS = [
+  0, 1, 3, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19, 20, 21, 22, 23, 28,
+  29, 27,
+];
 
 function loadProfileDefaults() {
   try {
@@ -342,6 +345,13 @@ function toMetricWeight(value, unit) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
   return unit === "lb" ? Math.round(numeric * 0.453592 * 10) / 10 : numeric;
+}
+
+function splitCommaList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function estimateGoalTimeline({
@@ -651,7 +661,7 @@ export default function App() {
   const [targetBody, setTargetBody] = useState("athlete"); // athlete | hero | bodybuilder
   const [bodyFatLevel, setBodyFatLevel] = useState(22); // slider number
   const [problemAreas, setProblemAreas] = useState([]); // multi select
-  const [dietPref, setDietPref] = useState("none"); // none | vegetarian | vegan | keto | mediterranean
+  const [dietPref, setDietPref] = useState(stored?.dietPref ?? "none"); // none | vegetarian | vegan | keto | mediterranean
   const [sugarFreq, setSugarFreq] = useState("not_often"); // not_often | 3_5_week | daily
   const [waterIntake, setWaterIntake] = useState("2_6"); // lt2 | 2_6 | 7_10 | gt10 | coffee_tea
   // Height & weight units
@@ -680,6 +690,11 @@ export default function App() {
 
   const [letFoodDecide, setLetFoodDecide] = useState(false);
   const [veggies, setVeggies] = useState([]);
+  const [allergiesInput, setAllergiesInput] = useState(stored?.allergiesInput ?? "");
+  const [medicalConditionsInput, setMedicalConditionsInput] = useState(
+    stored?.medicalConditionsInput ?? "",
+  );
+  const [injuriesInput, setInjuriesInput] = useState(stored?.injuriesInput ?? "");
 
   const [leadName, setLeadName] = useState("");
   const [leadDob, setLeadDob] = useState("");
@@ -799,8 +814,25 @@ export default function App() {
       goalType,
       deficit,
       equipment,
+      dietPref,
+      allergiesInput,
+      medicalConditionsInput,
+      injuriesInput,
     });
-  }, [age, sex, height, weight, activity, goalType, deficit, equipment]);
+  }, [
+    age,
+    sex,
+    height,
+    weight,
+    activity,
+    goalType,
+    deficit,
+    equipment,
+    dietPref,
+    allergiesInput,
+    medicalConditionsInput,
+    injuriesInput,
+  ]);
 
   // ------- Plan -------
   const [plan, setPlan] = useState(null);
@@ -842,6 +874,8 @@ export default function App() {
           diet: {
             preference: dietPref,
             preferred_vegetables: letFoodDecide ? [] : veggies,
+            allergies: splitCommaList(allergiesInput),
+            medical_conditions: splitCommaList(medicalConditionsInput),
             sugar_frequency: sugarFreq,
             water_intake: waterIntake,
           },
@@ -861,6 +895,7 @@ export default function App() {
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean),
+          injuries: splitCommaList(injuriesInput),
         },
         goal: { type: goalType, deficit_kcal: +deficit },
         equipment: (equipment || "")
@@ -889,7 +924,8 @@ export default function App() {
           ageBand, gender, bodyType, goalPick, targetBody, dietPref,
           fitnessLevel, workoutLocation, trainingFreq, workoutDurationPref,
           targetWeight, heightUnit, weightUnit, sugarFreq, waterIntake,
-          additionalGoals, pushupsLevel, pullupsLevel,
+          additionalGoals, pushupsLevel, pullupsLevel, allergiesInput,
+          medicalConditionsInput, injuriesInput,
         },
       }).catch(() => {}); // non-blocking; failures are silent
       if (autoGoResults) setStage("results");
@@ -3657,6 +3693,63 @@ export default function App() {
                     </div>
 
                     {/* IMPORTANT: DO NOT go to results here */}
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 24*/}
+                {step === 28 && (
+                  <>
+                    <h3 className="quiz-title">
+                      Any food allergies or medical conditions?
+                    </h3>
+                    <p className="quiz-sub">
+                      Add anything the plan should avoid or treat with caution.
+                    </p>
+
+                    <input
+                      className="line-input"
+                      placeholder="Allergies, comma separated"
+                      value={allergiesInput}
+                      onChange={(e) => setAllergiesInput(e.target.value)}
+                    />
+
+                    <input
+                      className="line-input mt-3"
+                      placeholder="Medical conditions, comma separated"
+                      value={medicalConditionsInput}
+                      onChange={(e) => setMedicalConditionsInput(e.target.value)}
+                    />
+
+                    <button
+                      className="btn btn-primary w-100 mt-4"
+                      onClick={nextStep}
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+                {/*Step 29*/}
+                {step === 29 && (
+                  <>
+                    <h3 className="quiz-title">
+                      Any injuries or movement limitations?
+                    </h3>
+                    <p className="quiz-sub">
+                      This helps avoid exercises that may not fit your body right now.
+                    </p>
+
+                    <input
+                      className="line-input"
+                      placeholder="Examples: knee, shoulder, back"
+                      value={injuriesInput}
+                      onChange={(e) => setInjuriesInput(e.target.value)}
+                    />
+
                     <button
                       className="btn btn-primary w-100 mt-4"
                       onClick={nextStep}
