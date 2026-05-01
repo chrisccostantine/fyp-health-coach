@@ -195,8 +195,7 @@ function NudgeView({ result, tone, goal }) {
 
 const PROFILE_KEY = "hc_profile_v1";
 const ACTIVE_QUIZ_STEPS = [
-  0, 1, 3, 7, 8, 9, 10, 11, 12, 13, 14, 17, 18, 19, 20, 21, 22, 23, 28,
-  29, 27,
+  0, 1, 3, 7, 8, 9, 10, 11, 12, 13, 20, 21, 22, 23, 28, 29, 27,
 ];
 
 function loadProfileDefaults() {
