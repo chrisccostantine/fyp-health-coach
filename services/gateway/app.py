@@ -865,11 +865,24 @@ def _build_day_workouts(base_workouts: list[dict], offset: int, target_minutes: 
 
     rotated = base_workouts[(offset * 3) % len(base_workouts) :] + base_workouts[: (offset * 3) % len(base_workouts)]
     total_target = max(15, int(target_minutes or 30))
-    template = dict(rotated[0])
-    template["name"] = str(template.get("name") or template.get("title") or "Training Session").strip()
-    template["when"] = workout_time
-    template["duration_min"] = total_target
-    return [template]
+    part_count = 3 if total_target >= 35 and len(rotated) >= 3 else min(2, len(rotated))
+    base_duration = max(8, total_target // part_count)
+    remaining = total_target
+    workouts = []
+
+    for idx in range(part_count):
+        template = dict(rotated[idx])
+        template["name"] = str(template.get("name") or template.get("title") or f"Workout Part {idx + 1}").strip()
+        template["when"] = workout_time
+        if idx == part_count - 1:
+            duration = max(8, remaining)
+        else:
+            duration = min(base_duration, max(8, remaining - 8 * (part_count - idx - 1)))
+        template["duration_min"] = duration
+        workouts.append(template)
+        remaining -= duration
+
+    return workouts
 
 
 def _plan_days(plan: dict | None):

@@ -80,15 +80,15 @@ def test_month_plan_does_not_repeat_meals_within_first_week():
     assert len(names) == len(set(names))
 
 
-def test_day_workout_is_single_session_at_preferred_time():
+def test_day_workouts_are_two_or_three_parts_at_preferred_time():
     workouts = [
         {"name": f"Workout {idx}", "duration_min": 30, "intensity": "medium", "when": "07:00"}
         for idx in range(5)
     ]
     day_workouts = _build_day_workouts(workouts, offset=2, target_minutes=45, workout_time="18:00")
-    assert len(day_workouts) == 1
-    assert day_workouts[0]["when"] == "18:00"
-    assert day_workouts[0]["duration_min"] == 45
+    assert len(day_workouts) == 3
+    assert {workout["when"] for workout in day_workouts} == {"18:00"}
+    assert sum(workout["duration_min"] for workout in day_workouts) == 45
 
 
 def test_exercise_respects_home_duration_and_beginner_level():
