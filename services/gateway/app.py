@@ -94,11 +94,16 @@ MEAL_VARIANT_LABELS = [
     "Light Energy Mix",
 ]
 SNACK_POOL = [
-    {"name": "Protein Shake + Banana", "calories": 260, "macros": {"protein": 24, "carbs": 28, "fat": 5}, "when": "11:00"},
-    {"name": "Cottage Cheese + Apple + Cinnamon", "calories": 240, "macros": {"protein": 20, "carbs": 24, "fat": 6}, "when": "16:00"},
-    {"name": "Hummus + Veggie Sticks + Crackers", "calories": 250, "macros": {"protein": 10, "carbs": 28, "fat": 10}, "when": "16:30"},
-    {"name": "Peanut Butter Toast + Milk", "calories": 300, "macros": {"protein": 16, "carbs": 30, "fat": 12}, "when": "10:30"},
-    {"name": "Greek Yogurt + Honey + Granola", "calories": 280, "macros": {"protein": 18, "carbs": 32, "fat": 8}, "when": "15:30"},
+    {"name": "Protein Shake + Banana", "calories": 260, "macros": {"protein": 24, "carbs": 28, "fat": 5}, "when": "11:00", "description": "Blend protein powder with water or milk, then eat the banana on the side."},
+    {"name": "Cottage Cheese + Apple + Cinnamon", "calories": 240, "macros": {"protein": 20, "carbs": 24, "fat": 6}, "when": "16:00", "description": "Spoon cottage cheese into a bowl, slice the apple, and top with cinnamon."},
+    {"name": "Hummus + Veggie Sticks + Crackers", "calories": 250, "macros": {"protein": 10, "carbs": 28, "fat": 10}, "when": "16:30", "description": "Portion hummus with sliced vegetables and crackers for a quick savory snack."},
+    {"name": "Peanut Butter Toast + Milk", "calories": 300, "macros": {"protein": 16, "carbs": 30, "fat": 12}, "when": "10:30", "description": "Toast whole-grain bread, spread peanut butter evenly, and drink milk alongside."},
+    {"name": "Greek Yogurt + Honey + Granola", "calories": 280, "macros": {"protein": 18, "carbs": 32, "fat": 8}, "when": "15:30", "description": "Layer Greek yogurt with a measured serving of granola and a small drizzle of honey."},
+    {"name": "Turkey Roll-Ups + Cucumber", "calories": 220, "macros": {"protein": 24, "carbs": 8, "fat": 8}, "when": "11:30", "description": "Roll turkey slices with cucumber sticks and add mustard or lemon if desired."},
+    {"name": "Boiled Eggs + Tomato", "calories": 230, "macros": {"protein": 18, "carbs": 8, "fat": 14}, "when": "16:15", "description": "Boil eggs ahead of time and pair them with sliced tomato and light seasoning."},
+    {"name": "Tuna Rice Cakes", "calories": 260, "macros": {"protein": 24, "carbs": 28, "fat": 5}, "when": "10:45", "description": "Top rice cakes with tuna, lemon, and herbs; keep portions measured."},
+    {"name": "Edamame + Fruit", "calories": 240, "macros": {"protein": 15, "carbs": 30, "fat": 6}, "when": "15:45", "description": "Steam edamame, season lightly, and pair with one piece of fruit."},
+    {"name": "Almonds + Protein Yogurt", "calories": 290, "macros": {"protein": 22, "carbs": 18, "fat": 14}, "when": "12:00", "description": "Measure almonds and mix them into high-protein yogurt for a balanced snack."},
 ]
 WORKOUT_SLOTS = [
     ("Morning Mobility Flow", "07:00", "low"),
@@ -822,15 +827,17 @@ def _build_day_meals(base_meals: list[dict], offset: int):
         snack = dict(SNACK_POOL[offset % len(SNACK_POOL)])
         return [snack]
 
-    rotated = base_meals[offset % len(base_meals) :] + base_meals[: offset % len(base_meals)]
     meals = []
     default_times = ["08:00", "13:00", "16:00", "19:00"]
 
-    for idx, meal in enumerate(rotated[:3]):
+    pool_size = len(base_meals)
+    start = (offset * 3) % pool_size
+    selected = [base_meals[(start + idx) % pool_size] for idx in range(min(3, pool_size))]
+
+    for idx, meal in enumerate(selected):
         variant = dict(meal)
-        variant_suffix = MEAL_VARIANT_LABELS[(offset + idx) % len(MEAL_VARIANT_LABELS)]
         base_name = str(variant.get("name") or variant.get("title") or f"Meal {idx + 1}").strip()
-        variant["name"] = f"{base_name} - {variant_suffix}"
+        variant["name"] = base_name
         variant["when"] = variant.get("when") or default_times[min(idx, len(default_times) - 1)]
         calories = int(variant.get("calories", 0) or 0)
         if calories > 0:
@@ -846,7 +853,7 @@ def _build_day_workouts(base_workouts: list[dict], offset: int, target_minutes: 
     if not base_workouts:
         return []
 
-    rotated = base_workouts[offset % len(base_workouts) :] + base_workouts[: offset % len(base_workouts)]
+    rotated = base_workouts[(offset * 3) % len(base_workouts) :] + base_workouts[: (offset * 3) % len(base_workouts)]
     total_target = max(15, int(target_minutes or 30))
     slot_count = 4 if total_target >= 45 else 3
     slot_templates = WORKOUT_SLOTS[:slot_count]
@@ -1866,10 +1873,12 @@ def plan_today():
         meals=[PlanMeal(**m) for m in diet["meals"]],
         workouts=[PlanWorkout(**w) for w in work["workouts"]],
     )
+    daily_payload = daily_plan.model_dump()
+    meal_pool = diet.get("meal_pool") if isinstance(diet.get("meal_pool"), list) else None
     plan_payload = _build_month_plan(
         user_id,
-        daily_plan.model_dump().get("meals", []),
-        daily_plan.model_dump().get("workouts", []),
+        meal_pool or daily_payload.get("meals", []),
+        daily_payload.get("workouts", []),
     )
     review_payload = _managed_plan_review_payload(session)
     if review_payload:

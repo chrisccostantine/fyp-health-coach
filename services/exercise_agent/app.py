@@ -136,6 +136,96 @@ WORKOUT_LIBRARY = {
 }
 
 
+WORKOUT_FOCUSES = {
+    "fat_loss": [
+        ("Low-Impact Cardio Circuit", [], ["home", "gym", "mixed"], ["knee"]),
+        ("Dumbbell Conditioning", ["dumbbells"], ["home", "gym", "mixed"], ["shoulder", "back"]),
+        ("Treadmill Incline Intervals", ["treadmill"], ["gym", "mixed"], ["knee"]),
+        ("Core + Sweat Session", [], ["home", "gym", "mixed"], ["back"]),
+        ("Bike Calorie Builder", ["bike"], ["gym", "mixed"], []),
+        ("Kettlebell Metabolic Flow", ["kettlebell"], ["home", "gym", "mixed"], ["back", "shoulder"]),
+    ],
+    "muscle_gain": [
+        ("Upper Body Strength", ["dumbbells"], ["home", "gym", "mixed"], ["shoulder"]),
+        ("Lower Body Hypertrophy", ["dumbbells"], ["home", "gym", "mixed"], ["knee", "back"]),
+        ("Push Pull Strength", ["dumbbells", "bench"], ["gym", "mixed"], ["shoulder", "elbow"]),
+        ("Posterior Chain Builder", ["dumbbells"], ["home", "gym", "mixed"], ["back"]),
+        ("Bodyweight Muscle Basics", [], ["home", "gym", "mixed"], ["wrist", "shoulder"]),
+        ("Pull Strength Progression", ["pullup_bar"], ["home", "gym", "mixed"], ["shoulder", "elbow"]),
+    ],
+    "endurance": [
+        ("Run Walk Endurance", [], ["home", "gym", "mixed"], ["knee", "ankle"]),
+        ("Zone 2 Bike Builder", ["bike"], ["gym", "mixed"], []),
+        ("Row Endurance Intervals", ["rower"], ["gym", "mixed"], ["back", "shoulder"]),
+        ("Stair Climb Stamina", [], ["home", "gym", "mixed"], ["knee"]),
+        ("Tempo Cardio Session", ["treadmill"], ["gym", "mixed"], ["knee", "ankle"]),
+        ("Mobility Endurance Flow", [], ["home", "gym", "mixed"], []),
+    ],
+    "general_health": [
+        ("Full-Body Mobility", [], ["home", "gym", "mixed"], []),
+        ("Beginner Strength Circuit", [], ["home", "gym", "mixed"], ["wrist", "shoulder"]),
+        ("Dumbbell Health Strength", ["dumbbells"], ["home", "gym", "mixed"], ["shoulder", "back"]),
+        ("Walk + Core Stability", [], ["home", "gym", "mixed"], []),
+        ("Balance and Posture", [], ["home", "gym", "mixed"], []),
+        ("Joint-Friendly Conditioning", [], ["home", "gym", "mixed"], ["knee"]),
+    ],
+}
+
+WORKOUT_STYLES = [
+    ("Foundation", 20, "low", "2 rounds of controlled work with 60 seconds rest between rounds."),
+    ("Progressive", 25, "medium", "3 rounds at a steady pace with 45 seconds rest between rounds."),
+    ("Density", 30, "medium", "Complete quality reps for time, resting only as needed."),
+    ("Intervals", 28, "high", "Alternate 40 seconds work with 20 seconds easy movement."),
+    ("Strength", 40, "medium", "Use slow reps, full range of motion, and 60-90 seconds rest."),
+    ("Endurance", 45, "low", "Keep a conversational pace and focus on smooth breathing."),
+    ("Power", 32, "high", "Move explosively only if form stays clean; rest 60 seconds."),
+    ("Recovery", 18, "low", "Keep intensity easy and prioritize mobility and breathing."),
+    ("Tempo", 35, "medium", "Use a steady pace you can maintain without form breakdown."),
+    ("Challenge", 50, "high", "Push the final round while keeping one rep in reserve."),
+]
+
+
+def _workout_description(name: str, style_note: str, equipment: list[str]) -> str:
+    equipment_text = "bodyweight only" if not equipment else ", ".join(equipment).replace("_", " ")
+    return (
+        f"{name}: warm up for 5 minutes, then follow the session structure. "
+        f"Equipment: {equipment_text}. {style_note} Finish with 3-5 minutes of stretching."
+    )
+
+
+def _build_workout_library() -> Dict[str, List[Dict[str, Any]]]:
+    library: Dict[str, List[Dict[str, Any]]] = {goal: list(items) for goal, items in WORKOUT_LIBRARY.items()}
+    times = ["07:00", "08:00", "12:30", "17:30", "18:00", "19:00", "20:00"]
+    for goal, focuses in WORKOUT_FOCUSES.items():
+        for focus_idx, (focus, equipment, locations, avoid_injuries) in enumerate(focuses):
+            for style_idx, (style, duration, intensity, style_note) in enumerate(WORKOUT_STYLES):
+                name = f"{style} {focus}"
+                library.setdefault(goal, []).append(
+                    {
+                        "name": name,
+                        "duration_min": duration + ((focus_idx + style_idx) % 3) * 3,
+                        "intensity": intensity,
+                        "when": times[(focus_idx + style_idx) % len(times)],
+                        "equipment": equipment,
+                        "locations": locations,
+                        "avoid_injuries": avoid_injuries,
+                        "description": _workout_description(name, style_note, equipment),
+                    }
+                )
+    for workouts in library.values():
+        for workout in workouts:
+            if not workout.get("description"):
+                workout["description"] = _workout_description(
+                    workout["name"],
+                    "Move with control, keep breathing steady, and adjust the pace if form drops.",
+                    workout.get("equipment", []),
+                )
+    return library
+
+
+WORKOUT_LIBRARY = _build_workout_library()
+
+
 def _goal_key(goal: Dict[str, Any]) -> str:
     return str(goal.get("type") or goal.get("goal") or "general_health")
 
@@ -212,6 +302,11 @@ def _personalize_workout(workout: Dict[str, Any], prefs: Dict[str, Any]) -> Dict
         "duration_min": max(10, duration),
         "intensity": intensity,
         "when": workout.get("when"),
+        "description": workout.get("description") or _workout_description(
+            workout["name"],
+            "Move with control and stop if pain appears.",
+            workout.get("equipment", []),
+        ),
     }
 
 
@@ -238,7 +333,7 @@ def build_rule_based_exercise(
     if not matched:
         matched = WORKOUT_LIBRARY["general_health"]
 
-    workouts = [_personalize_workout(w, prefs) for w in matched[:2]]
+    workouts = [_personalize_workout(w, prefs) for w in matched[:35]]
 
     return {"workouts": workouts}
 
@@ -279,12 +374,13 @@ User:
 Return ONLY valid JSON in this format:
 
 {{
-  "workouts": [
+      "workouts": [
     {{
       "name": string,
       "duration_min": number,
       "intensity": "low" | "medium" | "high",
-      "when": "HH:MM"
+      "when": "HH:MM",
+      "description": string
     }}
   ]
 }}
@@ -351,6 +447,7 @@ def _normalize_workouts(workouts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 ),
                 "intensity": intensity,
                 "when": workout.get("when") or workout.get("time"),
+                "description": workout.get("description") or workout.get("instructions"),
             }
         )
 
@@ -384,7 +481,8 @@ Return ONLY JSON:
         "name": "string",
         "duration_min": 0,
         "intensity": "low|medium|high",
-        "when": "HH:MM"
+        "when": "HH:MM",
+        "description": "string"
       }
     ]
   }

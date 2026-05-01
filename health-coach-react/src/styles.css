@@ -1497,6 +1497,14 @@ pre.out {
   font-size: 1rem;
 }
 
+.result-description{
+  margin-top: 8px;
+  color: rgba(255,255,255,.72);
+  font-size: .92rem;
+  line-height: 1.45;
+  max-width: 68ch;
+}
+
 .time-pill{
   padding: 6px 12px;
   border-radius: 12px;

@@ -38,6 +38,7 @@ def tdee(profile: Dict[str, Any]) -> int:
     return int(bmr * mult)
 
 MEAL_TIMES = ["08:00", "13:00", "19:00"]
+MEAL_POOL_SIZE = 35
 
 
 def _normalize_list(value: Any) -> list[str]:
@@ -84,6 +85,40 @@ def _rank_recipes(recipes: list[Dict[str, Any]], prefs: Dict[str, Any]) -> list[
     return sorted(recipes, key=score, reverse=True)
 
 
+def _meal_description(meal: Dict[str, Any]) -> str:
+    ingredients = meal.get("ingredients_detail") or []
+    visible = [
+        f"{item.get('name', item.get('key', 'ingredient'))} ({round(float(item.get('grams', 0)))}g)"
+        for item in ingredients[:5]
+    ]
+    ingredient_text = ", ".join(visible)
+    if not ingredient_text:
+        return "Assemble the ingredients, season to taste, and portion according to the listed calories."
+    return (
+        f"Prepare and portion: {ingredient_text}. Cook proteins and grains if needed, "
+        "add vegetables, then season with herbs, lemon, vinegar, or low-calorie sauce."
+    )
+
+
+def _meal_from_recipe(recipe: Dict[str, Any], calories_target: int, when: str | None = None) -> Dict[str, Any]:
+    scaled = scale_recipe_to_calories(recipe, calories_target)
+    p = float(scaled["macros"]["protein"])
+    c = float(scaled["macros"]["carbs"])
+    f = float(scaled["macros"]["fat"])
+    calories = int(round(scaled["nutrition"]["calories"]))
+    return {
+        "name": scaled["name"],
+        "calories": calories,
+        "macros": {"protein": p, "carbs": c, "fat": f},
+        "when": when,
+        "ingredients": scaled["ingredients_detail"],
+        "description": _meal_description(scaled),
+        "protein": p,
+        "carbs": c,
+        "fat": f,
+    }
+
+
 def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict[str, Any]:
     base = tdee(profile)
     deficit = int(goal.get("deficit_kcal", 0) or 0)
@@ -102,34 +137,29 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict
 
     total_p = total_c = total_f = 0
 
-    for idx, r in enumerate(candidates[:3]):
-        scaled = scale_recipe_to_calories(r, per)
-        p = float(scaled["macros"]["protein"])
-        c = float(scaled["macros"]["carbs"])
-        f = float(scaled["macros"]["fat"])
-        calories = int(round(scaled["nutrition"]["calories"]))
+    meal_pool = [
+        _meal_from_recipe(recipe, per)
+        for recipe in candidates[:MEAL_POOL_SIZE]
+    ]
+
+    for idx, meal in enumerate(meal_pool[:3]):
+        meal = dict(meal)
+        meal["when"] = MEAL_TIMES[idx] if idx < len(MEAL_TIMES) else None
+        p = float(meal["macros"]["protein"])
+        c = float(meal["macros"]["carbs"])
+        f = float(meal["macros"]["fat"])
 
         total_p += p
         total_c += c
         total_f += f
 
-        meals.append(
-            {
-                "name": scaled["name"],
-                "calories": calories,
-                "macros": {"protein": p, "carbs": c, "fat": f},
-                "when": MEAL_TIMES[idx] if idx < len(MEAL_TIMES) else None,
-                "ingredients": scaled["ingredients_detail"],
-                "protein": p,
-                "carbs": c,
-                "fat": f,
-            }
-        )
+        meals.append(meal)
 
     return {
         "daily_calories": int(target),
         "macros": {"protein": round(total_p, 1), "carbs": round(total_c, 1), "fat": round(total_f, 1)},
         "meals": meals,
+        "meal_pool": meal_pool,
     }
 
 # -------------------- RULE-BASED DIET --------------------
@@ -159,8 +189,20 @@ def diet_suggest():
                     "macros": m["macros"],
                     "when": m.get("when"),
                     "ingredients": m.get("ingredients", []),
+                    "description": m.get("description"),
                 }
                 for m in plan["meals"]
+            ],
+            "meal_pool": [
+                {
+                    "name": m["name"],
+                    "calories": int(m["calories"]),
+                    "macros": m["macros"],
+                    "when": m.get("when"),
+                    "ingredients": m.get("ingredients", []),
+                    "description": m.get("description"),
+                }
+                for m in plan.get("meal_pool", [])
             ],
             "daily_calories": plan["daily_calories"],
             "macros": plan["macros"],
@@ -226,6 +268,8 @@ def _normalize_plan_shape(plan: Dict[str, Any]) -> Dict[str, Any]:
                 "calories": int(meal.get("calories", meal.get("kcal", 0)) or 0),
                 "macros": {"protein": float(p), "carbs": float(c), "fat": float(f)},
                 "when": meal.get("when") or meal.get("time"),
+                "ingredients": meal.get("ingredients", []),
+                "description": meal.get("description"),
             }
         )
 

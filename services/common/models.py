@@ -22,12 +22,15 @@ class PlanMeal(BaseModel):
     calories: int
     macros: Dict[str, float]  # grams
     when: Optional[str] = None
+    description: Optional[str] = None
+    ingredients: Optional[List[Dict]] = None
 
 class PlanWorkout(BaseModel):
     name: str
     duration_min: int
     intensity: Literal["low","medium","high"] = "medium"
     when: Optional[str] = None
+    description: Optional[str] = None
 
 class DayPlan(BaseModel):
     user_id: str

@@ -408,6 +408,9 @@ export default function ResultsSection({
                                   {meal.fat ?? meal.macros?.fat ?? 0}g |{" "}
                                   {meal.kcal ?? meal.calories ?? 0} kcal
                                 </div>
+                                {meal.description ? (
+                                  <div className="result-description">{meal.description}</div>
+                                ) : null}
                               </div>
                             </div>
 
@@ -486,6 +489,9 @@ export default function ResultsSection({
                                   {title}
                                 </div>
                                 <div className="result-sub">{describeWorkout(w)}</div>
+                                {w.description ? (
+                                  <div className="result-description">{w.description}</div>
+                                ) : null}
                               </div>
                             </div>
 

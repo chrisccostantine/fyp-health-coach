@@ -1,6 +1,7 @@
 from services.diet_agent.app import build_rule_based_diet
 from services.diet_agent.nutrition_db import RECIPE_CATALOG, calculate_recipe_nutrition
-from services.exercise_agent.app import build_rule_based_exercise
+from services.exercise_agent.app import WORKOUT_LIBRARY, build_rule_based_exercise
+from services.gateway.app import _build_month_plan
 
 
 def test_local_recipe_catalog_has_at_least_100_structured_recipes():
@@ -8,6 +9,12 @@ def test_local_recipe_catalog_has_at_least_100_structured_recipes():
     sample = RECIPE_CATALOG[0]
     assert sample["ingredients_detail"]
     assert {"calories", "protein", "carbs", "fat"}.issubset(sample["nutrition"])
+
+
+def test_workout_catalog_has_at_least_200_described_workouts():
+    all_workouts = [workout for workouts in WORKOUT_LIBRARY.values() for workout in workouts]
+    assert len(all_workouts) >= 200
+    assert all(workout.get("description") for workout in all_workouts)
 
 
 def test_recipe_nutrition_is_calculated_from_ingredient_grams():
@@ -38,6 +45,8 @@ def test_diet_respects_vegan_preference_and_preferred_vegetables():
     assert all("Chicken" not in name and "Tuna" not in name and "Salmon" not in name for name in meal_names)
     assert all("Yogurt" not in name and "Eggs" not in name for name in meal_names)
     assert all(meal["ingredients"] for meal in plan["meals"])
+    assert all(meal["description"] for meal in plan["meals"])
+    assert len(plan["meal_pool"]) >= 21
 
 
 def test_diet_filters_allergy_ingredients():
@@ -54,6 +63,20 @@ def test_diet_filters_allergy_ingredients():
     )
 
     assert all("Tuna" not in meal["name"] for meal in plan["meals"])
+
+
+def test_month_plan_does_not_repeat_meals_within_first_week():
+    meals = [
+        {"name": f"Meal {idx}", "calories": 400, "macros": {"protein": 30, "carbs": 40, "fat": 10}}
+        for idx in range(28)
+    ]
+    plan = _build_month_plan("demo", meals, [], span_days=7)
+    names = [
+        meal["name"]
+        for day in plan["plan_days"][:7]
+        for meal in day["meals"]
+    ]
+    assert len(names) == len(set(names))
 
 
 def test_exercise_respects_home_duration_and_beginner_level():
@@ -73,6 +96,7 @@ def test_exercise_respects_home_duration_and_beginner_level():
     assert plan["workouts"]
     assert all(workout["duration_min"] <= 15 for workout in plan["workouts"])
     assert all(workout["intensity"] in {"low", "medium"} for workout in plan["workouts"])
+    assert all(workout["description"] for workout in plan["workouts"])
 
 
 def test_exercise_avoids_injury_contraindications():
