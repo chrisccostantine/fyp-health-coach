@@ -36,6 +36,8 @@ from services.common.storage import (
     get_password_reset_token,
     is_managed_by,
     get_latest_plan,
+    item_adherence_summary,
+    list_item_adherence,
     list_progress_checkins,
     list_private_messages,
     list_managed_auth_users,
@@ -45,6 +47,7 @@ from services.common.storage import (
     get_user,
     init_db,
     record_audit_log,
+    record_item_adherence,
     record_progress_checkin,
     save_plan,
     save_weekly_update,
@@ -627,6 +630,7 @@ def _client_with_plan_review(client: dict):
     else:
         payload["plan_review"] = None
         payload["has_plan"] = False
+    payload["adherence_summary"] = item_adherence_summary(client["user_id"])
     return payload
 
 
@@ -2199,6 +2203,74 @@ def feedback():
     body = request.get_json(force=True)
     res = requests.post(f"{FEEDBACK_URL}/feedback", json=body)
     return jsonify(res.json()), res.status_code
+
+
+@app.get("/adherence")
+def adherence_list():
+    session, error = _require_auth()
+    if error:
+        return error
+    requested_user_id = request.args.get("user_id") or session["user_id"]
+    user_id = _resolve_view_user_id(session, requested_user_id)
+    if not user_id:
+        return jsonify({"error": "You do not have access to this adherence log."}), 403
+    return jsonify(
+        {
+            "ok": True,
+            "items": list_item_adherence(user_id),
+            "summary": item_adherence_summary(user_id),
+        }
+    )
+
+
+@app.post("/adherence/item")
+def adherence_item():
+    session, error = _require_auth()
+    if error:
+        return error
+    body = request.get_json(force=True)
+    user_id = _resolve_write_user_id(session, body.get("user_id"))
+    if not user_id:
+        return jsonify({"error": "Only the client can update this adherence log."}), 403
+
+    item_key = str(body.get("item_key") or "").strip()
+    item_type = str(body.get("item_type") or "").strip().lower()
+    status = str(body.get("status") or "").strip().lower()
+    title = str(body.get("title") or "").strip() or None
+    plan_date = str(body.get("plan_date") or "").strip() or None
+    note = str(body.get("note") or "").strip() or None
+
+    valid_statuses = {
+        "meal": {"ate", "missed"},
+        "workout": {"done", "missed"},
+    }
+    if not item_key or item_type not in valid_statuses:
+        return jsonify({"error": "A valid meal or workout item is required."}), 400
+    if status not in valid_statuses[item_type]:
+        return jsonify({"error": "A valid adherence status is required."}), 400
+
+    record_item_adherence(
+        user_id=user_id,
+        item_key=item_key,
+        item_type=item_type,
+        title=title,
+        status=status,
+        plan_date=plan_date,
+        note=note,
+    )
+    record_audit_log(
+        user_id,
+        session.get("managed_by_user_id"),
+        "client.adherence_updated",
+        {"item_type": item_type, "status": status, "title": title, "plan_date": plan_date},
+    )
+    return jsonify(
+        {
+            "ok": True,
+            "items": list_item_adherence(user_id),
+            "summary": item_adherence_summary(user_id),
+        }
+    )
 
 
 @app.get("/privacy/export")

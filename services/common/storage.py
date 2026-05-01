@@ -140,6 +140,19 @@ CREATE TABLE IF NOT EXISTS progress_checkins (
     checked_in_on TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS item_adherence (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    item_type TEXT NOT NULL,
+    title TEXT,
+    status TEXT NOT NULL,
+    plan_date TEXT,
+    note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, item_key)
+);
 CREATE TABLE IF NOT EXISTS weekly_updates (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -267,6 +280,19 @@ CREATE TABLE IF NOT EXISTS progress_checkins (
     checked_in_on TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS item_adherence (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    item_key TEXT NOT NULL,
+    item_type TEXT NOT NULL,
+    title TEXT,
+    status TEXT NOT NULL,
+    plan_date TEXT,
+    note TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, item_key)
+);
 CREATE TABLE IF NOT EXISTS weekly_updates (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -301,6 +327,7 @@ MIGRATIONS = [
     "ALTER TABLE user_nudge_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "CREATE TABLE IF NOT EXISTS private_messages (id SERIAL PRIMARY KEY, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS private_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS progress_checkins (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS progress_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS item_adherence (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, item_key TEXT NOT NULL, item_type TEXT NOT NULL, title TEXT, status TEXT NOT NULL, plan_date TEXT, note TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, item_key))" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS item_adherence (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, item_key TEXT NOT NULL, item_type TEXT NOT NULL, title TEXT, status TEXT NOT NULL, plan_date TEXT, note TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, item_key))",
     "CREATE TABLE IF NOT EXISTS weekly_updates (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS weekly_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS audit_logs (id SERIAL PRIMARY KEY, actor_user_id TEXT, target_user_id TEXT, action TEXT NOT NULL, metadata TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, actor_user_id TEXT, target_user_id TEXT, action TEXT NOT NULL, metadata TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
 ]
@@ -867,6 +894,97 @@ def list_progress_checkins(user_id: str, limit: int = 12):
     return [dict(row) for row in rows]
 
 
+def record_item_adherence(
+    user_id: str,
+    item_key: str,
+    item_type: str,
+    title: str | None,
+    status: str,
+    plan_date: str | None = None,
+    note: str | None = None,
+):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO item_adherence(
+                    user_id, item_key, item_type, title, status, plan_date, note, updated_at
+                )
+                VALUES(
+                    :uid, :item_key, :item_type, :title, :status, :plan_date, :note,
+                    CURRENT_TIMESTAMP
+                )
+                ON CONFLICT(user_id, item_key) DO UPDATE SET
+                    item_type=excluded.item_type,
+                    title=excluded.title,
+                    status=excluded.status,
+                    plan_date=excluded.plan_date,
+                    note=excluded.note,
+                    updated_at=CURRENT_TIMESTAMP
+            """),
+            {
+                "uid": user_id,
+                "item_key": item_key,
+                "item_type": item_type,
+                "title": title,
+                "status": status,
+                "plan_date": plan_date,
+                "note": note,
+            },
+        )
+
+
+def list_item_adherence(user_id: str, limit: int = 250):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT id, user_id, item_key, item_type, title, status, plan_date,
+                       note, created_at, updated_at
+                FROM item_adherence
+                WHERE user_id = :uid
+                ORDER BY COALESCE(plan_date, '') DESC, updated_at DESC, id DESC
+                LIMIT :limit
+            """),
+            {"uid": user_id, "limit": limit},
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def item_adherence_summary(user_id: str):
+    rows = list_item_adherence(user_id, limit=500)
+    meal_rows = [row for row in rows if row.get("item_type") == "meal"]
+    workout_rows = [row for row in rows if row.get("item_type") == "workout"]
+
+    def _rate(items, positive_status):
+        if not items:
+            return None
+        return round(100 * len([row for row in items if row.get("status") == positive_status]) / len(items))
+
+    meal_rate = _rate(meal_rows, "ate")
+    workout_rate = _rate(workout_rows, "done")
+    rates = [rate for rate in [meal_rate, workout_rate] if rate is not None]
+    overall_rate = round(sum(rates) / len(rates)) if rates else None
+    if overall_rate is None:
+        on_track = "pending"
+    elif overall_rate >= 75:
+        on_track = "on_track"
+    elif overall_rate >= 50:
+        on_track = "watch"
+    else:
+        on_track = "off_track"
+
+    return {
+        "meal_logged": len(meal_rows),
+        "workout_logged": len(workout_rows),
+        "meal_adherence": meal_rate,
+        "workout_adherence": workout_rate,
+        "overall_adherence": overall_rate,
+        "missed_meals": len([row for row in meal_rows if row.get("status") == "missed"]),
+        "missed_workouts": len([row for row in workout_rows if row.get("status") == "missed"]),
+        "status": on_track,
+        "latest": rows[:6],
+    }
+
+
 def save_weekly_update(user_id: str, recommendation: dict):
     with engine.begin() as conn:
         conn.execute(
@@ -945,6 +1063,15 @@ def export_user_data(user_id: str):
         user = conn.execute(text("SELECT profile, goal, quiz_data, created_at, updated_at FROM users WHERE user_id=:uid"), {"uid": user_id}).mappings().first()
         plans = conn.execute(text("SELECT plan, created_at FROM user_plans WHERE user_id=:uid ORDER BY created_at DESC"), {"uid": user_id}).mappings().all()
         feedback_rows = conn.execute(text("SELECT event_id, rating, reason, created_at FROM feedback WHERE user_id=:uid ORDER BY created_at DESC"), {"uid": user_id}).mappings().all()
+        adherence_rows = conn.execute(
+            text("""
+                SELECT item_key, item_type, title, status, plan_date, note, created_at, updated_at
+                FROM item_adherence
+                WHERE user_id=:uid
+                ORDER BY updated_at DESC
+            """),
+            {"uid": user_id},
+        ).mappings().all()
         messages = conn.execute(
             text("""
                 SELECT sender_user_id, recipient_user_id, body, created_at
@@ -966,6 +1093,7 @@ def export_user_data(user_id: str):
         "plans": [{"plan": json.loads(row["plan"] or "{}"), "created_at": row["created_at"]} for row in plans],
         "calendar_events": get_calendar_events(user_id),
         "feedback": [dict(row) for row in feedback_rows],
+        "item_adherence": [dict(row) for row in adherence_rows],
         "progress_checkins": list_progress_checkins(user_id, limit=1000),
         "weekly_update": get_latest_weekly_update(user_id),
         "nudge_settings": get_nudge_settings(user_id),
@@ -978,6 +1106,7 @@ def delete_user_account_data(user_id: str):
     with engine.begin() as conn:
         for stmt in [
             "DELETE FROM feedback WHERE user_id = :uid",
+            "DELETE FROM item_adherence WHERE user_id = :uid",
             "DELETE FROM users WHERE user_id = :uid",
             "DELETE FROM user_plans WHERE user_id = :uid",
             "DELETE FROM calendar_events WHERE user_id = :uid",

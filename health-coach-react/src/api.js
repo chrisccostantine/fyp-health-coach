@@ -357,6 +357,38 @@ export const api = {
     });
   },
 
+  async getAdherence(userId = null) {
+    const targetUserId = userId || getSettings().userId || "anon";
+    return await fetchJSON(`/adherence?user_id=${encodeURIComponent(targetUserId)}`, {
+      method: "GET",
+    });
+  },
+
+  async saveAdherenceItem({
+    user_id,
+    item_key,
+    item_type,
+    title,
+    status,
+    plan_date,
+    note,
+  }) {
+    return await fetchJSON("/adherence/item", {
+      method: "POST",
+      body: JSON.stringify(
+        withUserId({
+          user_id,
+          item_key,
+          item_type,
+          title,
+          status,
+          plan_date,
+          note,
+        }),
+      ),
+    });
+  },
+
   async getProgress() {
     return await fetchJSON(`/progress?user_id=${encodeURIComponent(getSettings().userId || "anon")}`, {
       method: "GET",

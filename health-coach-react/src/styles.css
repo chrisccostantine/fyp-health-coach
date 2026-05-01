@@ -1398,6 +1398,48 @@ pre.out {
   flex: 1 1 auto;
 }
 
+.result-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:10px;
+  flex: 0 0 auto;
+}
+
+.adherence-buttons{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.adherence-btn{
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.9);
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.adherence-btn:hover{
+  border-color: rgba(255,90,31,.6);
+  background: rgba(255,90,31,.10);
+}
+
+.adherence-btn.active{
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.adherence-btn:disabled{
+  cursor: wait;
+  opacity: .7;
+}
+
 .result-icon{
   width: 44px;
   height: 44px;
@@ -1433,6 +1475,27 @@ pre.out {
   white-space: nowrap;
   align-self: center;
   flex-shrink: 0;
+}
+
+@media (max-width: 760px){
+  .result-item-trackable{
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .result-actions{
+    align-items: stretch;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .adherence-buttons{
+    width: 100%;
+  }
+
+  .adherence-btn{
+    flex: 1 1 0;
+  }
 }
 .summary-meta{
   margin-top: 4px;

@@ -1172,6 +1172,9 @@ export default function App() {
   const [feedbackStatus, setFeedbackStatus] = useState("completed");
   const [feedbackOut, setFeedbackOut] = useState("");
   const [isFeedback, setIsFeedback] = useState(false);
+  const [adherenceItems, setAdherenceItems] = useState([]);
+  const [adherenceMsg, setAdherenceMsg] = useState("");
+  const [savingAdherenceKey, setSavingAdherenceKey] = useState("");
   const [progressWeight, setProgressWeight] = useState(currentWeight || weight || "");
   const [mealAdherence, setMealAdherence] = useState(80);
   const [workoutAdherence, setWorkoutAdherence] = useState(80);
@@ -1205,10 +1208,53 @@ export default function App() {
         }
       });
 
+    api
+      .getAdherence(userId)
+      .then((data) => {
+        if (cancelled) return;
+        setAdherenceItems(Array.isArray(data?.items) ? data.items : []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAdherenceItems([]);
+        }
+      });
+
     return () => {
       cancelled = true;
     };
   }, [stage, userId]);
+
+  async function handleItemAdherence(item) {
+    const itemKey = item?.item_key || "";
+    const status = item?.status || "";
+    if (!itemKey || !status) return;
+    setSavingAdherenceKey(itemKey);
+    setAdherenceMsg("");
+    try {
+      const data = await api.saveAdherenceItem({
+        user_id: userId,
+        item_key: itemKey,
+        item_type: item.item_type,
+        title: item.title,
+        status,
+        plan_date: item.plan_date,
+      });
+      setAdherenceItems(Array.isArray(data?.items) ? data.items : []);
+      setAdherenceMsg("Progress saved and shared with your dietitian.");
+      setManagedClients((prev) =>
+        prev.map((client) =>
+          client.user_id === userId
+            ? { ...client, adherence_summary: data?.summary || client.adherence_summary }
+            : client,
+        ),
+      );
+    } catch (e) {
+      setAdherenceMsg(`Error: ${e.message}`);
+    } finally {
+      setSavingAdherenceKey("");
+    }
+  }
 
   async function handleFeedback() {
     setIsFeedback(true);
@@ -1929,6 +1975,32 @@ export default function App() {
     }
   }
 
+  function adherenceLabel(summary) {
+    switch (summary?.status) {
+      case "on_track":
+        return "On track";
+      case "watch":
+        return "Needs watch";
+      case "off_track":
+        return "Off track";
+      default:
+        return "No progress yet";
+    }
+  }
+
+  function adherenceClass(summary) {
+    switch (summary?.status) {
+      case "on_track":
+        return "text-bg-success";
+      case "watch":
+        return "text-bg-warning";
+      case "off_track":
+        return "text-bg-danger";
+      default:
+        return "text-bg-secondary";
+    }
+  }
+
   const defaultHomeStage = homeStageFor(currentUser);
 
   return (
@@ -2625,6 +2697,15 @@ export default function App() {
                               <span className={`badge ${clientReviewClass(client.plan_review)} mt-2`}>
                                 {clientReviewLabel(client.plan_review)}
                               </span>
+                              <span className={`badge ${adherenceClass(client.adherence_summary)} mt-2 ms-2`}>
+                                {adherenceLabel(client.adherence_summary)}
+                              </span>
+                              <div className="small text-muted mt-2">
+                                Meals: {client.adherence_summary?.meal_adherence ?? "--"}% | Workouts:{" "}
+                                {client.adherence_summary?.workout_adherence ?? "--"}% | Missed:{" "}
+                                {(client.adherence_summary?.missed_meals || 0) +
+                                  (client.adherence_summary?.missed_workouts || 0)}
+                              </div>
                               {client.plan_review?.note ? (
                                 <div className="small text-muted mt-2">
                                   Last note: {client.plan_review.note}
@@ -2815,7 +2896,7 @@ export default function App() {
         {/* COACH TOOLS */}
         {stage === "coachTools" && currentUser?.role !== "dietitian" && (
           <div className="row g-4">
-            <div className="col-lg-6">
+            <div className="col-lg-8">
               <div className="card card-soft">
                 <div className="card-body p-4">
                   <h2 className="h5 panel-title mb-3">Motivation</h2>
@@ -2875,104 +2956,6 @@ export default function App() {
                   </div>
 
                   <Alert variant="warning">{nudgeMsg}</Alert>
-                </div>
-              </div>
-            </div>
-
-            <div className="col-lg-6">
-              <div className="card card-soft">
-                <div className="card-body p-4">
-                  <h2 className="h5 panel-title mb-3">Feedback</h2>
-                  <p className="text-muted mb-3">
-                    Check in on today&apos;s meals and workouts so the system can adapt future plans around what actually works for you.
-                  </p>
-
-                  {coachToolFeedbackItems.length === 0 ? (
-                    <div className="feedback-empty">
-                      No meal or workout items are available yet. Generate a plan first, then come back here to log how the day went.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="feedback-section-label">Choose an item</div>
-                      <div className="feedback-item-list mb-3">
-                        {coachToolFeedbackItems.map((item) => {
-                          const selected = eventId === item.id;
-                          return (
-                            <button
-                              key={item.id}
-                              type="button"
-                              className={`feedback-item-card ${selected ? "active" : ""}`}
-                              onClick={() => setEventId(item.id)}
-                            >
-                              <div className="feedback-item-top">
-                                <span className="feedback-item-type">
-                                  {item.type === "meal" ? "Meal" : "Workout"}
-                                </span>
-                                <span className="feedback-item-time">
-                                  {fmtIso(item.starts_at || item.when)}
-                                </span>
-                              </div>
-                              <div className="feedback-item-title">
-                                {item.title || (item.type === "meal" ? "Meal" : "Workout")}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="feedback-section-label">How did it go?</div>
-                      <div className="feedback-status-grid mb-3">
-                        {[
-                          ["completed", "Completed", "I followed the plan"],
-                          ["partial", "Partly completed", "I only did some of it"],
-                          ["skipped", "Skipped", "I could not do it today"],
-                        ].map(([key, title, subtitle]) => (
-                          <button
-                            key={key}
-                            type="button"
-                            className={`feedback-status-card ${feedbackStatus === key ? "active" : ""}`}
-                            onClick={() => setFeedbackStatus(key)}
-                          >
-                            <div className="feedback-status-title">{title}</div>
-                            <div className="feedback-status-sub">{subtitle}</div>
-                          </button>
-                        ))}
-                      </div>
-
-                      <div className="row g-3">
-                        <div className="col-12">
-                          <label className="form-label">Optional note</label>
-                          <input
-                            className="form-control"
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                            placeholder="Too busy, felt strong, wanted a different meal, prefer a later workout..."
-                          />
-                        </div>
-                      </div>
-
-                      {selectedFeedbackItem ? (
-                        <div className="feedback-selected-note mt-3">
-                          You are checking in for <strong>{selectedFeedbackItem.title || "this item"}</strong>.
-                        </div>
-                      ) : null}
-                    </>
-                  )}
-
-                  <div className="d-flex gap-2 mt-3">
-                    <button
-                      className="btn btn-primary fw-bold"
-                      type="button"
-                      onClick={handleFeedback}
-                      disabled={isFeedback || coachToolFeedbackItems.length === 0 || !eventId}
-                    >
-                      {isFeedback ? <Spinner label="Saving..." /> : "Save Check-In"}
-                    </button>
-                  </div>
-
-                  <Alert variant={String(feedbackOut).startsWith("Error:") ? "warning" : "success"}>
-                    {feedbackOut}
-                  </Alert>
                 </div>
               </div>
             </div>
@@ -4261,6 +4244,10 @@ export default function App() {
           isFeedback={isFeedback}
           handleFeedback={handleFeedback}
           feedbackOut={feedbackOut}
+          adherenceItems={adherenceItems}
+          adherenceMsg={adherenceMsg}
+          savingAdherenceKey={savingAdherenceKey}
+          handleItemAdherence={handleItemAdherence}
           calendar={calendar}
           calendarMsg={calendarMsg}
           progressWeight={progressWeight}

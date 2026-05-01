@@ -34,6 +34,14 @@ function describeWorkout(workout) {
   return parts.length > 0 ? parts.join(" | ") : "Scheduled workout";
 }
 
+function planItemKey(type, item, index, activeDate) {
+  const title = item?.title || item?.name || `${type}-${index + 1}`;
+  const time = item?.time || item?.when || "";
+  return [activeDate || "current", type, index, title, time]
+    .map((part) => String(part).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-"))
+    .join(":");
+}
+
 function reviewStatusLabel(status) {
   switch (status) {
     case "pending_review":
@@ -74,6 +82,10 @@ export default function ResultsSection({
   handleFeedback,
   feedbackOut,
   copyFeedback,
+  adherenceItems = [],
+  adherenceMsg,
+  savingAdherenceKey,
+  handleItemAdherence,
 
   // progress
   progressWeight,
@@ -161,6 +173,9 @@ export default function ResultsSection({
   const safetyWarnings = Array.isArray(safety?.warnings) ? safety.warnings : [];
   const safetyDisclaimer = safety?.disclaimer || "";
   const recentProgress = Array.isArray(progressHistory) ? progressHistory.slice(0, 3) : [];
+  const adherenceByKey = new Map(
+    (Array.isArray(adherenceItems) ? adherenceItems : []).map((item) => [item.item_key, item]),
+  );
   const weeklyCheckInLocked = Boolean(weeklyLock?.locked);
   const planReview = plan?.review || null;
   const planReviewStatus = planReview?.status || "";
@@ -169,6 +184,7 @@ export default function ResultsSection({
     Boolean(planReview?.required) &&
     planReviewStatus !== "approved" &&
     !isReadOnlyClientView;
+  const canLogAdherence = !isReadOnlyClientView && !planLockedForClient;
   const activeDateLabel = activeDate
     ? new Date(`${activeDate}T00:00:00`).toLocaleDateString([], {
         weekday: "long",
@@ -358,33 +374,71 @@ export default function ResultsSection({
                         No meals in this plan.
                       </div>
                     ) : (
-                      meals.map((meal, idx) => (
-                        <div key={idx} className="result-item">
-                          <div className="result-left">
-                            <div className="result-icon" aria-hidden="true">
-                              Meal
+                      meals.map((meal, idx) => {
+                        const itemKey = planItemKey("meal", meal, idx, activeDate);
+                        const loggedStatus = adherenceByKey.get(itemKey)?.status || "";
+                        const title = meal.title || meal.name || `Meal ${idx + 1}`;
+                        return (
+                          <div key={idx} className="result-item result-item-trackable">
+                            <div className="result-left">
+                              <div className="result-icon" aria-hidden="true">
+                                Meal
+                              </div>
+                              <div>
+                                <div className="result-title">
+                                  {title}
+                                </div>
+                                <div className="result-sub">
+                                  Protein{" "}
+                                  {meal.protein ?? meal.macros?.protein ?? 0}g | Carbs{" "}
+                                  {meal.carbs ?? meal.macros?.carbs ?? 0}g | Fat{" "}
+                                  {meal.fat ?? meal.macros?.fat ?? 0}g |{" "}
+                                  {meal.kcal ?? meal.calories ?? 0} kcal
+                                </div>
+                              </div>
                             </div>
-                            <div>
-                              <div className="result-title">
-                                {meal.title || meal.name || `Meal ${idx + 1}`}
-                              </div>
-                              <div className="result-sub">
-                                Protein{" "}
-                                {meal.protein ?? meal.macros?.protein ?? 0}g | Carbs{" "}
-                                {meal.carbs ?? meal.macros?.carbs ?? 0}g | Fat{" "}
-                                {meal.fat ?? meal.macros?.fat ?? 0}g |{" "}
-                                {meal.kcal ?? meal.calories ?? 0} kcal
-                              </div>
+
+                            <div className="result-actions">
+                              <span className="time-pill">
+                                {cleanTime(meal.time || meal.when)}
+                              </span>
+                              {canLogAdherence ? (
+                                <div className="adherence-buttons" aria-label={`${title} adherence`}>
+                                  {[
+                                    ["ate", "Ate it"],
+                                    ["missed", "Missed"],
+                                  ].map(([status, label]) => (
+                                    <button
+                                      key={status}
+                                      type="button"
+                                      className={`adherence-btn ${loggedStatus === status ? "active" : ""}`}
+                                      onClick={() =>
+                                        handleItemAdherence?.({
+                                          item_key: itemKey,
+                                          item_type: "meal",
+                                          title,
+                                          status,
+                                          plan_date: activeDate,
+                                        })
+                                      }
+                                      disabled={savingAdherenceKey === itemKey}
+                                    >
+                                      {savingAdherenceKey === itemKey && loggedStatus !== status ? "Saving" : label}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
-
-                          <span className="time-pill">
-                            {cleanTime(meal.time || meal.when)}
-                          </span>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
+                  {adherenceMsg ? (
+                    <StatusAlert variant={String(adherenceMsg).startsWith("Error:") ? "warning" : "success"}>
+                      {adherenceMsg}
+                    </StatusAlert>
+                  ) : null}
                 </section>
 
                 {/* Workouts */}
@@ -400,25 +454,58 @@ export default function ResultsSection({
                         No workouts in this plan.
                       </div>
                     ) : (
-                      workouts.map((w, idx) => (
-                        <div key={idx} className="result-item">
-                          <div className="result-left">
-                            <div className="result-icon" aria-hidden="true">
-                              Move
-                            </div>
-                            <div>
-                              <div className="result-title">
-                                {w.title || w.name || `Workout ${idx + 1}`}
+                      workouts.map((w, idx) => {
+                        const itemKey = planItemKey("workout", w, idx, activeDate);
+                        const loggedStatus = adherenceByKey.get(itemKey)?.status || "";
+                        const title = w.title || w.name || `Workout ${idx + 1}`;
+                        return (
+                          <div key={idx} className="result-item result-item-trackable">
+                            <div className="result-left">
+                              <div className="result-icon" aria-hidden="true">
+                                Move
                               </div>
-                              <div className="result-sub">{describeWorkout(w)}</div>
+                              <div>
+                                <div className="result-title">
+                                  {title}
+                                </div>
+                                <div className="result-sub">{describeWorkout(w)}</div>
+                              </div>
+                            </div>
+
+                            <div className="result-actions">
+                              <span className="time-pill">
+                                {cleanTime(w.time || w.when)}
+                              </span>
+                              {canLogAdherence ? (
+                                <div className="adherence-buttons" aria-label={`${title} adherence`}>
+                                  {[
+                                    ["done", "Done"],
+                                    ["missed", "Missed"],
+                                  ].map(([status, label]) => (
+                                    <button
+                                      key={status}
+                                      type="button"
+                                      className={`adherence-btn ${loggedStatus === status ? "active" : ""}`}
+                                      onClick={() =>
+                                        handleItemAdherence?.({
+                                          item_key: itemKey,
+                                          item_type: "workout",
+                                          title,
+                                          status,
+                                          plan_date: activeDate,
+                                        })
+                                      }
+                                      disabled={savingAdherenceKey === itemKey}
+                                    >
+                                      {savingAdherenceKey === itemKey && loggedStatus !== status ? "Saving" : label}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : null}
                             </div>
                           </div>
-
-                          <span className="time-pill">
-                            {cleanTime(w.time || w.when)}
-                          </span>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </section>

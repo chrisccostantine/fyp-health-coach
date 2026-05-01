@@ -372,6 +372,36 @@ def test_managed_client_plan_requires_dietitian_review(gateway_client, monkeypat
     listed_client = clients_res.get_json()["clients"][0]
     assert listed_client["has_plan"] is True
     assert listed_client["plan_review"]["status"] == "pending_review"
+    assert listed_client["adherence_summary"]["status"] == "pending"
+
+    adherence_res = gateway_client.post(
+        "/adherence/item",
+        headers={"Authorization": f"Bearer {client_token}"},
+        json={
+            "user_id": login_res.get_json()["user"]["user_id"],
+            "item_key": "2026-05-01:meal:0:breakfast",
+            "item_type": "meal",
+            "title": "Breakfast",
+            "status": "ate",
+            "plan_date": "2026-05-01",
+        },
+    )
+    assert adherence_res.status_code == 200
+    assert adherence_res.get_json()["summary"]["meal_adherence"] == 100
+
+    dietitian_adherence_res = gateway_client.get(
+        f"/adherence?user_id={login_res.get_json()['user']['user_id']}",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+    )
+    assert dietitian_adherence_res.status_code == 200
+    assert dietitian_adherence_res.get_json()["items"][0]["status"] == "ate"
+
+    clients_after_adherence = gateway_client.get(
+        "/dietitian/clients",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+    )
+    assert clients_after_adherence.status_code == 200
+    assert clients_after_adherence.get_json()["clients"][0]["adherence_summary"]["status"] == "on_track"
 
     review_res = gateway_client.post(
         "/plan/review",
