@@ -1129,6 +1129,9 @@ pre.out {
 }
 
 .automation-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 14px 16px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1136,9 +1139,11 @@ pre.out {
 }
 
 .automation-toggle .form-check-input {
+  flex: 0 0 auto;
   width: 2.8rem;
   height: 1.45rem;
   margin-top: 0;
+  margin-left: 0;
   border-color: rgba(255, 255, 255, 0.22);
   background-color: rgba(255, 255, 255, 0.16);
   box-shadow: none !important;
@@ -1152,6 +1157,8 @@ pre.out {
 .automation-toggle .form-check-label {
   color: var(--text) !important;
   font-weight: 800;
+  margin-left: 0 !important;
+  line-height: 1.25;
 }
 
 .automation-note {
