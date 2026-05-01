@@ -176,18 +176,6 @@ export default function ResultsSection({
         day: "numeric",
       })
     : new Date().toLocaleDateString();
-  const calendarForDisplay =
-    calendar && activeDate
-      ? {
-          ...calendar,
-          events: Array.isArray(calendar?.events)
-            ? calendar.events.filter((event) =>
-                String(event?.starts_at || "").startsWith(activeDate),
-              )
-            : [],
-        }
-      : calendar;
-
   return (
     <div className="row g-4">
       <div className="col-lg-8">
@@ -770,7 +758,7 @@ export default function ResultsSection({
               <summary className="details-summary">Calendar</summary>
 
               <p className="text-muted mt-3 mb-3">
-                Meals and workouts are added, removed, and updated automatically when your plan changes.
+                Connect Google Calendar to mirror approved meals and workouts in your personal calendar.
               </p>
 
               <div className="d-flex gap-2 mb-3 flex-wrap">
@@ -811,7 +799,6 @@ export default function ResultsSection({
 
               <StatusAlert variant="warning">{calendarMsg}</StatusAlert>
               <StatusAlert variant="info">{googleCalendarMsg}</StatusAlert>
-              {calendarForDisplay ? <Calendar result={calendarForDisplay} /> : null}
             </details>
           </div>
         </div>
