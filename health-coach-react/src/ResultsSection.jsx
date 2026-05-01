@@ -192,6 +192,7 @@ export default function ResultsSection({
   const planReview = plan?.review || null;
   const planReviewStatus = planReview?.status || "";
   const planReviewLabel = reviewStatusLabel(planReviewStatus);
+  const canReviewPlan = isReadOnlyClientView && planReviewStatus === "pending_review";
   const planLockedForClient =
     Boolean(planReview?.required) &&
     planReviewStatus !== "approved" &&
@@ -591,32 +592,40 @@ export default function ResultsSection({
                       <span className="count-pill">{planReviewLabel || "Review"}</span>
                     </div>
 
-                    <textarea
-                      className="form-control"
-                      rows="3"
-                      value={reviewNote}
-                      onChange={(e) => setReviewNote?.(e.target.value)}
-                      placeholder="Optional review note for the client"
-                    />
+                    {canReviewPlan ? (
+                      <>
+                        <textarea
+                          className="form-control"
+                          rows="3"
+                          value={reviewNote}
+                          onChange={(e) => setReviewNote?.(e.target.value)}
+                          placeholder="Optional review note for the client"
+                        />
 
-                    <div className="d-flex flex-wrap gap-2 mt-3">
-                      <button
-                        className="btn btn-primary fw-bold"
-                        type="button"
-                        onClick={() => handlePlanReview?.("approved")}
-                        disabled={isReviewingPlan}
-                      >
-                        {isReviewingPlan ? <Loading label="Saving..." /> : "Accept"}
-                      </button>
-                      <button
-                        className="btn btn-outline-danger"
-                        type="button"
-                        onClick={() => handlePlanReview?.("rejected")}
-                        disabled={isReviewingPlan}
-                      >
-                        Reject Plan
-                      </button>
-                    </div>
+                        <div className="d-flex flex-wrap gap-2 mt-3">
+                          <button
+                            className="btn btn-primary fw-bold"
+                            type="button"
+                            onClick={() => handlePlanReview?.("approved")}
+                            disabled={isReviewingPlan}
+                          >
+                            {isReviewingPlan ? <Loading label="Saving..." /> : "Accept"}
+                          </button>
+                          <button
+                            className="btn btn-outline-danger"
+                            type="button"
+                            onClick={() => handlePlanReview?.("rejected")}
+                            disabled={isReviewingPlan}
+                          >
+                            Reject Plan
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <StatusAlert variant="info">
+                        No approval action is needed until the client generates a new plan or changes this plan through chat.
+                      </StatusAlert>
+                    )}
 
                     <StatusAlert variant={String(reviewMsg).startsWith("Error:") ? "warning" : "success"}>
                       {reviewMsg}
