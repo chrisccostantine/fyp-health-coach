@@ -8,6 +8,7 @@ class UserProfile(BaseModel):
     weight_kg: Optional[float] = None
     activity_level: Optional[Literal["sedentary","light","moderate","active","very_active"]] = "light"
     diet: Optional[Dict] = None
+    preferences: Optional[Dict] = None
     injuries: Optional[List[str]] = None
     equipment: Optional[List[str]] = None
     time_windows: Optional[List[str]] = None  # e.g., ["06:00-07:00", "18:00-19:00"]

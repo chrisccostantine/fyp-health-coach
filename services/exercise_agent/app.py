@@ -24,6 +24,8 @@ WORKOUT_LIBRARY = {
             "intensity": "high",
             "when": "18:00",
             "equipment": [],
+            "locations": ["home", "gym", "mixed"],
+            "avoid_injuries": ["knee", "back"],
         },
         {
             "name": "Incline Walk + Core",
@@ -31,6 +33,8 @@ WORKOUT_LIBRARY = {
             "intensity": "medium",
             "when": "07:00",
             "equipment": ["treadmill"],
+            "locations": ["gym", "mixed"],
+            "avoid_injuries": ["knee"],
         },
         {
             "name": "Dumbbell MetCon Intervals",
@@ -38,6 +42,8 @@ WORKOUT_LIBRARY = {
             "intensity": "high",
             "when": "17:30",
             "equipment": ["dumbbells"],
+            "locations": ["home", "gym", "mixed"],
+            "avoid_injuries": ["shoulder", "back"],
         },
     ],
     "muscle_gain": [
@@ -47,6 +53,8 @@ WORKOUT_LIBRARY = {
             "intensity": "medium",
             "when": "18:00",
             "equipment": ["dumbbells", "bench"],
+            "locations": ["gym", "mixed"],
+            "avoid_injuries": ["shoulder"],
         },
         {
             "name": "Lower Body Strength",
@@ -54,6 +62,8 @@ WORKOUT_LIBRARY = {
             "intensity": "medium",
             "when": "08:00",
             "equipment": ["dumbbells"],
+            "locations": ["home", "gym", "mixed"],
+            "avoid_injuries": ["knee", "back"],
         },
         {
             "name": "Pull-Up Progression",
@@ -61,6 +71,8 @@ WORKOUT_LIBRARY = {
             "intensity": "medium",
             "when": "19:00",
             "equipment": ["pullup_bar"],
+            "locations": ["home", "gym", "mixed"],
+            "avoid_injuries": ["shoulder", "elbow"],
         },
     ],
     "endurance": [
@@ -70,6 +82,8 @@ WORKOUT_LIBRARY = {
             "intensity": "medium",
             "when": "18:30",
             "equipment": [],
+            "locations": ["home", "gym", "mixed"],
+            "avoid_injuries": ["knee", "ankle"],
         },
         {
             "name": "Zone 2 Ride",
@@ -77,6 +91,8 @@ WORKOUT_LIBRARY = {
             "intensity": "low",
             "when": "07:30",
             "equipment": ["bike"],
+            "locations": ["gym", "mixed"],
+            "avoid_injuries": [],
         },
         {
             "name": "Rowing Intervals",
@@ -84,6 +100,8 @@ WORKOUT_LIBRARY = {
             "intensity": "high",
             "when": "17:00",
             "equipment": ["rower"],
+            "locations": ["gym", "mixed"],
+            "avoid_injuries": ["back", "shoulder"],
         },
     ],
     "general_health": [
@@ -93,6 +111,8 @@ WORKOUT_LIBRARY = {
             "intensity": "low",
             "when": "19:00",
             "equipment": [],
+            "locations": ["home", "gym", "mixed"],
+            "avoid_injuries": [],
         },
         {
             "name": "Bodyweight Strength Basics",
@@ -100,6 +120,17 @@ WORKOUT_LIBRARY = {
             "intensity": "low",
             "when": "07:30",
             "equipment": [],
+            "locations": ["home", "gym", "mixed"],
+            "avoid_injuries": ["wrist", "shoulder"],
+        },
+        {
+            "name": "Chair Mobility + Core Stability",
+            "duration_min": 18,
+            "intensity": "low",
+            "when": "12:30",
+            "equipment": [],
+            "locations": ["home", "gym", "mixed"],
+            "avoid_injuries": [],
         },
     ],
 }
@@ -128,6 +159,62 @@ def _workout_matches_equipment(workout: Dict[str, Any], equipment: set[str]) -> 
     return required.issubset(equipment)
 
 
+def _profile_preferences(profile: Dict[str, Any]) -> Dict[str, Any]:
+    prefs = profile.get("preferences") if isinstance(profile.get("preferences"), dict) else {}
+    return {
+        "location": str(prefs.get("workout_location") or "mixed").strip().lower() or "mixed",
+        "duration_pref": str(prefs.get("workout_duration_pref") or "auto").strip().lower(),
+        "training_freq": str(prefs.get("training_freq") or "").strip().lower(),
+        "fitness_level": str(prefs.get("fitness_level") or "beginner").strip().lower(),
+        "injuries": [
+            str(item).strip().lower()
+            for item in (profile.get("injuries") or [])
+            if str(item).strip()
+        ],
+    }
+
+
+def _duration_cap(duration_pref: str) -> int | None:
+    return {
+        "10_15": 15,
+        "20_30": 30,
+        "30_40": 40,
+        "40_60": 60,
+    }.get(duration_pref)
+
+
+def _workout_matches_preferences(workout: Dict[str, Any], prefs: Dict[str, Any]) -> bool:
+    location = prefs["location"]
+    locations = workout.get("locations") or ["home", "gym", "mixed"]
+    if location in {"home", "gym"} and location not in locations:
+        return False
+
+    avoid = {str(item).lower() for item in workout.get("avoid_injuries", [])}
+    if avoid.intersection(set(prefs["injuries"])):
+        return False
+    return True
+
+
+def _personalize_workout(workout: Dict[str, Any], prefs: Dict[str, Any]) -> Dict[str, Any]:
+    duration = int(workout.get("duration_min", 30))
+    cap = _duration_cap(prefs["duration_pref"])
+    if cap:
+        duration = min(duration, cap)
+    if prefs["training_freq"] == "not_at_all" or prefs["fitness_level"] == "beginner":
+        duration = min(duration, 30)
+
+    intensity = workout.get("intensity", "medium")
+    if prefs["training_freq"] == "not_at_all" or prefs["injuries"]:
+        intensity = "low" if intensity == "medium" else "medium" if intensity == "high" else intensity
+
+    return {
+        "name": workout["name"],
+        "duration_min": max(10, duration),
+        "intensity": intensity,
+        "when": workout.get("when"),
+    }
+
+
 def build_rule_based_exercise(
     profile: Dict[str, Any], goal: Dict[str, Any], equipment: Optional[List[str]] = None
 ) -> Dict[str, Any]:
@@ -136,24 +223,22 @@ def build_rule_based_exercise(
     preferred = WORKOUT_LIBRARY.get(goal_key, WORKOUT_LIBRARY["general_health"])
 
     equipment_set = _normalize_equipment(equipment)
-    matched = [w for w in preferred if _workout_matches_equipment(w, equipment_set)]
+    prefs = _profile_preferences(profile)
+    matched = [
+        w
+        for w in preferred
+        if _workout_matches_equipment(w, equipment_set)
+        and _workout_matches_preferences(w, prefs)
+    ]
 
     if not matched:
         # Fallback to workouts that do not require equipment.
-        matched = [w for w in preferred if not w.get("equipment")]
+        matched = [w for w in preferred if not w.get("equipment") and _workout_matches_preferences(w, prefs)]
 
     if not matched:
         matched = WORKOUT_LIBRARY["general_health"]
 
-    workouts = [
-        {
-            "name": w["name"],
-            "duration_min": int(w.get("duration_min", 30)),
-            "intensity": w.get("intensity", "medium"),
-            "when": w.get("when"),
-        }
-        for w in matched[:2]
-    ]
+    workouts = [_personalize_workout(w, prefs) for w in matched[:2]]
 
     return {"workouts": workouts}
 

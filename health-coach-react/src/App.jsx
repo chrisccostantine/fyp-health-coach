@@ -839,6 +839,28 @@ export default function App() {
           height_cm: toMetricHeight(heightValue || height, heightUnit),
           weight_kg: toMetricWeight(currentWeight || weight, weightUnit),
           activity_level: activity,
+          diet: {
+            preference: dietPref,
+            preferred_vegetables: letFoodDecide ? [] : veggies,
+            sugar_frequency: sugarFreq,
+            water_intake: waterIntake,
+          },
+          preferences: {
+            target_weight_kg: toMetricWeight(targetWeight || currentWeight || weight, weightUnit),
+            body_type: bodyType,
+            target_body: targetBody,
+            fitness_level: fitnessLevel,
+            workout_location: workoutLocation,
+            training_freq: trainingFreq,
+            workout_duration_pref: workoutDurationPref,
+            additional_goals: additionalGoals,
+            pushups_level: pushupsLevel,
+            pullups_level: pullupsLevel,
+          },
+          equipment: (equipment || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
         },
         goal: { type: goalType, deficit_kcal: +deficit },
         equipment: (equipment || "")
@@ -866,6 +888,8 @@ export default function App() {
         quizData: {
           ageBand, gender, bodyType, goalPick, targetBody, dietPref,
           fitnessLevel, workoutLocation, trainingFreq, workoutDurationPref,
+          targetWeight, heightUnit, weightUnit, sugarFreq, waterIntake,
+          additionalGoals, pushupsLevel, pullupsLevel,
         },
       }).catch(() => {}); // non-blocking; failures are silent
       if (autoGoResults) setStage("results");

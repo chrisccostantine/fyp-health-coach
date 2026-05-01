@@ -37,14 +37,107 @@ def tdee(profile: Dict[str, Any]) -> int:
 
 # -------------------- STATIC RECIPES --------------------
 RECIPES = [
-    {"name": "Greek Yogurt + Berries + Oats", "macros": {"protein": 35, "carbs": 50, "fat": 8}},
-    {"name": "Chicken Quinoa Bowl", "macros": {"protein": 45, "carbs": 55, "fat": 12}},
-    {"name": "Tuna Salad Wrap", "macros": {"protein": 30, "carbs": 35, "fat": 10}},
-    {"name": "Lentil Veggie Stew", "macros": {"protein": 24, "carbs": 40, "fat": 7}},
-    {"name": "Salmon + Rice + Greens", "macros": {"protein": 42, "carbs": 60, "fat": 14}},
+    {
+        "name": "Greek Yogurt + Berries + Oats",
+        "macros": {"protein": 35, "carbs": 50, "fat": 8},
+        "tags": {"vegetarian", "mediterranean"},
+        "ingredients": {"yogurt", "berries", "oats"},
+    },
+    {
+        "name": "Chicken Quinoa Bowl",
+        "macros": {"protein": 45, "carbs": 55, "fat": 12},
+        "tags": {"high_protein", "mediterranean"},
+        "ingredients": {"chicken", "quinoa", "spinach", "tomato"},
+    },
+    {
+        "name": "Tuna Salad Wrap",
+        "macros": {"protein": 30, "carbs": 35, "fat": 10},
+        "tags": {"high_protein", "mediterranean"},
+        "ingredients": {"tuna", "wrap", "cucumber", "tomato"},
+    },
+    {
+        "name": "Lentil Veggie Stew",
+        "macros": {"protein": 24, "carbs": 40, "fat": 7},
+        "tags": {"vegetarian", "vegan", "mediterranean"},
+        "ingredients": {"lentils", "carrot", "tomato", "onion", "spinach"},
+    },
+    {
+        "name": "Salmon + Rice + Greens",
+        "macros": {"protein": 42, "carbs": 60, "fat": 14},
+        "tags": {"high_protein", "mediterranean"},
+        "ingredients": {"salmon", "rice", "spinach", "asparagus"},
+    },
+    {
+        "name": "Tofu Veggie Stir Fry",
+        "macros": {"protein": 30, "carbs": 42, "fat": 13},
+        "tags": {"vegetarian", "vegan"},
+        "ingredients": {"tofu", "broccoli", "bell pepper", "rice"},
+    },
+    {
+        "name": "Chickpea Cucumber Tomato Bowl",
+        "macros": {"protein": 22, "carbs": 48, "fat": 11},
+        "tags": {"vegetarian", "vegan", "mediterranean"},
+        "ingredients": {"chickpeas", "cucumber", "tomato", "onion"},
+    },
+    {
+        "name": "Eggs + Avocado + Cucumber Plate",
+        "macros": {"protein": 28, "carbs": 12, "fat": 28},
+        "tags": {"vegetarian", "keto"},
+        "ingredients": {"eggs", "avocado", "cucumber"},
+    },
+    {
+        "name": "Grilled Chicken + Avocado Salad",
+        "macros": {"protein": 44, "carbs": 14, "fat": 24},
+        "tags": {"keto", "high_protein"},
+        "ingredients": {"chicken", "avocado", "cucumber", "spinach"},
+    },
 ]
 
 MEAL_TIMES = ["08:00", "13:00", "19:00"]
+
+
+def _normalize_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip().lower() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip().lower()]
+    return []
+
+
+def _diet_preferences(profile: Dict[str, Any]) -> Dict[str, Any]:
+    diet = profile.get("diet") if isinstance(profile.get("diet"), dict) else {}
+    preference = str(diet.get("preference") or diet.get("diet_pref") or "none").strip().lower()
+    if preference in {"i don't follow any diet", "none", "no", ""}:
+        preference = "none"
+    return {
+        "preference": preference,
+        "preferred_vegetables": _normalize_list(diet.get("preferred_vegetables")),
+        "allergies": _normalize_list(diet.get("allergies")),
+    }
+
+
+def _recipe_matches(recipe: Dict[str, Any], prefs: Dict[str, Any]) -> bool:
+    tags = set(recipe.get("tags", set()))
+    ingredients = {str(item).lower() for item in recipe.get("ingredients", set())}
+    preference = prefs["preference"]
+
+    if preference in {"vegetarian", "vegan", "keto", "mediterranean"} and preference not in tags:
+        return False
+    if preference == "vegan" and ingredients.intersection({"yogurt", "eggs", "chicken", "tuna", "salmon"}):
+        return False
+    if ingredients.intersection(set(prefs["allergies"])):
+        return False
+    return True
+
+
+def _rank_recipes(recipes: list[Dict[str, Any]], prefs: Dict[str, Any]) -> list[Dict[str, Any]]:
+    preferred_vegetables = set(prefs["preferred_vegetables"])
+
+    def score(recipe: Dict[str, Any]) -> int:
+        ingredients = {str(item).lower() for item in recipe.get("ingredients", set())}
+        return len(ingredients.intersection(preferred_vegetables))
+
+    return sorted(recipes, key=score, reverse=True)
 
 
 def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict[str, Any]:
@@ -53,10 +146,15 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict
     target = max(base - deficit, 1400)
     per = target // 3
     meals = []
+    prefs = _diet_preferences(profile)
+    candidates = [recipe for recipe in RECIPES if _recipe_matches(recipe, prefs)]
+    if len(candidates) < 3 and prefs["preference"] == "none":
+        candidates = [recipe for recipe in RECIPES if not set(recipe.get("ingredients", set())).intersection(set(prefs["allergies"]))]
+    candidates = _rank_recipes(candidates or RECIPES, prefs)
 
     total_p = total_c = total_f = 0
 
-    for idx, r in enumerate(RECIPES[:3]):
+    for idx, r in enumerate(candidates[:3]):
         p = float(r["macros"]["protein"])
         c = float(r["macros"]["carbs"])
         f = float(r["macros"]["fat"])
