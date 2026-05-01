@@ -729,104 +729,110 @@ export default function ResultsSection({
         <div className="card card-soft">
           <div className="card-body p-4">
             <details className="details-soft compact-details" open>
-              <summary className="details-summary">Weekly Check-In</summary>
+              <summary className="details-summary">
+                {isReadOnlyClientView ? "Client Progress" : "Weekly Check-In"}
+              </summary>
 
-              {weeklyCheckInLocked ? (
-                <div className="alert alert-info mt-3 mb-0 small">
-                  This week's check-in is saved. The next check-in opens on{" "}
-                  <strong>{weeklyLock?.available_on || "next week"}</strong>.
-                </div>
+              {!isReadOnlyClientView ? (
+                <>
+                  {weeklyCheckInLocked ? (
+                    <div className="alert alert-info mt-3 mb-0 small">
+                      This week's check-in is saved. The next check-in opens on{" "}
+                      <strong>{weeklyLock?.available_on || "next week"}</strong>.
+                    </div>
+                  ) : null}
+
+                  <div className="row g-3 mt-2">
+                    <div className="col-12">
+                      <label className="form-label">Current weight (kg)</label>
+                      <input
+                        className="form-control"
+                        type="number"
+                        min="30"
+                        max="300"
+                        step="0.1"
+                        value={progressWeight}
+                        onChange={(e) => setProgressWeight?.(e.target.value)}
+                        disabled={weeklyCheckInLocked}
+                      />
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label">Meal adherence: {mealAdherence}%</label>
+                      <input
+                        className="form-range"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={mealAdherence}
+                        onChange={(e) => setMealAdherence?.(e.target.value)}
+                        disabled={weeklyCheckInLocked}
+                      />
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label">Workout adherence: {workoutAdherence}%</label>
+                      <input
+                        className="form-range"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={workoutAdherence}
+                        onChange={(e) => setWorkoutAdherence?.(e.target.value)}
+                        disabled={weeklyCheckInLocked}
+                      />
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label">Energy: {energyLevel}/5</label>
+                      <input
+                        className="form-range"
+                        type="range"
+                        min="1"
+                        max="5"
+                        value={energyLevel}
+                        onChange={(e) => setEnergyLevel?.(e.target.value)}
+                        disabled={weeklyCheckInLocked}
+                      />
+                    </div>
+
+                    <div className="col-12">
+                      <label className="form-label">Notes</label>
+                      <textarea
+                        className="form-control"
+                        rows="2"
+                        value={progressNotes}
+                        onChange={(e) => setProgressNotes?.(e.target.value)}
+                        placeholder="Sleep, hunger, soreness, missed meals..."
+                        disabled={weeklyCheckInLocked}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="d-grid gap-2 mt-3">
+                    <button
+                      className="btn btn-primary fw-bold"
+                      type="button"
+                      onClick={handleProgressCheckIn}
+                      disabled={isProgressBusy || weeklyCheckInLocked}
+                    >
+                      {isProgressBusy ? <Loading label="Saving..." /> : weeklyCheckInLocked ? "Locked This Week" : "Save Check-In"}
+                    </button>
+                    <button
+                      className="btn btn-outline-light"
+                      type="button"
+                      onClick={handleWeeklyUpdate}
+                      disabled={isProgressBusy}
+                    >
+                      Generate Weekly Update
+                    </button>
+                  </div>
+
+                  <StatusAlert variant={String(progressMsg).startsWith("Error:") ? "warning" : "success"}>
+                    {progressMsg}
+                  </StatusAlert>
+                </>
               ) : null}
-
-              <div className="row g-3 mt-2">
-                <div className="col-12">
-                  <label className="form-label">Current weight (kg)</label>
-                  <input
-                    className="form-control"
-                    type="number"
-                    min="30"
-                    max="300"
-                    step="0.1"
-                    value={progressWeight}
-                    onChange={(e) => setProgressWeight?.(e.target.value)}
-                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
-                  />
-                </div>
-
-                <div className="col-12">
-                  <label className="form-label">Meal adherence: {mealAdherence}%</label>
-                  <input
-                    className="form-range"
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={mealAdherence}
-                    onChange={(e) => setMealAdherence?.(e.target.value)}
-                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
-                  />
-                </div>
-
-                <div className="col-12">
-                  <label className="form-label">Workout adherence: {workoutAdherence}%</label>
-                  <input
-                    className="form-range"
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={workoutAdherence}
-                    onChange={(e) => setWorkoutAdherence?.(e.target.value)}
-                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
-                  />
-                </div>
-
-                <div className="col-12">
-                  <label className="form-label">Energy: {energyLevel}/5</label>
-                  <input
-                    className="form-range"
-                    type="range"
-                    min="1"
-                    max="5"
-                    value={energyLevel}
-                    onChange={(e) => setEnergyLevel?.(e.target.value)}
-                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
-                  />
-                </div>
-
-                <div className="col-12">
-                  <label className="form-label">Notes</label>
-                  <textarea
-                    className="form-control"
-                    rows="2"
-                    value={progressNotes}
-                    onChange={(e) => setProgressNotes?.(e.target.value)}
-                    placeholder="Sleep, hunger, soreness, missed meals..."
-                    disabled={isReadOnlyClientView || weeklyCheckInLocked}
-                  />
-                </div>
-              </div>
-
-              <div className="d-grid gap-2 mt-3">
-                <button
-                  className="btn btn-primary fw-bold"
-                  type="button"
-                  onClick={handleProgressCheckIn}
-                  disabled={isProgressBusy || isReadOnlyClientView || weeklyCheckInLocked}
-                >
-                  {isProgressBusy ? <Loading label="Saving..." /> : weeklyCheckInLocked ? "Locked This Week" : "Save Check-In"}
-                </button>
-                <button
-                  className="btn btn-outline-light"
-                  type="button"
-                  onClick={handleWeeklyUpdate}
-                  disabled={isProgressBusy || isReadOnlyClientView}
-                >
-                  Generate Weekly Update
-                </button>
-              </div>
-
-              <StatusAlert variant={String(progressMsg).startsWith("Error:") ? "warning" : "success"}>
-                {progressMsg}
-              </StatusAlert>
 
               {weeklyUpdate ? (
                 <div className="alert alert-dark border-0 mt-3 small">
@@ -855,11 +861,16 @@ export default function ResultsSection({
                     </div>
                   ))}
                 </div>
+              ) : isReadOnlyClientView ? (
+                <div className="feedback-empty mt-3">
+                  No weekly check-ins have been submitted yet.
+                </div>
               ) : null}
             </details>
           </div>
         </div>
 
+        {!isReadOnlyClientView ? (
         <div className="card card-soft mt-4">
           <div className="card-body p-4">
             <details className="details-soft compact-details">
@@ -910,6 +921,7 @@ export default function ResultsSection({
             </details>
           </div>
         </div>
+        ) : null}
 
         {showAdvancedPanels ? (
           <div className="card card-soft mt-4">
