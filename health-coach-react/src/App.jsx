@@ -2713,45 +2713,6 @@ export default function App() {
                               ) : null}
                             </div>
                             <div className="d-flex flex-column gap-2 client-review-actions">
-                              <textarea
-                                className="form-control form-control-sm"
-                                rows="2"
-                                value={clientReviewNotes[client.user_id] || ""}
-                                onChange={(e) =>
-                                  setClientReviewNotes((prev) => ({
-                                    ...prev,
-                                    [client.user_id]: e.target.value,
-                                  }))
-                                }
-                                placeholder="Review note or requested edit"
-                                disabled={!client.has_plan || isReviewingPlan}
-                              />
-                              <div className="d-flex flex-wrap gap-2">
-                                <button
-                                  type="button"
-                                  className="btn btn-primary btn-sm"
-                                  onClick={() => handleDashboardPlanReview(client, "approved")}
-                                  disabled={!client.has_plan || isReviewingPlan}
-                                >
-                                  Accept
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-outline-light btn-sm"
-                                  onClick={() => handleDashboardPlanReview(client, "changes_requested")}
-                                  disabled={!client.has_plan || isReviewingPlan}
-                                >
-                                  Request Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-outline-danger btn-sm"
-                                  onClick={() => handleDashboardPlanReview(client, "rejected")}
-                                  disabled={!client.has_plan || isReviewingPlan}
-                                >
-                                  Reject
-                                </button>
-                              </div>
                               <div className="d-flex flex-wrap gap-2">
                               <button
                                 type="button"

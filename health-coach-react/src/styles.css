@@ -1440,6 +1440,38 @@ pre.out {
   opacity: .7;
 }
 
+.adherence-status-pill{
+  min-height: 34px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.88);
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.adherence-status-pill.ate,
+.adherence-status-pill.done{
+  border-color: rgba(40,199,111,.55);
+  background: rgba(40,199,111,.16);
+  color: #78f0a5;
+}
+
+.adherence-status-pill.missed{
+  border-color: rgba(255,193,7,.55);
+  background: rgba(255,193,7,.14);
+  color: #ffd666;
+}
+
+.adherence-status-pill.not-logged{
+  color: var(--muted);
+}
+
 .result-icon{
   width: 44px;
   height: 44px;

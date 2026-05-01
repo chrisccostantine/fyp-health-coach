@@ -42,6 +42,18 @@ function planItemKey(type, item, index, activeDate) {
     .join(":");
 }
 
+function adherenceStatusLabel(type, status) {
+  if (type === "meal") {
+    if (status === "ate") return "Ate it";
+    if (status === "missed") return "Missed meal";
+  }
+  if (type === "workout") {
+    if (status === "done") return "Done";
+    if (status === "missed") return "Missed workout";
+  }
+  return "Not logged";
+}
+
 function reviewStatusLabel(status) {
   switch (status) {
     case "pending_review":
@@ -427,6 +439,10 @@ export default function ResultsSection({
                                     </button>
                                   ))}
                                 </div>
+                              ) : isReadOnlyClientView ? (
+                                <span className={`adherence-status-pill ${loggedStatus || "not-logged"}`}>
+                                  {adherenceStatusLabel("meal", loggedStatus)}
+                                </span>
                               ) : null}
                             </div>
                           </div>
@@ -501,6 +517,10 @@ export default function ResultsSection({
                                     </button>
                                   ))}
                                 </div>
+                              ) : isReadOnlyClientView ? (
+                                <span className={`adherence-status-pill ${loggedStatus || "not-logged"}`}>
+                                  {adherenceStatusLabel("workout", loggedStatus)}
+                                </span>
                               ) : null}
                             </div>
                           </div>
@@ -586,15 +606,7 @@ export default function ResultsSection({
                         onClick={() => handlePlanReview?.("approved")}
                         disabled={isReviewingPlan}
                       >
-                        {isReviewingPlan ? <Loading label="Saving..." /> : "Approve Plan"}
-                      </button>
-                      <button
-                        className="btn btn-outline-light"
-                        type="button"
-                        onClick={() => handlePlanReview?.("changes_requested")}
-                        disabled={isReviewingPlan}
-                      >
-                        Request Changes
+                        {isReviewingPlan ? <Loading label="Saving..." /> : "Accept"}
                       </button>
                       <button
                         className="btn btn-outline-danger"
