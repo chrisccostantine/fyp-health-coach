@@ -195,7 +195,7 @@ RECIPE_CATALOG = build_recipe_catalog()
 def scale_recipe_to_calories(recipe: dict[str, Any], target_calories: float) -> dict[str, Any]:
     scaled = deepcopy(recipe)
     current = float(recipe["nutrition"]["calories"] or 1)
-    factor = max(0.55, min(1.75, float(target_calories) / current))
+    factor = max(0.55, min(1.25, float(target_calories) / current))
     scaled["ingredients_detail"] = [
         {**item, "grams": round(float(item["grams"]) * factor, 1)}
         for item in recipe["ingredients_detail"]

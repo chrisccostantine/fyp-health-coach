@@ -39,6 +39,7 @@ def tdee(profile: Dict[str, Any]) -> int:
 
 MEAL_TIMES = ["08:00", "13:00", "19:00"]
 MEAL_POOL_SIZE = 35
+PLANNED_SNACK_CALORIES = 250
 
 
 def _normalize_list(value: Any) -> list[str]:
@@ -123,7 +124,8 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict
     base = tdee(profile)
     deficit = int(goal.get("deficit_kcal", 0) or 0)
     target = max(base - deficit, 1400)
-    per = target // 3
+    meal_calorie_budget = max(1050, target - PLANNED_SNACK_CALORIES)
+    per = max(330, min(650, meal_calorie_budget // 3))
     meals = []
     prefs = _diet_preferences(profile)
     candidates = [recipe for recipe in RECIPE_CATALOG if _recipe_matches(recipe, prefs)]

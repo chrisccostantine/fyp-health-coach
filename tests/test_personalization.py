@@ -66,6 +66,25 @@ def test_diet_filters_allergy_ingredients():
     assert all("Tuna" not in meal["name"] for meal in plan["meals"])
 
 
+def test_diet_uses_realistic_daily_calories_and_protein():
+    plan = build_rule_based_diet(
+        {
+            "age": 32,
+            "sex": "F",
+            "height_cm": 165,
+            "weight_kg": 62,
+            "activity_level": "light",
+        },
+        {"type": "fat_loss", "deficit_kcal": 300},
+    )
+
+    meal_calories = sum(meal["calories"] for meal in plan["meals"])
+    meal_protein = sum(meal["macros"]["protein"] for meal in plan["meals"])
+    assert 1050 <= meal_calories <= 1850
+    assert meal_protein <= 140
+    assert all(meal["macros"]["protein"] <= 55 for meal in plan["meals"])
+
+
 def test_month_plan_does_not_repeat_meals_within_first_week():
     meals = [
         {"name": f"Meal {idx}", "calories": 400, "macros": {"protein": 30, "carbs": 40, "fat": 10}}

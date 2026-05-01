@@ -840,7 +840,7 @@ def _build_day_meals(base_meals: list[dict], offset: int):
         variant["when"] = variant.get("when") or default_times[min(idx, len(default_times) - 1)]
         calories = int(variant.get("calories", 0) or 0)
         if calories > 0:
-            variant["calories"] = max(180, calories + ((offset + idx) % 3 - 1) * 35)
+            variant["calories"] = max(180, calories + ((offset + idx) % 3 - 1) * 20)
         meals.append(variant)
 
     snack = dict(SNACK_POOL[offset % len(SNACK_POOL)])
