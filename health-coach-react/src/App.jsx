@@ -1998,29 +1998,6 @@ export default function App() {
                       <FieldNote>
                         Your account is ready. Continue to your dashboard.
                       </FieldNote>
-                      <div className="d-flex flex-wrap gap-2 mt-3">
-                        <button
-                          className="btn btn-outline-light btn-sm"
-                          type="button"
-                          onClick={handleExportPrivacyData}
-                          disabled={isPrivacyBusy}
-                        >
-                          Export My Data
-                        </button>
-                        <button
-                          className="btn btn-outline-danger btn-sm"
-                          type="button"
-                          onClick={handleDeleteAccount}
-                          disabled={isPrivacyBusy}
-                        >
-                          Delete Account
-                        </button>
-                      </div>
-                      {privacyMsg ? (
-                        <div className={`alert ${String(privacyMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
-                          {privacyMsg}
-                        </div>
-                      ) : null}
                     </>
                   ) : (
                     <>
@@ -2400,6 +2377,33 @@ export default function App() {
                     {changePasswordMsg ? (
                       <div className={`alert ${String(changePasswordMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
                         {changePasswordMsg}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="security-panel mt-4">
+                    <div className="fw-semibold mb-2">Privacy</div>
+                    <div className="d-grid gap-2">
+                      <button
+                        className="btn btn-outline-light"
+                        type="button"
+                        onClick={handleExportPrivacyData}
+                        disabled={isPrivacyBusy}
+                      >
+                        {isPrivacyBusy ? <Spinner label="Preparing..." /> : "Export My Data"}
+                      </button>
+                      <button
+                        className="btn btn-outline-danger"
+                        type="button"
+                        onClick={handleDeleteAccount}
+                        disabled={isPrivacyBusy}
+                      >
+                        Delete Account
+                      </button>
+                    </div>
+                    {privacyMsg ? (
+                      <div className={`alert ${String(privacyMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
+                        {privacyMsg}
                       </div>
                     ) : null}
                   </div>
