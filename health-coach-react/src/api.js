@@ -21,6 +21,8 @@ const DEFAULT_SETTINGS = {
   userId: "",
   authToken: "",
   currentUser: null,
+  currentStage: "",
+  messageInboxTab: "chats",
 };
 
 // Toggle debug logs if needed
@@ -130,6 +132,8 @@ export function clearAuthSession() {
     authToken: "",
     currentUser: null,
     userId: "",
+    currentStage: "auth",
+    messageInboxTab: "chats",
   });
 }
 
@@ -259,6 +263,13 @@ export const api = {
     return await fetchJSON("/auth/change-password", {
       method: "POST",
       body: JSON.stringify({ current_password, new_password }),
+    });
+  },
+
+  async updateProfile({ display_name, profile_image_data }) {
+    return await fetchJSON("/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify({ display_name, profile_image_data }),
     });
   },
 

@@ -1746,10 +1746,18 @@ pre.out {
 }
 
 .inbox-row{
+  display:flex !important;
+  align-items:center;
+  gap:12px;
   border: 1px solid rgba(255,255,255,.08) !important;
   background: #17201d !important;
   color: #f8fff9 !important;
   padding: 14px 16px !important;
+}
+
+.inbox-row-body{
+  min-width:0;
+  flex:1 1 auto;
 }
 
 .inbox-row:hover{
@@ -1871,6 +1879,51 @@ pre.out {
   font-weight:700;
 }
 
+.account-avatar{
+  width:44px;
+  height:44px;
+  flex:0 0 auto;
+  display:inline-grid;
+  place-items:center;
+  border-radius:999px;
+  border:2px solid rgba(255,255,255,.14);
+  background:linear-gradient(135deg, rgba(255,90,31,.34), rgba(34,197,94,.18));
+  color:#fff;
+  font-weight:950;
+  overflow:hidden;
+}
+
+.account-avatar img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+
+.account-avatar-sm{
+  width:34px;
+  height:34px;
+  font-size:.78rem;
+}
+
+.account-avatar-lg{
+  width:76px;
+  height:76px;
+  font-size:1.25rem;
+}
+
+.account-avatar.has-update{
+  border-color:#ff5a1f;
+  box-shadow:0 0 0 3px rgba(255,90,31,.26), 0 0 0 6px rgba(255,90,31,.08);
+}
+
+.client-list-identity{
+  display:flex;
+  align-items:flex-start;
+  gap:12px;
+  min-width:0;
+}
+
 .client-update-composer{
   display:flex;
   flex-direction:column;
@@ -1915,6 +1968,13 @@ pre.out {
   align-items:flex-start;
   justify-content:space-between;
   gap:12px;
+}
+
+.client-update-author{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:0;
 }
 
 .client-update-name{

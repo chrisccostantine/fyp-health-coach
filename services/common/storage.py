@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS auth_users (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     display_name TEXT,
+    profile_image_data TEXT,
     role TEXT DEFAULT 'user',
     managed_by_user_id TEXT,
     health_data_consent INTEGER DEFAULT 0,
@@ -253,6 +254,7 @@ CREATE TABLE IF NOT EXISTS auth_users (
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     display_name TEXT,
+    profile_image_data TEXT,
     role TEXT DEFAULT 'user',
     managed_by_user_id TEXT,
     health_data_consent INTEGER DEFAULT 0,
@@ -385,6 +387,7 @@ MIGRATIONS = [
     "ALTER TABLE auth_users ADD COLUMN role TEXT DEFAULT 'user'",
     "ALTER TABLE auth_users ADD COLUMN managed_by_user_id TEXT",
     "ALTER TABLE auth_users ADD COLUMN health_data_consent INTEGER DEFAULT 0",
+    "ALTER TABLE auth_users ADD COLUMN profile_image_data TEXT",
     "CREATE TABLE IF NOT EXISTS auth_password_resets (token TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires_at TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS user_nudge_settings (user_id TEXT PRIMARY KEY)",
     "ALTER TABLE user_nudge_settings ADD COLUMN enabled INTEGER DEFAULT 0",
@@ -551,6 +554,7 @@ def create_auth_user(
     email: str,
     password_hash: str,
     display_name: str | None = None,
+    profile_image_data: str | None = None,
     role: str = "user",
     managed_by_user_id: str | None = None,
     health_data_consent: bool = False,
@@ -559,11 +563,11 @@ def create_auth_user(
         conn.execute(
             text("""
                 INSERT INTO auth_users(
-                    user_id, email, password_hash, display_name, role, managed_by_user_id,
+                    user_id, email, password_hash, display_name, profile_image_data, role, managed_by_user_id,
                     health_data_consent, updated_at
                 )
                 VALUES(
-                    :uid, :email, :password_hash, :display_name, :role, :managed_by_user_id,
+                    :uid, :email, :password_hash, :display_name, :profile_image_data, :role, :managed_by_user_id,
                     :health_data_consent, CURRENT_TIMESTAMP
                 )
             """),
@@ -572,6 +576,7 @@ def create_auth_user(
                 "email": email,
                 "password_hash": password_hash,
                 "display_name": display_name,
+                "profile_image_data": profile_image_data,
                 "role": role,
                 "managed_by_user_id": managed_by_user_id,
                 "health_data_consent": 1 if health_data_consent else 0,
@@ -582,7 +587,7 @@ def get_auth_user_by_email(email: str):
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT user_id, email, password_hash, display_name, role, managed_by_user_id,
+                SELECT user_id, email, password_hash, display_name, profile_image_data, role, managed_by_user_id,
                        health_data_consent, created_at
                 FROM auth_users
                 WHERE lower(email) = lower(:email)
@@ -595,7 +600,7 @@ def get_auth_user_by_id(user_id: str):
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT user_id, email, password_hash, display_name, role, managed_by_user_id,
+                SELECT user_id, email, password_hash, display_name, profile_image_data, role, managed_by_user_id,
                        health_data_consent, created_at
                 FROM auth_users
                 WHERE user_id = :uid
@@ -608,7 +613,7 @@ def list_managed_auth_users(manager_user_id: str):
     with engine.begin() as conn:
         rows = conn.execute(
             text("""
-                SELECT user_id, email, display_name, role, managed_by_user_id,
+                SELECT user_id, email, display_name, profile_image_data, role, managed_by_user_id,
                        health_data_consent, created_at
                 FROM auth_users
                 WHERE managed_by_user_id = :uid
@@ -645,6 +650,31 @@ def remove_managed_auth_user(manager_user_id: str, client_user_id: str) -> bool:
             {"client_uid": client_user_id, "manager_uid": manager_user_id},
         )
         return result.rowcount > 0
+
+
+def update_auth_user_profile(
+    user_id: str,
+    display_name: str | None = None,
+    profile_image_data: str | None = None,
+):
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE auth_users
+                SET display_name = :display_name,
+                    profile_image_data = :profile_image_data,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = :uid
+                """
+            ),
+            {
+                "uid": user_id,
+                "display_name": display_name,
+                "profile_image_data": profile_image_data,
+            },
+        )
+    return get_auth_user_by_id(user_id)
 
 
 def create_private_message(sender_user_id: str, recipient_user_id: str, body: str):
@@ -997,7 +1027,7 @@ def get_client_update(update_id: int):
             text(
                 """
                 SELECT u.id, u.user_id, u.dietitian_user_id, u.body, u.image_data,
-                       u.expires_at, u.created_at, a.email, a.display_name
+                       u.expires_at, u.created_at, a.email, a.display_name, a.profile_image_data
                 FROM client_updates u
                 LEFT JOIN auth_users a ON a.user_id = u.user_id
                 WHERE u.id = :update_id
@@ -1014,7 +1044,7 @@ def list_client_updates_for_group(dietitian_user_id: str, now_iso: str):
             text(
                 """
                 SELECT u.id, u.user_id, u.dietitian_user_id, u.body, u.image_data,
-                       u.expires_at, u.created_at, a.email, a.display_name
+                       u.expires_at, u.created_at, a.email, a.display_name, a.profile_image_data
                 FROM client_updates u
                 LEFT JOIN auth_users a ON a.user_id = u.user_id
                 WHERE u.dietitian_user_id = :dietitian_user_id
@@ -1049,7 +1079,7 @@ def get_auth_session(token: str):
     with engine.begin() as conn:
         row = conn.execute(
             text("""
-                SELECT s.token, s.user_id, s.expires_at, u.email, u.display_name, u.role,
+                SELECT s.token, s.user_id, s.expires_at, u.email, u.display_name, u.profile_image_data, u.role,
                        u.managed_by_user_id, u.health_data_consent
                 FROM auth_sessions s
                 JOIN auth_users u ON u.user_id = s.user_id
@@ -1478,7 +1508,7 @@ def export_user_data(user_id: str):
     with engine.begin() as conn:
         auth_user = conn.execute(
             text("""
-                SELECT user_id, email, display_name, role, managed_by_user_id,
+                SELECT user_id, email, display_name, profile_image_data, role, managed_by_user_id,
                        health_data_consent, created_at
                 FROM auth_users WHERE user_id = :uid
             """),

@@ -66,6 +66,7 @@ from services.common.storage import (
     save_plan,
     save_weekly_update,
     update_auth_user_password,
+    update_auth_user_profile,
     upsert_google_calendar_token,
     upsert_nudge_settings,
     upsert_user,
@@ -136,6 +137,7 @@ def _serialize_auth_user(user: dict):
         "user_id": user["user_id"],
         "email": user["email"],
         "display_name": user.get("display_name") or "",
+        "profile_image_data": user.get("profile_image_data") or "",
         "role": user.get("role") or "user",
         "managed_by_user_id": user.get("managed_by_user_id"),
         "health_data_consent": bool(user.get("health_data_consent")),
@@ -148,6 +150,7 @@ def _serialize_auth_user(user: dict):
                 "user_id": manager["user_id"],
                 "email": manager["email"],
                 "display_name": manager.get("display_name") or "",
+                "profile_image_data": manager.get("profile_image_data") or "",
             }
     return payload
 
@@ -342,6 +345,7 @@ def _serialize_client_update(update: dict):
             "user_id": update.get("user_id"),
             "display_name": update.get("display_name") or "",
             "email": update.get("email") or "",
+            "profile_image_data": update.get("profile_image_data") or "",
         },
     }
 
@@ -1640,14 +1644,7 @@ def signup():
         {
             "ok": True,
             "token": token,
-            "user": {
-                "user_id": user_id,
-                "email": email,
-                "display_name": display_name or "",
-                "role": role,
-                "managed_by_user_id": None,
-                "health_data_consent": health_data_consent or role == "dietitian",
-            },
+            "user": _serialize_auth_user(get_auth_user_by_id(user_id)),
         }
     ), 201
 
@@ -1699,6 +1696,26 @@ def change_password():
             "user": _serialize_auth_user(refreshed_user),
         }
     )
+
+
+@app.patch("/auth/profile")
+def update_profile():
+    session, error = _require_auth()
+    if error:
+        return error
+
+    data = request.get_json(force=True)
+    display_name = str(data.get("display_name") or "").strip() or None
+    profile_image_data = str(data.get("profile_image_data") or "").strip()
+    if profile_image_data:
+        if not profile_image_data.startswith("data:image/"):
+            return jsonify({"error": "Only image files can be used as profile pictures."}), 400
+        if len(profile_image_data) > 1_600_000:
+            return jsonify({"error": "Profile picture is too large. Choose an image under about 1 MB."}), 400
+
+    user = update_auth_user_profile(session["user_id"], display_name, profile_image_data or None)
+    record_audit_log(session["user_id"], session["user_id"], "auth.profile_updated", {})
+    return jsonify({"ok": True, "user": _serialize_auth_user(user)})
 
 
 @app.post("/auth/forgot-password")
@@ -1873,13 +1890,18 @@ def messages_inbox():
 
     if (session.get("role") or "user") == "dietitian":
         clients = [_serialize_auth_user(client) for client in list_managed_auth_users(session["user_id"])]
+        active_updates = list_client_updates_for_group(session["user_id"], datetime.now(timezone.utc).isoformat())
+        active_update_user_ids = {update.get("user_id") for update in active_updates}
         inbox = list_private_inbox(session["user_id"], clients)
         channels = list_announcement_channels_for_dietitian(session["user_id"])
+        updates = active_updates
     else:
         manager_id = session.get("managed_by_user_id")
         partners = [_serialize_auth_user(get_auth_user_by_id(manager_id))] if manager_id and get_auth_user_by_id(manager_id) else []
         inbox = list_private_inbox(session["user_id"], partners)
         channels = list_announcement_channels_for_client(session["user_id"])
+        updates = list_client_updates_for_group(manager_id, datetime.now(timezone.utc).isoformat()) if manager_id else []
+        active_update_user_ids = set()
 
     return jsonify(
         {
@@ -1889,10 +1911,12 @@ def messages_inbox():
                     "partner": item["partner"],
                     "last_message": _serialize_private_message(item["last_message"]) if item.get("last_message") else None,
                     "unread_count": item.get("unread_count", 0),
+                    "has_active_update": item.get("partner", {}).get("user_id") in active_update_user_ids,
                 }
                 for item in inbox
             ],
             "announcement_channels": [_serialize_announcement_channel(channel) for channel in channels],
+            "client_updates": [_serialize_client_update(update) for update in updates],
         }
     )
 

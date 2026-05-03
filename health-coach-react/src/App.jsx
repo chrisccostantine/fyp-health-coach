@@ -372,9 +372,45 @@ function homeStageFor(account) {
   return account.role === "dietitian" ? "dietitianHome" : "userHome";
 }
 
+const REFRESHABLE_STAGES = new Set([
+  "userHome",
+  "dietitianHome",
+  "dietitianCreate",
+  "dietitianClients",
+  "messageInbox",
+  "clientUpdates",
+  "coachTools",
+  "quiz",
+  "results",
+]);
+
+function restoreStageFor(account, preferredStage) {
+  const fallback = homeStageFor(account);
+  return REFRESHABLE_STAGES.has(preferredStage) ? preferredStage : fallback;
+}
+
 function displayAccountName(account) {
   if (!account) return "Account";
   return account.display_name || account.email || "Account";
+}
+
+function accountInitials(account) {
+  const label = displayAccountName(account);
+  const parts = String(label).split(/\s+/).filter(Boolean);
+  const initials = parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : label.slice(0, 2);
+  return initials.toUpperCase();
+}
+
+function AccountAvatar({ account, hasUpdate = false, size = "md" }) {
+  return (
+    <span className={`account-avatar account-avatar-${size} ${hasUpdate ? "has-update" : ""}`}>
+      {account?.profile_image_data ? (
+        <img src={account.profile_image_data} alt="" />
+      ) : (
+        <span>{accountInitials(account)}</span>
+      )}
+    </span>
+  );
 }
 
 function toMetricHeight(value, unit) {
@@ -608,6 +644,10 @@ export default function App() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [profileImageDraft, setProfileImageDraft] = useState(initialSettings.currentUser?.profile_image_data || "");
+  const [profileNameDraft, setProfileNameDraft] = useState(initialSettings.currentUser?.display_name || "");
+  const [isProfileBusy, setIsProfileBusy] = useState(false);
+  const [profileMsg, setProfileMsg] = useState("");
   const [changePasswordMsg, setChangePasswordMsg] = useState("");
   const [privacyMsg, setPrivacyMsg] = useState("");
   const [isPrivacyBusy, setIsPrivacyBusy] = useState(false);
@@ -631,7 +671,7 @@ export default function App() {
   const [isLoadingPrivateMessages, setIsLoadingPrivateMessages] = useState(false);
   const [isSendingPrivateMessage, setIsSendingPrivateMessage] = useState(false);
   const [messageInbox, setMessageInbox] = useState([]);
-  const [messageInboxTab, setMessageInboxTab] = useState("chats");
+  const [messageInboxTab, setMessageInboxTab] = useState(initialSettings.messageInboxTab || "chats");
   const [announcementChannels, setAnnouncementChannels] = useState([]);
   const [isLoadingInbox, setIsLoadingInbox] = useState(false);
   const [inboxMsg, setInboxMsg] = useState("");
@@ -667,6 +707,16 @@ export default function App() {
   useEffect(() => {
     saveSettings({ gatewayUrl, userId });
   }, [gatewayUrl, userId]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (!REFRESHABLE_STAGES.has(stage)) return;
+    saveSettings({ currentStage: stage });
+  }, [stage, currentUser?.user_id]);
+
+  useEffect(() => {
+    saveSettings({ messageInboxTab });
+  }, [messageInboxTab]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -705,7 +755,11 @@ export default function App() {
   const [checkUserMsg, setCheckUserMsg] = useState("");
 
   // ------- Funnel state (NEW) -------
-  const [stage, setStage] = useState("auth"); // auth | userHome | dietitianHome | dietitianCreate | dietitianClients | messageInbox | announcementChannel | clientUpdates | privateChat | coachTools | quiz | results
+  const [stage, setStage] = useState(
+    initialSettings.authToken && initialSettings.currentUser
+      ? restoreStageFor(initialSettings.currentUser, initialSettings.currentStage)
+      : "auth",
+  ); // auth | userHome | dietitianHome | dietitianCreate | dietitianClients | messageInbox | announcementChannel | clientUpdates | privateChat | coachTools | quiz | results
   const [step, setStep] = useState(ACTIVE_QUIZ_STEPS[0]);
   const TOTAL_STEPS = ACTIVE_QUIZ_STEPS.length;
   const stepPosition = Math.max(0, ACTIVE_QUIZ_STEPS.indexOf(step));
@@ -1738,6 +1792,8 @@ export default function App() {
       setUserId(response.user.user_id);
       setAuthEmail(response.user.email || authEmail.trim());
       setAuthName(response.user.display_name || authName.trim());
+      setProfileNameDraft(response.user.display_name || "");
+      setProfileImageDraft(response.user.profile_image_data || "");
       setAuthPassword("");
       setAuthPasswordConfirm("");
       setResetToken("");
@@ -1787,6 +1843,8 @@ export default function App() {
       setUserId(response.user.user_id);
       setAuthEmail(response.user.email || authEmail.trim());
       setAuthName(response.user.display_name || authName.trim());
+      setProfileNameDraft(response.user.display_name || "");
+      setProfileImageDraft(response.user.profile_image_data || "");
       setAuthPassword("");
       setAuthPasswordConfirm("");
       setHealthDataConsent(false);
@@ -1823,6 +1881,9 @@ export default function App() {
     setNewPassword("");
     setConfirmNewPassword("");
     setChangePasswordMsg("");
+    setProfileMsg("");
+    setProfileImageDraft("");
+    setProfileNameDraft("");
     setManagedClients([]);
     setClientMsg("");
     setActiveChatPartner(null);
@@ -1866,6 +1927,56 @@ export default function App() {
       setChangePasswordMsg(`Error: ${e.message}`);
     } finally {
       setIsChangingPassword(false);
+    }
+  }
+
+  function handleProfileImageChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setProfileMsg("Choose an image file.");
+      event.target.value = "";
+      return;
+    }
+    if (file.size > 1_100_000) {
+      setProfileMsg("Choose a profile picture under about 1 MB.");
+      event.target.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setProfileImageDraft(String(reader.result || ""));
+      setProfileMsg("");
+    };
+    reader.onerror = () => setProfileMsg("Could not read that image.");
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSaveProfile(event) {
+    event.preventDefault();
+    if (!currentUser) return;
+    setIsProfileBusy(true);
+    setProfileMsg("");
+    try {
+      const response = await api.updateProfile({
+        display_name: profileNameDraft.trim(),
+        profile_image_data: profileImageDraft,
+      });
+      saveAuthSession({ token: getSettings().authToken, user: response.user });
+      setCurrentUser(response.user);
+      setViewedAccount((prev) => (prev?.user_id === response.user.user_id ? response.user : prev));
+      setAuthName(response.user.display_name || "");
+      setProfileNameDraft(response.user.display_name || "");
+      setProfileImageDraft(response.user.profile_image_data || "");
+      setProfileMsg("Profile updated.");
+      if (response.user.role === "dietitian") {
+        loadDietitianClients({ quiet: true, account: response.user }).catch(() => {});
+      }
+      loadMessageInbox().catch(() => {});
+    } catch (e) {
+      setProfileMsg(`Error: ${e.message}`);
+    } finally {
+      setIsProfileBusy(false);
     }
   }
 
@@ -1925,6 +2036,8 @@ export default function App() {
         setUserId(res.user.user_id);
         setAuthEmail(res.user.email || "");
         setAuthName(res.user.display_name || "");
+        setProfileNameDraft(res.user.display_name || "");
+        setProfileImageDraft(res.user.profile_image_data || "");
         setAuthRole(res.user.role || "user");
         if (res.user.role === "dietitian") {
           loadDietitianClients({ quiet: true, account: res.user }).catch(() => {});
@@ -1934,9 +2047,9 @@ export default function App() {
         if (data.exists) {
           hydrateSavedUser(data);
           setViewedAccount(data.account || res.user);
-          setStage(homeStageFor(res.user));
+          setStage(restoreStageFor(res.user, initialSettings.currentStage));
         } else {
-          setStage(homeStageFor(res.user));
+          setStage(restoreStageFor(res.user, initialSettings.currentStage));
           setStep(ACTIVE_QUIZ_STEPS[0]);
           setPlanMsg("");
           setCheckUserMsg("");
@@ -2042,7 +2155,7 @@ export default function App() {
       const data = await api.getMessageInbox();
       setMessageInbox(Array.isArray(data?.inbox) ? data.inbox : []);
       setAnnouncementChannels(Array.isArray(data?.announcement_channels) ? data.announcement_channels : []);
-      setMessageInboxTab("chats");
+      setClientUpdates(Array.isArray(data?.client_updates) ? data.client_updates : []);
       if (targetStage) setStage(targetStage);
     } catch (e) {
       setInboxMsg(`Error: ${e.message}`);
@@ -2050,6 +2163,11 @@ export default function App() {
     } finally {
       setIsLoadingInbox(false);
     }
+  }
+
+  async function openInboxTab(tab = "chats") {
+    setMessageInboxTab(tab);
+    await loadMessageInbox({ targetStage: "messageInbox" });
   }
 
   async function loadClientUpdates({ targetStage = null } = {}) {
@@ -2140,12 +2258,23 @@ export default function App() {
         if (cancelled) return;
         setMessageInbox(Array.isArray(data?.inbox) ? data.inbox : []);
         setAnnouncementChannels(Array.isArray(data?.announcement_channels) ? data.announcement_channels : []);
+        setClientUpdates(Array.isArray(data?.client_updates) ? data.client_updates : []);
       })
       .catch(() => {});
 
     return () => {
       cancelled = true;
     };
+  }, [stage, currentUser?.user_id]);
+
+  useEffect(() => {
+    if (!currentUser || stage !== "messageInbox") return;
+    loadMessageInbox().catch(() => {});
+  }, [stage, currentUser?.user_id]);
+
+  useEffect(() => {
+    if (!currentUser || stage !== "clientUpdates") return;
+    loadClientUpdates().catch(() => {});
   }, [stage, currentUser?.user_id]);
 
   async function returnFromPrivateChat() {
@@ -2746,7 +2875,7 @@ export default function App() {
                       <button
                         className="btn btn-outline-light btn-lg"
                         type="button"
-                        onClick={() => loadClientUpdates({ targetStage: "clientUpdates" })}
+                        onClick={() => openInboxTab("updates")}
                       >
                         Updates
                       </button>
@@ -2762,6 +2891,9 @@ export default function App() {
                   <h2 className="h5 section-title mb-3">Account</h2>
                   <div className="account-summary">
                     <div className="account-summary-label">Signed in as</div>
+                    <div className="mb-3">
+                      <AccountAvatar account={currentUser} size="lg" />
+                    </div>
                     <div className="account-summary-title">
                       {currentUser.display_name || "Health Coach User"}
                     </div>
@@ -2775,6 +2907,42 @@ export default function App() {
                       </div>
                     ) : null}
                   </div>
+
+                  <form className="security-panel mt-4" onSubmit={handleSaveProfile}>
+                    <div className="fw-semibold mb-2">Profile</div>
+                    <div className="mb-2">
+                      <input
+                        className="form-control"
+                        value={profileNameDraft}
+                        onChange={(e) => setProfileNameDraft(e.target.value)}
+                        placeholder="Display name"
+                      />
+                    </div>
+                    <div className="mb-2">
+                      <input
+                        className="form-control"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProfileImageChange}
+                      />
+                    </div>
+                    {profileImageDraft ? (
+                      <div className="d-flex gap-2 align-items-center mb-2">
+                        <AccountAvatar account={{ ...currentUser, profile_image_data: profileImageDraft, display_name: profileNameDraft }} size="md" />
+                        <button className="btn btn-outline-light btn-sm" type="button" onClick={() => setProfileImageDraft("")}>
+                          Remove Photo
+                        </button>
+                      </div>
+                    ) : null}
+                    <button className="btn btn-outline-light w-100" type="submit" disabled={isProfileBusy}>
+                      {isProfileBusy ? <Spinner label="Saving..." /> : "Save Profile"}
+                    </button>
+                    {profileMsg ? (
+                      <div className={`alert ${String(profileMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
+                        {profileMsg}
+                      </div>
+                    ) : null}
+                  </form>
 
                   <FieldNote>
                     {plan
@@ -2797,7 +2965,7 @@ export default function App() {
                       <button
                         className="btn btn-outline-light w-100 mt-2"
                         type="button"
-                        onClick={() => loadClientUpdates({ targetStage: "clientUpdates" })}
+                        onClick={() => openInboxTab("updates")}
                       >
                         Client Updates
                       </button>
@@ -2939,7 +3107,7 @@ export default function App() {
                     <button
                       type="button"
                       className="btn btn-outline-light btn-lg fw-bold"
-                      onClick={() => loadClientUpdates({ targetStage: "clientUpdates" })}
+                      onClick={() => openInboxTab("updates")}
                     >
                       Client Updates
                     </button>
@@ -2974,11 +3142,49 @@ export default function App() {
                   <h2 className="h5 section-title mb-3">Security</h2>
                   <div className="account-summary mb-3">
                     <div className="account-summary-label">Signed in as</div>
+                    <div className="mb-3">
+                      <AccountAvatar account={currentUser} size="lg" />
+                    </div>
                     <div className="account-summary-title">
                       {currentUser.display_name || "Dietitian"}
                     </div>
                     <div className="account-summary-meta">{currentUser.email}</div>
                   </div>
+                  <form className="security-panel mb-4" onSubmit={handleSaveProfile}>
+                    <div className="fw-semibold mb-2">Profile</div>
+                    <div className="mb-2">
+                      <input
+                        className="form-control"
+                        value={profileNameDraft}
+                        onChange={(e) => setProfileNameDraft(e.target.value)}
+                        placeholder="Display name"
+                      />
+                    </div>
+                    <div className="mb-2">
+                      <input
+                        className="form-control"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProfileImageChange}
+                      />
+                    </div>
+                    {profileImageDraft ? (
+                      <div className="d-flex gap-2 align-items-center mb-2">
+                        <AccountAvatar account={{ ...currentUser, profile_image_data: profileImageDraft, display_name: profileNameDraft }} size="md" />
+                        <button className="btn btn-outline-light btn-sm" type="button" onClick={() => setProfileImageDraft("")}>
+                          Remove Photo
+                        </button>
+                      </div>
+                    ) : null}
+                    <button className="btn btn-outline-light w-100" type="submit" disabled={isProfileBusy}>
+                      {isProfileBusy ? <Spinner label="Saving..." /> : "Save Profile"}
+                    </button>
+                    {profileMsg ? (
+                      <div className={`alert ${String(profileMsg).startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
+                        {profileMsg}
+                      </div>
+                    ) : null}
+                  </form>
                   {!showChangePasswordForm ? (
                     <button
                       className="btn btn-outline-light w-100"
@@ -3131,7 +3337,9 @@ export default function App() {
                       managedClients.map((client) => (
                         <div key={client.user_id} className="list-group-item">
                           <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3">
-                            <div>
+                            <div className="client-list-identity">
+                              <AccountAvatar account={client} hasUpdate={Boolean(client.has_active_update)} />
+                              <div>
                               <div className="fw-semibold">{client.display_name || "Client account"}</div>
                               <div className="small text-muted">{client.email}</div>
                               <span className={`badge ${clientReviewClass(client.plan_review)} mt-2`}>
@@ -3151,6 +3359,7 @@ export default function App() {
                                   Last note: {client.plan_review.note}
                                 </div>
                               ) : null}
+                              </div>
                             </div>
                             <div className="d-flex flex-column gap-2 client-review-actions">
                               <div className="d-flex flex-wrap gap-2">
@@ -3308,16 +3517,18 @@ export default function App() {
                       <p className="private-chat-subtitle">
                         {messageInboxTab === "chats"
                           ? "Open conversations from your chat list."
-                          : "One-way announcements live here. Clients can read but cannot reply."}
+                          : messageInboxTab === "announcements"
+                            ? "One-way announcements live here. Clients can read but cannot reply."
+                            : "View active 24-hour client updates."}
                       </p>
                     </div>
                     <button
                       type="button"
-                      className={`inbox-icon-tab ${messageInboxTab === "announcements" ? "active" : ""}`}
-                      onClick={() => setMessageInboxTab((tab) => (tab === "announcements" ? "chats" : "announcements"))}
-                      aria-label="Announcements"
+                      className={`inbox-icon-tab ${messageInboxTab === "updates" ? "active" : ""}`}
+                      onClick={() => setMessageInboxTab((tab) => (tab === "updates" ? "chats" : "updates"))}
+                      aria-label="Updates"
                     >
-                      !
+                      +
                     </button>
                   </div>
 
@@ -3336,6 +3547,13 @@ export default function App() {
                     >
                       Announcements
                     </button>
+                    <button
+                      type="button"
+                      className={messageInboxTab === "updates" ? "active" : ""}
+                      onClick={() => setMessageInboxTab("updates")}
+                    >
+                      Updates
+                    </button>
                   </div>
 
                   {messageInboxTab === "chats" ? (
@@ -3353,6 +3571,11 @@ export default function App() {
                               className="list-group-item text-start inbox-row"
                               onClick={() => openPrivateChat(item.partner, "messageInbox")}
                             >
+                              <AccountAvatar
+                                account={item.partner}
+                                hasUpdate={currentUser.role === "dietitian" && Boolean(item.has_active_update)}
+                              />
+                              <div className="inbox-row-body">
                               <div className="inbox-row-head">
                                 <span className="inbox-name">{displayAccountName(item.partner)}</span>
                                 {Number(item.unread_count || 0) > 0 ? (
@@ -3365,12 +3588,13 @@ export default function App() {
                               {item.last_message?.created_at ? (
                                 <div className="small text-muted">{fmtIso(item.last_message.created_at)}</div>
                               ) : null}
+                              </div>
                             </button>
                           ))
                         )}
                       </div>
                     </div>
-                  ) : (
+                  ) : messageInboxTab === "announcements" ? (
                     <div className="whatsapp-list mt-3">
                       <div className="list-group list-group-soft">
                         {announcementChannels.length === 0 ? (
@@ -3432,6 +3656,77 @@ export default function App() {
                           </button>
                         </form>
                       ) : null}
+                    </div>
+                  ) : (
+                    <div className="whatsapp-list mt-3">
+                      {currentUser.role !== "dietitian" && currentUser.managed_by ? (
+                        <form className="client-update-composer mb-3" onSubmit={handleCreateClientUpdate}>
+                          <textarea
+                            className="form-control private-chat-input"
+                            rows={3}
+                            maxLength={500}
+                            value={clientUpdateBody}
+                            onChange={(e) => setClientUpdateBody(e.target.value)}
+                            placeholder="Share a meal, progress note, or quick update..."
+                          />
+                          <div className="client-update-picker">
+                            <input className="form-control" type="file" accept="image/*" onChange={handleClientUpdateImage} />
+                            {clientUpdateImage ? (
+                              <button className="btn btn-outline-light" type="button" onClick={() => setClientUpdateImage("")}>
+                                Remove Image
+                              </button>
+                            ) : null}
+                          </div>
+                          {clientUpdateImage ? (
+                            <img className="client-update-preview" src={clientUpdateImage} alt="Selected update" />
+                          ) : null}
+                          <button className="btn btn-primary fw-bold" type="submit" disabled={isClientUpdateBusy}>
+                            {isClientUpdateBusy ? <Spinner label="Posting..." /> : "Post Update"}
+                          </button>
+                        </form>
+                      ) : null}
+
+                      <div className="client-update-feed">
+                        {isClientUpdateBusy && clientUpdates.length === 0 ? (
+                          <div className="list-group-item text-muted">Loading updates...</div>
+                        ) : clientUpdates.length === 0 ? (
+                          <div className="list-group-item text-muted">No active updates yet.</div>
+                        ) : (
+                          clientUpdates.map((update) => {
+                            const canDelete =
+                              currentUser.role === "dietitian" || update.user_id === currentUser.user_id;
+                            return (
+                              <article key={update.id} className="client-update-card">
+                                <div className="client-update-head">
+                                  <div className="client-update-author">
+                                    <AccountAvatar account={update.author} />
+                                    <div>
+                                      <div className="client-update-name">{displayAccountName(update.author)}</div>
+                                      <div className="client-update-time">
+                                        {fmtIso(update.created_at)} - expires {fmtIso(update.expires_at)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {canDelete ? (
+                                    <button
+                                      className="btn btn-outline-light btn-sm"
+                                      type="button"
+                                      onClick={() => handleDeleteClientUpdate(update)}
+                                      disabled={isClientUpdateBusy}
+                                    >
+                                      Delete
+                                    </button>
+                                  ) : null}
+                                </div>
+                                {update.body ? <p className="client-update-body">{update.body}</p> : null}
+                                {update.image_data ? (
+                                  <img className="client-update-image" src={update.image_data} alt="Client update" />
+                                ) : null}
+                              </article>
+                            );
+                          })
+                        )}
+                      </div>
                     </div>
                   )}
 

@@ -47,15 +47,26 @@ def test_signup_login_and_logout_flow(gateway_client):
     assert signup_data["ok"] is True
     assert signup_data["user"]["email"] == "amina@example.com"
     assert signup_data["user"]["display_name"] == "Amina"
+    assert signup_data["user"]["profile_image_data"] == ""
     assert signup_data["token"]
 
     token = signup_data["token"]
+    profile_res = gateway_client.patch(
+        "/auth/profile",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"display_name": "Amina Coach", "profile_image_data": "data:image/png;base64,aGVsbG8="},
+    )
+    assert profile_res.status_code == 200
+    assert profile_res.get_json()["user"]["display_name"] == "Amina Coach"
+    assert profile_res.get_json()["user"]["profile_image_data"].startswith("data:image/png")
+
     me_res = gateway_client.get(
         "/auth/me",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert me_res.status_code == 200
     assert me_res.get_json()["user"]["user_id"] == signup_data["user"]["user_id"]
+    assert me_res.get_json()["user"]["profile_image_data"].startswith("data:image/png")
 
     logout_res = gateway_client.post(
         "/auth/logout",
@@ -308,6 +319,14 @@ def test_client_updates_are_visible_to_group_and_moderated(gateway_client):
     )
     assert dietitian_feed.status_code == 200
     assert dietitian_feed.get_json()["updates"][0]["image_data"] == image_data
+
+    dietitian_inbox = gateway_client.get(
+        "/messages/inbox",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+    )
+    assert dietitian_inbox.status_code == 200
+    assert dietitian_inbox.get_json()["client_updates"][0]["body"] == "Meal prep went well"
+    assert any(item["has_active_update"] for item in dietitian_inbox.get_json()["inbox"])
 
     delete_res = gateway_client.delete(
         f"/client-updates/{update_id}",
