@@ -246,6 +246,15 @@ def _goal_key(goal: Dict[str, Any]) -> str:
     return str(goal.get("type") or goal.get("goal") or "general_health")
 
 
+def _rotation_offset(value: Any, pool_size: int) -> int:
+    if pool_size <= 0:
+        return 0
+    try:
+        return int(value or 0) % pool_size
+    except (TypeError, ValueError):
+        return sum(ord(ch) for ch in str(value or "")) % pool_size
+
+
 def _normalize_equipment(equipment: Optional[List[str]]) -> set[str]:
     if not equipment:
         return set()
@@ -331,7 +340,7 @@ def _personalize_workout(workout: Dict[str, Any], prefs: Dict[str, Any]) -> Dict
 
 
 def build_rule_based_exercise(
-    profile: Dict[str, Any], goal: Dict[str, Any], equipment: Optional[List[str]] = None
+    profile: Dict[str, Any], goal: Dict[str, Any], equipment: Optional[List[str]] = None, regeneration_id: Any = None
 ) -> Dict[str, Any]:
     _ = profile
     goal_key = _goal_key(goal)
@@ -355,6 +364,10 @@ def build_rule_based_exercise(
     if not matched:
         matched = active_library["general_health"]
 
+    start = _rotation_offset(regeneration_id, len(matched))
+    if start:
+        matched = matched[start:] + matched[:start]
+
     workouts = [_personalize_workout(w, prefs) for w in matched[:35]]
 
     return {"workouts": workouts, "workout_source": "mega_gym" if external_workouts else "local"}
@@ -368,7 +381,7 @@ def generate_exercise():
     goal = body.get("goal", {})
     equipment = body.get("equipment") or profile.get("equipment") or []
 
-    plan = build_rule_based_exercise(profile, goal, equipment)
+    plan = build_rule_based_exercise(profile, goal, equipment, body.get("regeneration_id"))
     return jsonify({"exercise_plan": plan})
 
 
@@ -379,7 +392,7 @@ def exercise_suggest():
     goal = body.get("goal", {})
     equipment = body.get("equipment") or profile.get("equipment") or []
 
-    plan = build_rule_based_exercise(profile, goal, equipment)
+    plan = build_rule_based_exercise(profile, goal, equipment, body.get("regeneration_id"))
     return jsonify({"workouts": plan["workouts"]})
 
 

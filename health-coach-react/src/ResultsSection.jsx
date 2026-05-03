@@ -78,6 +78,7 @@ export default function ResultsSection({
   handleGoHome,
   isPlanning,
   handlePlanToday,
+  planMsg,
   isReadOnlyClientView,
   viewedAccount,
 
@@ -284,6 +285,12 @@ export default function ResultsSection({
                 </button>
               </div>
             </div>
+
+            {planMsg ? (
+              <div className={`alert ${planMsg.startsWith("Error:") ? "alert-warning" : "alert-success"} mt-3 mb-0 small`}>
+                {planMsg}
+              </div>
+            ) : null}
 
             {!plan ? (
               <div className="empty-state mt-4">

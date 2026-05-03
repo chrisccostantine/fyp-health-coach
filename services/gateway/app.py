@@ -921,7 +921,14 @@ def _plan_view_for_date(plan: dict, selected_date: str | None = None):
     }
 
 
-def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], span_days: int = PLAN_SPAN_DAYS):
+def _regeneration_offset(value) -> int:
+    try:
+        return int(value or 0) % PLAN_SPAN_DAYS
+    except (TypeError, ValueError):
+        return sum(ord(ch) for ch in str(value or "")) % PLAN_SPAN_DAYS
+
+
+def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], span_days: int = PLAN_SPAN_DAYS, start_offset: int = 0):
     today = datetime.now(_safe_zoneinfo(APP_TIMEZONE)).date()
     base_meals = _copy_plan_items(meals)
     base_workouts = _copy_plan_items(workouts)
@@ -934,8 +941,9 @@ def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], spa
 
     for offset in range(max(1, span_days)):
         current_date = (today + timedelta(days=offset)).isoformat()
-        day_meals = _build_day_meals(base_meals, offset)
-        day_workouts = _build_day_workouts(base_workouts, offset, workout_target, workout_time)
+        variant_offset = start_offset + offset
+        day_meals = _build_day_meals(base_meals, variant_offset)
+        day_workouts = _build_day_workouts(base_workouts, variant_offset, workout_target, workout_time)
 
         plan_days.append(
             {
@@ -1848,6 +1856,7 @@ def plan_today():
             "user_id": user_id,
             "profile": profile.model_dump(),
             "goal": goal.model_dump(),
+            "regeneration_id": payload.get("regeneration_id"),
         },
         timeout=60,
     )
@@ -1862,6 +1871,7 @@ def plan_today():
             "profile": profile.model_dump(),
             "goal": goal.model_dump(),
             "equipment": payload.get("equipment", []),
+            "regeneration_id": payload.get("regeneration_id"),
         },
         timeout=60,
     )
@@ -1880,6 +1890,7 @@ def plan_today():
         user_id,
         meal_pool or daily_payload.get("meals", []),
         daily_payload.get("workouts", []),
+        start_offset=_regeneration_offset(payload.get("regeneration_id")),
     )
     review_payload = _managed_plan_review_payload(session)
     if review_payload:

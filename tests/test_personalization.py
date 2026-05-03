@@ -249,6 +249,40 @@ def test_month_plan_does_not_repeat_meals_within_first_week():
     assert len(names) == len(set(names))
 
 
+def test_month_plan_start_offset_changes_first_day():
+    meals = [
+        {"name": f"Meal {idx}", "calories": 400, "macros": {"protein": 30, "carbs": 40, "fat": 10}}
+        for idx in range(28)
+    ]
+
+    base_plan = _build_month_plan("demo", meals, [], span_days=7, start_offset=0)
+    regenerated_plan = _build_month_plan("demo", meals, [], span_days=7, start_offset=1)
+
+    base_names = [meal["name"] for meal in base_plan["plan_days"][0]["meals"]]
+    regenerated_names = [meal["name"] for meal in regenerated_plan["plan_days"][0]["meals"]]
+    assert base_names != regenerated_names
+
+
+def test_diet_regeneration_id_rotates_meal_choices(monkeypatch):
+    use_local_recipe_catalog(monkeypatch)
+
+    base_plan = build_rule_based_diet(
+        {"age": 30, "sex": "F", "height_cm": 165, "weight_kg": 62, "activity_level": "moderate"},
+        {"type": "general_health", "deficit_kcal": 0},
+        regeneration_id=0,
+    )
+    regenerated_plan = build_rule_based_diet(
+        {"age": 30, "sex": "F", "height_cm": 165, "weight_kg": 62, "activity_level": "moderate"},
+        {"type": "general_health", "deficit_kcal": 0},
+        regeneration_id=1,
+    )
+
+    assert [meal["name"] for meal in base_plan["meals"]] != [
+        meal["name"] for meal in regenerated_plan["meals"]
+    ]
+    load_kaggle_recipe_catalog.cache_clear()
+
+
 def test_day_workouts_are_two_or_three_parts_at_preferred_time():
     workouts = [
         {"name": f"Workout {idx}", "duration_min": 30, "intensity": "medium", "when": "07:00"}
@@ -258,6 +292,25 @@ def test_day_workouts_are_two_or_three_parts_at_preferred_time():
     assert len(day_workouts) == 3
     assert {workout["when"] for workout in day_workouts} == {"18:00"}
     assert sum(workout["duration_min"] for workout in day_workouts) == 45
+
+
+def test_exercise_regeneration_id_rotates_workout_choices(monkeypatch):
+    use_local_workout_catalog(monkeypatch)
+    profile = {
+        "preferences": {
+            "workout_location": "home",
+            "workout_duration_pref": "20_30",
+            "training_freq": "1_2",
+            "fitness_level": "beginner",
+        }
+    }
+
+    base_plan = build_rule_based_exercise(profile, {"type": "general_health"}, [], regeneration_id=0)
+    regenerated_plan = build_rule_based_exercise(profile, {"type": "general_health"}, [], regeneration_id=1)
+
+    assert [workout["name"] for workout in base_plan["workouts"][:3]] != [
+        workout["name"] for workout in regenerated_plan["workouts"][:3]
+    ]
 
 
 def test_exercise_respects_home_duration_and_beginner_level(monkeypatch):

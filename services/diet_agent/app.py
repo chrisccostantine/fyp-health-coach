@@ -106,6 +106,15 @@ def _rank_recipes(recipes: list[Dict[str, Any]], prefs: Dict[str, Any]) -> list[
     return sorted(recipes, key=score, reverse=True)
 
 
+def _rotation_offset(value: Any, pool_size: int) -> int:
+    if pool_size <= 0:
+        return 0
+    try:
+        return int(value or 0) % pool_size
+    except (TypeError, ValueError):
+        return sum(ord(ch) for ch in str(value or "")) % pool_size
+
+
 def _meal_description(meal: Dict[str, Any]) -> str:
     if meal.get("description") and not meal.get("needs_prep_ai"):
         return str(meal.get("description"))
@@ -230,7 +239,7 @@ def _meal_from_recipe(recipe: Dict[str, Any], calories_target: int, when: str | 
     }
 
 
-def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict[str, Any]:
+def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any], regeneration_id: Any = None) -> Dict[str, Any]:
     base = tdee(profile)
     deficit = int(goal.get("deficit_kcal", 0) or 0)
     target = max(base - deficit, 1400)
@@ -248,6 +257,9 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any]) -> Dict
             if not set(recipe.get("ingredients", set())).intersection(set(prefs["allergies"]))
         ]
     candidates = _rank_recipes(candidates or recipe_catalog, prefs)
+    start = _rotation_offset(regeneration_id, len(candidates))
+    if start:
+        candidates = candidates[start:] + candidates[:start]
 
     total_p = total_c = total_f = 0
 
@@ -284,7 +296,7 @@ def generate_diet():
 
     profile = body.get("profile", {})
     goal = body.get("goal", {})
-    plan = build_rule_based_diet(profile, goal)
+    plan = build_rule_based_diet(profile, goal, body.get("regeneration_id"))
     return jsonify({"diet_plan": plan})
 
 
@@ -294,7 +306,7 @@ def diet_suggest():
     profile = body.get("profile", {})
     goal = body.get("goal", {})
 
-    plan = build_rule_based_diet(profile, goal)
+    plan = build_rule_based_diet(profile, goal, body.get("regeneration_id"))
     return jsonify(
         {
             "meals": [

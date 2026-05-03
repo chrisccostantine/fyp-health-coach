@@ -906,6 +906,7 @@ export default function App() {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
+        regeneration_id: Date.now(),
       };
 
       const data = await api.planToday(payload);
@@ -920,6 +921,7 @@ export default function App() {
           text: "Your 30-day plan is ready. Ask me to modify meals, swap workouts, or explain the selected day.",
         },
       ]);
+      setPlanMsg(autoGoResults ? "" : "Plan regenerated.");
       // Persist profile so the user is recognised on next visit
       api.saveUserProfile(userId, {
         profile: payload.profile,
@@ -4225,6 +4227,7 @@ export default function App() {
           handleGoHome={() => setStage(isReadOnlyClientView ? "dietitianClients" : defaultHomeStage)}
           isPlanning={isPlanning}
           handlePlanToday={handlePlanToday}
+          planMsg={planMsg}
           isReadOnlyClientView={isReadOnlyClientView}
           viewedAccount={viewedAccount}
           eventId={eventId}

@@ -250,12 +250,13 @@ export const api = {
       profile: payload?.profile,
       goal: payload?.goal,
       equipment: payload?.equipment || [],
+      regeneration_id: payload?.regeneration_id,
     });
 
     const data = await fetchJSON("/plan/today", {
       method: "POST",
       body: JSON.stringify(body),
-      timeoutMs: 90000,
+      timeoutMs: 180000,
     });
 
     cachePlan(data);
