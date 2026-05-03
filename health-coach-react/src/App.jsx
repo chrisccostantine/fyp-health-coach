@@ -642,6 +642,7 @@ export default function App() {
   const [announcementInput, setAnnouncementInput] = useState("");
   const [announcementMsg, setAnnouncementMsg] = useState("");
   const [isAnnouncementBusy, setIsAnnouncementBusy] = useState(false);
+  const [isEditingAnnouncementChannel, setIsEditingAnnouncementChannel] = useState(false);
   const [googleCalendar, setGoogleCalendar] = useState({
     enabled: false,
     connected: false,
@@ -2040,9 +2041,22 @@ export default function App() {
 
   async function returnFromPrivateChat() {
     const destination = privateChatReturnStage || defaultHomeStage;
+    const partnerId = activeChatPartner?.user_id;
     setPrivateChatMsg("");
     setPrivateChatInput("");
     if (destination === "messageInbox") {
+      if (partnerId) {
+        setMessageInbox((prev) =>
+          prev.map((item) =>
+            item.partner?.user_id === partnerId ? { ...item, unread_count: 0 } : item,
+          ),
+        );
+        try {
+          await api.markPrivateMessagesRead(partnerId);
+        } catch {
+          // The chat GET also marks messages as read; this call is a best-effort sync before refreshing the inbox.
+        }
+      }
       await loadMessageInbox({ targetStage: "messageInbox" });
       return;
     }
@@ -2082,12 +2096,45 @@ export default function App() {
     if (!channel?.id) return;
     setAnnouncementMsg("");
     setAnnouncementInput("");
+    setIsEditingAnnouncementChannel(false);
     setStage("announcementChannel");
     setIsAnnouncementBusy(true);
     try {
       const data = await api.getAnnouncementChannel(channel.id);
       setActiveAnnouncementChannel(data?.channel || channel);
       setAnnouncementMessages(Array.isArray(data?.messages) ? data.messages : []);
+      setAnnouncementName(data?.channel?.name || channel.name || "");
+      setAnnouncementSelectedClients(Array.isArray(data?.channel?.client_user_ids) ? data.channel.client_user_ids : []);
+    } catch (e) {
+      setAnnouncementMsg(`Error: ${e.message}`);
+    } finally {
+      setIsAnnouncementBusy(false);
+    }
+  }
+
+  async function handleUpdateAnnouncementChannel(event) {
+    event.preventDefault();
+    if (!activeAnnouncementChannel?.id) return;
+    if (!announcementName.trim()) {
+      setAnnouncementMsg("Channel name is required.");
+      return;
+    }
+    if (!announcementSelectedClients.length) {
+      setAnnouncementMsg("Choose at least one client.");
+      return;
+    }
+    setIsAnnouncementBusy(true);
+    setAnnouncementMsg("");
+    try {
+      const data = await api.updateAnnouncementChannel(activeAnnouncementChannel.id, {
+        name: announcementName.trim(),
+        client_user_ids: announcementSelectedClients,
+      });
+      setActiveAnnouncementChannel(data?.channel || activeAnnouncementChannel);
+      setAnnouncementMessages(Array.isArray(data?.messages) ? data.messages : []);
+      setIsEditingAnnouncementChannel(false);
+      await loadMessageInbox();
+      setStage("announcementChannel");
     } catch (e) {
       setAnnouncementMsg(`Error: ${e.message}`);
     } finally {
@@ -3171,6 +3218,61 @@ export default function App() {
                       ? "Only you can send announcements here. Clients can read them but cannot reply."
                       : "This channel is read-only. Your dietitian can send announcements here."}
                   </p>
+
+                  {currentUser.role === "dietitian" ? (
+                    <div className="d-flex flex-wrap gap-2 mb-3">
+                      <button
+                        className="btn btn-outline-light"
+                        type="button"
+                        onClick={() => {
+                          setIsEditingAnnouncementChannel((open) => !open);
+                          setAnnouncementName(activeAnnouncementChannel.name || "");
+                          setAnnouncementSelectedClients(
+                            Array.isArray(activeAnnouncementChannel.client_user_ids)
+                              ? activeAnnouncementChannel.client_user_ids
+                              : [],
+                          );
+                        }}
+                      >
+                        {isEditingAnnouncementChannel ? "Close Edit" : "Edit Channel"}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {currentUser.role === "dietitian" && isEditingAnnouncementChannel ? (
+                    <form className="private-chat-composer mb-3" onSubmit={handleUpdateAnnouncementChannel}>
+                      <label className="form-label">Channel Name</label>
+                      <input
+                        className="form-control"
+                        value={announcementName}
+                        onChange={(e) => setAnnouncementName(e.target.value)}
+                        placeholder="Channel name"
+                      />
+                      <label className="form-label mt-2">Clients</label>
+                      <div className="announcement-client-list">
+                        {managedClients.map((client) => (
+                          <label key={client.user_id} className="form-check">
+                            <input
+                              className="form-check-input"
+                              type="checkbox"
+                              checked={announcementSelectedClients.includes(client.user_id)}
+                              onChange={(e) => {
+                                setAnnouncementSelectedClients((prev) =>
+                                  e.target.checked
+                                    ? [...prev, client.user_id]
+                                    : prev.filter((id) => id !== client.user_id),
+                                );
+                              }}
+                            />
+                            <span className="form-check-label">{displayAccountName(client)}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <button className="btn btn-primary fw-bold" type="submit" disabled={isAnnouncementBusy}>
+                        {isAnnouncementBusy ? <Spinner label="Saving..." /> : "Save Channel"}
+                      </button>
+                    </form>
+                  ) : null}
 
                   <div className="chat-shell private-chat-shell mb-3">
                     {isAnnouncementBusy && announcementMessages.length === 0 ? (

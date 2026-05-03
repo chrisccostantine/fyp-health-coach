@@ -21,6 +21,7 @@ from services.common.storage import (
     create_private_message,
     create_announcement_channel,
     create_announcement_message,
+    update_announcement_channel,
     create_auth_session,
     create_auth_user,
     create_google_oauth_state,
@@ -1896,6 +1897,20 @@ def get_private_messages(partner_user_id):
     )
 
 
+@app.post("/messages/<partner_user_id>/read")
+def mark_private_chat_read(partner_user_id):
+    session, error = _require_auth()
+    if error:
+        return error
+
+    partner = _resolve_private_chat_partner(session, partner_user_id)
+    if not partner:
+        return jsonify({"error": "Private chat is only available with your assigned dietitian or managed client."}), 403
+
+    mark_private_messages_read(session["user_id"], partner_user_id)
+    return jsonify({"ok": True})
+
+
 @app.post("/announcements/channels")
 def create_announcement_channel_route():
     session, error = _require_auth()
@@ -1923,6 +1938,47 @@ def create_announcement_channel_route():
 
     channel = create_announcement_channel(session["user_id"], name, valid_client_ids)
     return jsonify({"ok": True, "channel": _serialize_announcement_channel(channel)}), 201
+
+
+@app.patch("/announcements/channels/<int:channel_id>")
+def update_announcement_channel_route(channel_id):
+    session, error = _require_auth()
+    if error:
+        return error
+    role_error = _require_dietitian(session)
+    if role_error:
+        return role_error
+
+    channel = get_announcement_channel(channel_id)
+    if not channel or channel.get("dietitian_user_id") != session["user_id"]:
+        return jsonify({"error": "Announcement channel not found."}), 404
+
+    data = request.get_json(force=True)
+    name = str(data.get("name") or "").strip()
+    client_user_ids = [
+        str(client_id).strip()
+        for client_id in (data.get("client_user_ids") or [])
+        if str(client_id).strip()
+    ]
+    valid_client_ids = []
+    for client_id in client_user_ids:
+        if client_id not in valid_client_ids and is_managed_by(session["user_id"], client_id):
+            valid_client_ids.append(client_id)
+    if not name:
+        return jsonify({"error": "Channel name is required."}), 400
+    if not valid_client_ids:
+        return jsonify({"error": "Choose at least one managed client."}), 400
+
+    updated = update_announcement_channel(channel_id, name, valid_client_ids)
+    messages = list_announcement_messages(channel_id)
+    return jsonify(
+        {
+            "ok": True,
+            "channel": _serialize_announcement_channel(updated),
+            "messages": [_serialize_announcement_message(message) for message in messages],
+            "can_send": True,
+        }
+    )
 
 
 @app.get("/announcements/channels/<int:channel_id>")

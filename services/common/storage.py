@@ -797,6 +797,39 @@ def create_announcement_channel(dietitian_user_id: str, name: str, client_user_i
     return get_announcement_channel(channel_id)
 
 
+def update_announcement_channel(channel_id: int, name: str, client_user_ids: list[str]):
+    clean_name = str(name or "").strip()
+    if not clean_name:
+        raise ValueError("Channel name is required.")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                UPDATE announcement_channels
+                SET name = :name
+                WHERE id = :channel_id
+                """
+            ),
+            {"channel_id": channel_id, "name": clean_name},
+        )
+        conn.execute(
+            text("DELETE FROM announcement_channel_recipients WHERE channel_id = :channel_id"),
+            {"channel_id": channel_id},
+        )
+        for client_user_id in client_user_ids:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO announcement_channel_recipients(channel_id, client_user_id)
+                    VALUES (:channel_id, :client_user_id)
+                    """
+                ),
+                {"channel_id": channel_id, "client_user_id": client_user_id},
+            )
+    return get_announcement_channel(channel_id)
+
+
 def get_announcement_channel(channel_id: int):
     with engine.begin() as conn:
         channel = conn.execute(

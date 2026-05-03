@@ -385,9 +385,23 @@ export const api = {
     });
   },
 
+  async markPrivateMessagesRead(partnerUserId) {
+    return await fetchJSON(`/messages/${encodeURIComponent(partnerUserId)}/read`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
+
   async createAnnouncementChannel({ name, client_user_ids }) {
     return await fetchJSON("/announcements/channels", {
       method: "POST",
+      body: JSON.stringify({ name, client_user_ids }),
+    });
+  },
+
+  async updateAnnouncementChannel(channelId, { name, client_user_ids }) {
+    return await fetchJSON(`/announcements/channels/${encodeURIComponent(channelId)}`, {
+      method: "PATCH",
       body: JSON.stringify({ name, client_user_ids }),
     });
   },

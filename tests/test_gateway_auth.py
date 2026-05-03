@@ -153,6 +153,14 @@ def test_dietitian_inbox_and_announcement_channel(gateway_client):
     assert message_res.status_code == 200
     assert message_res.get_json()["messages"][0]["body"].startswith("Remember")
 
+    update_channel_res = gateway_client.patch(
+        f"/announcements/channels/{channel_id}",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={"name": "Updated Weekly Updates", "client_user_ids": [client["user_id"]]},
+    )
+    assert update_channel_res.status_code == 200
+    assert update_channel_res.get_json()["channel"]["name"] == "Updated Weekly Updates"
+
     client_login = gateway_client.post(
         "/auth/login",
         json={"email": "client@example.com", "password": "securepass123"},
@@ -171,6 +179,61 @@ def test_dietitian_inbox_and_announcement_channel(gateway_client):
         json={"body": "Can I reply?"},
     )
     assert forbidden_reply.status_code == 403
+
+
+def test_private_inbox_unread_count_clears_after_read(gateway_client):
+    dietitian_res = gateway_client.post(
+        "/auth/signup",
+        json={
+            "display_name": "Dietitian",
+            "email": "dietitian2@example.com",
+            "password": "securepass123",
+            "role": "dietitian",
+        },
+    )
+    dietitian_token = dietitian_res.get_json()["token"]
+    client_res = gateway_client.post(
+        "/dietitian/clients",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={
+            "display_name": "Client",
+            "email": "client2@example.com",
+            "password": "securepass123",
+        },
+    )
+    client = client_res.get_json()["client"]
+    client_login = gateway_client.post(
+        "/auth/login",
+        json={"email": "client2@example.com", "password": "securepass123"},
+    )
+    client_token = client_login.get_json()["token"]
+    dietitian_id = dietitian_res.get_json()["user"]["user_id"]
+
+    send_res = gateway_client.post(
+        f"/messages/{dietitian_id}",
+        headers={"Authorization": f"Bearer {client_token}"},
+        json={"body": "Hello"},
+    )
+    assert send_res.status_code == 201
+
+    inbox_res = gateway_client.get(
+        "/messages/inbox",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+    )
+    assert inbox_res.get_json()["inbox"][0]["unread_count"] == 1
+
+    read_res = gateway_client.post(
+        f"/messages/{client['user_id']}/read",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={},
+    )
+    assert read_res.status_code == 200
+
+    refreshed = gateway_client.get(
+        "/messages/inbox",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+    )
+    assert refreshed.get_json()["inbox"][0]["unread_count"] == 0
 
 
 def test_signup_requires_health_data_consent_for_user(gateway_client):
