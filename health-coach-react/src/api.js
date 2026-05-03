@@ -374,8 +374,32 @@ export const api = {
     });
   },
 
+  async getMessageInbox() {
+    return await fetchJSON("/messages/inbox", { method: "GET" });
+  },
+
   async sendPrivateMessage(partnerUserId, body) {
     return await fetchJSON(`/messages/${encodeURIComponent(partnerUserId)}`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    });
+  },
+
+  async createAnnouncementChannel({ name, client_user_ids }) {
+    return await fetchJSON("/announcements/channels", {
+      method: "POST",
+      body: JSON.stringify({ name, client_user_ids }),
+    });
+  },
+
+  async getAnnouncementChannel(channelId) {
+    return await fetchJSON(`/announcements/channels/${encodeURIComponent(channelId)}`, {
+      method: "GET",
+    });
+  },
+
+  async sendAnnouncementMessage(channelId, body) {
+    return await fetchJSON(`/announcements/channels/${encodeURIComponent(channelId)}/messages`, {
       method: "POST",
       body: JSON.stringify({ body }),
     });

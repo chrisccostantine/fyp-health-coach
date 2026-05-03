@@ -19,6 +19,8 @@ from services.common.models import DayPlan, Goal, PlanMeal, PlanWorkout, UserPro
 from services.common.storage import (
     create_password_reset_token,
     create_private_message,
+    create_announcement_channel,
+    create_announcement_message,
     create_auth_session,
     create_auth_user,
     create_google_oauth_state,
@@ -41,11 +43,16 @@ from services.common.storage import (
     list_item_adherence,
     list_progress_checkins,
     list_private_messages,
+    list_private_inbox,
+    list_announcement_channels_for_dietitian,
+    list_announcement_channels_for_client,
+    list_announcement_messages,
     list_managed_auth_users,
     list_all_nudge_settings,
     mark_nudge_sent,
     remove_managed_auth_user,
     get_user,
+    get_announcement_channel,
     init_db,
     record_audit_log,
     record_item_adherence,
@@ -283,6 +290,36 @@ def _serialize_private_message(message: dict):
         "recipient_user_id": message.get("recipient_user_id"),
         "body": message.get("body") or "",
         "created_at": created_at,
+    }
+
+
+def _json_dt(value):
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    return str(value) if value is not None else None
+
+
+def _serialize_announcement_channel(channel: dict):
+    return {
+        "id": channel.get("id"),
+        "dietitian_user_id": channel.get("dietitian_user_id"),
+        "name": channel.get("name"),
+        "recipient_count": channel.get("recipient_count"),
+        "client_user_ids": channel.get("client_user_ids", []),
+        "created_at": _json_dt(channel.get("created_at")),
+        "last_message_at": _json_dt(channel.get("last_message_at")),
+    }
+
+
+def _serialize_announcement_message(message: dict):
+    return {
+        "id": message.get("id"),
+        "channel_id": message.get("channel_id"),
+        "sender_user_id": message.get("sender_user_id"),
+        "body": message.get("body") or "",
+        "created_at": _json_dt(message.get("created_at")),
     }
 
 
@@ -1805,6 +1842,37 @@ def dietitian_unsubscribe_client(client_user_id):
     return jsonify({"ok": True, "client_user_id": client_user_id})
 
 
+@app.get("/messages/inbox")
+def messages_inbox():
+    session, error = _require_auth()
+    if error:
+        return error
+
+    if (session.get("role") or "user") == "dietitian":
+        clients = [_serialize_auth_user(client) for client in list_managed_auth_users(session["user_id"])]
+        inbox = list_private_inbox(session["user_id"], clients)
+        channels = list_announcement_channels_for_dietitian(session["user_id"])
+    else:
+        manager_id = session.get("managed_by_user_id")
+        partners = [_serialize_auth_user(get_auth_user_by_id(manager_id))] if manager_id and get_auth_user_by_id(manager_id) else []
+        inbox = list_private_inbox(session["user_id"], partners)
+        channels = list_announcement_channels_for_client(session["user_id"])
+
+    return jsonify(
+        {
+            "ok": True,
+            "inbox": [
+                {
+                    "partner": item["partner"],
+                    "last_message": _serialize_private_message(item["last_message"]) if item.get("last_message") else None,
+                }
+                for item in inbox
+            ],
+            "announcement_channels": [_serialize_announcement_channel(channel) for channel in channels],
+        }
+    )
+
+
 @app.get("/messages/<partner_user_id>")
 def get_private_messages(partner_user_id):
     session, error = _require_auth()
@@ -1821,6 +1889,89 @@ def get_private_messages(partner_user_id):
             "ok": True,
             "partner": _serialize_auth_user(partner),
             "messages": [_serialize_private_message(message) for message in messages],
+        }
+    )
+
+
+@app.post("/announcements/channels")
+def create_announcement_channel_route():
+    session, error = _require_auth()
+    if error:
+        return error
+    role_error = _require_dietitian(session)
+    if role_error:
+        return role_error
+
+    data = request.get_json(force=True)
+    name = str(data.get("name") or "").strip()
+    client_user_ids = [
+        str(client_id).strip()
+        for client_id in (data.get("client_user_ids") or [])
+        if str(client_id).strip()
+    ]
+    valid_client_ids = []
+    for client_id in client_user_ids:
+        if client_id not in valid_client_ids and is_managed_by(session["user_id"], client_id):
+            valid_client_ids.append(client_id)
+    if not name:
+        return jsonify({"error": "Channel name is required."}), 400
+    if not valid_client_ids:
+        return jsonify({"error": "Choose at least one managed client."}), 400
+
+    channel = create_announcement_channel(session["user_id"], name, valid_client_ids)
+    return jsonify({"ok": True, "channel": _serialize_announcement_channel(channel)}), 201
+
+
+@app.get("/announcements/channels/<int:channel_id>")
+def get_announcement_channel_route(channel_id):
+    session, error = _require_auth()
+    if error:
+        return error
+
+    channel = get_announcement_channel(channel_id)
+    if not channel:
+        return jsonify({"error": "Announcement channel not found."}), 404
+    is_owner = channel.get("dietitian_user_id") == session["user_id"]
+    is_recipient = session["user_id"] in (channel.get("client_user_ids") or [])
+    if not is_owner and not is_recipient:
+        return jsonify({"error": "You do not have access to this announcement channel."}), 403
+
+    messages = list_announcement_messages(channel_id)
+    return jsonify(
+        {
+            "ok": True,
+            "channel": _serialize_announcement_channel(channel),
+            "messages": [_serialize_announcement_message(message) for message in messages],
+            "can_send": is_owner,
+        }
+    )
+
+
+@app.post("/announcements/channels/<int:channel_id>/messages")
+def send_announcement_message_route(channel_id):
+    session, error = _require_auth()
+    if error:
+        return error
+    role_error = _require_dietitian(session)
+    if role_error:
+        return role_error
+
+    channel = get_announcement_channel(channel_id)
+    if not channel or channel.get("dietitian_user_id") != session["user_id"]:
+        return jsonify({"error": "Announcement channel not found."}), 404
+
+    data = request.get_json(force=True)
+    body = str(data.get("body") or "").strip()
+    if not body:
+        return jsonify({"error": "Announcement body is required."}), 400
+    create_announcement_message(channel_id, session["user_id"], body)
+    messages = list_announcement_messages(channel_id)
+    return jsonify(
+        {
+            "ok": True,
+            "channel": _serialize_announcement_channel(channel),
+            "messages": [_serialize_announcement_message(message) for message in messages],
+            "can_send": True,
         }
     )
 

@@ -105,6 +105,74 @@ def test_signup_rejects_duplicate_email(gateway_client):
     assert "already exists" in second.get_json()["error"]
 
 
+def test_dietitian_inbox_and_announcement_channel(gateway_client):
+    dietitian_res = gateway_client.post(
+        "/auth/signup",
+        json={
+            "display_name": "Dietitian",
+            "email": "dietitian@example.com",
+            "password": "securepass123",
+            "role": "dietitian",
+        },
+    )
+    assert dietitian_res.status_code == 201
+    dietitian_token = dietitian_res.get_json()["token"]
+
+    client_res = gateway_client.post(
+        "/dietitian/clients",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={
+            "display_name": "Client",
+            "email": "client@example.com",
+            "password": "securepass123",
+        },
+    )
+    assert client_res.status_code == 201
+    client = client_res.get_json()["client"]
+
+    inbox_res = gateway_client.get(
+        "/messages/inbox",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+    )
+    assert inbox_res.status_code == 200
+    assert inbox_res.get_json()["inbox"][0]["partner"]["user_id"] == client["user_id"]
+
+    channel_res = gateway_client.post(
+        "/announcements/channels",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={"name": "Weekly Updates", "client_user_ids": [client["user_id"]]},
+    )
+    assert channel_res.status_code == 201
+    channel_id = channel_res.get_json()["channel"]["id"]
+
+    message_res = gateway_client.post(
+        f"/announcements/channels/{channel_id}/messages",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={"body": "Remember to log your meals today."},
+    )
+    assert message_res.status_code == 200
+    assert message_res.get_json()["messages"][0]["body"].startswith("Remember")
+
+    client_login = gateway_client.post(
+        "/auth/login",
+        json={"email": "client@example.com", "password": "securepass123"},
+    )
+    client_token = client_login.get_json()["token"]
+    client_channel = gateway_client.get(
+        f"/announcements/channels/{channel_id}",
+        headers={"Authorization": f"Bearer {client_token}"},
+    )
+    assert client_channel.status_code == 200
+    assert client_channel.get_json()["can_send"] is False
+
+    forbidden_reply = gateway_client.post(
+        f"/announcements/channels/{channel_id}/messages",
+        headers={"Authorization": f"Bearer {client_token}"},
+        json={"body": "Can I reply?"},
+    )
+    assert forbidden_reply.status_code == 403
+
+
 def test_signup_requires_health_data_consent_for_user(gateway_client):
     res = gateway_client.post(
         "/auth/signup",

@@ -630,6 +630,17 @@ export default function App() {
   const [privateChatReturnStage, setPrivateChatReturnStage] = useState("userHome");
   const [isLoadingPrivateMessages, setIsLoadingPrivateMessages] = useState(false);
   const [isSendingPrivateMessage, setIsSendingPrivateMessage] = useState(false);
+  const [messageInbox, setMessageInbox] = useState([]);
+  const [announcementChannels, setAnnouncementChannels] = useState([]);
+  const [isLoadingInbox, setIsLoadingInbox] = useState(false);
+  const [inboxMsg, setInboxMsg] = useState("");
+  const [announcementName, setAnnouncementName] = useState("");
+  const [announcementSelectedClients, setAnnouncementSelectedClients] = useState([]);
+  const [activeAnnouncementChannel, setActiveAnnouncementChannel] = useState(null);
+  const [announcementMessages, setAnnouncementMessages] = useState([]);
+  const [announcementInput, setAnnouncementInput] = useState("");
+  const [announcementMsg, setAnnouncementMsg] = useState("");
+  const [isAnnouncementBusy, setIsAnnouncementBusy] = useState(false);
   const [googleCalendar, setGoogleCalendar] = useState({
     enabled: false,
     connected: false,
@@ -1994,6 +2005,90 @@ export default function App() {
     }
   }
 
+  async function loadMessageInbox({ targetStage = null } = {}) {
+    if (!currentUser) return;
+    setIsLoadingInbox(true);
+    setInboxMsg("");
+    try {
+      const data = await api.getMessageInbox();
+      setMessageInbox(Array.isArray(data?.inbox) ? data.inbox : []);
+      setAnnouncementChannels(Array.isArray(data?.announcement_channels) ? data.announcement_channels : []);
+      if (targetStage) setStage(targetStage);
+    } catch (e) {
+      setInboxMsg(`Error: ${e.message}`);
+      if (targetStage) setStage(targetStage);
+    } finally {
+      setIsLoadingInbox(false);
+    }
+  }
+
+  async function handleCreateAnnouncementChannel(event) {
+    event.preventDefault();
+    const selected = announcementSelectedClients;
+    if (!announcementName.trim()) {
+      setInboxMsg("Channel name is required.");
+      return;
+    }
+    if (!selected.length) {
+      setInboxMsg("Choose at least one client.");
+      return;
+    }
+    setIsAnnouncementBusy(true);
+    setInboxMsg("");
+    try {
+      const data = await api.createAnnouncementChannel({
+        name: announcementName.trim(),
+        client_user_ids: selected,
+      });
+      setAnnouncementName("");
+      setAnnouncementSelectedClients([]);
+      await loadMessageInbox();
+      if (data?.channel?.id) await openAnnouncementChannel(data.channel);
+    } catch (e) {
+      setInboxMsg(`Error: ${e.message}`);
+    } finally {
+      setIsAnnouncementBusy(false);
+    }
+  }
+
+  async function openAnnouncementChannel(channel) {
+    if (!channel?.id) return;
+    setAnnouncementMsg("");
+    setAnnouncementInput("");
+    setStage("announcementChannel");
+    setIsAnnouncementBusy(true);
+    try {
+      const data = await api.getAnnouncementChannel(channel.id);
+      setActiveAnnouncementChannel(data?.channel || channel);
+      setAnnouncementMessages(Array.isArray(data?.messages) ? data.messages : []);
+    } catch (e) {
+      setAnnouncementMsg(`Error: ${e.message}`);
+    } finally {
+      setIsAnnouncementBusy(false);
+    }
+  }
+
+  async function handleSendAnnouncement(event) {
+    event.preventDefault();
+    const body = announcementInput.trim();
+    if (!activeAnnouncementChannel?.id || !body) {
+      setAnnouncementMsg("Write an announcement first.");
+      return;
+    }
+    setIsAnnouncementBusy(true);
+    setAnnouncementMsg("");
+    try {
+      const data = await api.sendAnnouncementMessage(activeAnnouncementChannel.id, body);
+      setAnnouncementMessages(Array.isArray(data?.messages) ? data.messages : []);
+      setActiveAnnouncementChannel(data?.channel || activeAnnouncementChannel);
+      setAnnouncementInput("");
+    } catch (e) {
+      setAnnouncementMsg(`Error: ${e.message}`);
+    } finally {
+      setIsAnnouncementBusy(false);
+    }
+  }
+
   async function handleSendPrivateMessage(event) {
     event.preventDefault();
     if (!activeChatPartner?.user_id) return;
@@ -2456,9 +2551,9 @@ export default function App() {
                       <button
                         className="btn btn-outline-light btn-lg"
                         type="button"
-                        onClick={() => openPrivateChat(currentUser.managed_by, "userHome")}
+                        onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
                       >
-                        Chat with Dietitian
+                        Inbox
                       </button>
                     ) : null}
                   </div>
@@ -2497,9 +2592,9 @@ export default function App() {
                       <button
                         className="btn btn-outline-light w-100"
                         type="button"
-                        onClick={() => openPrivateChat(currentUser.managed_by, "userHome")}
+                        onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
                       >
-                        Message {displayAccountName(currentUser.managed_by)}
+                        Open Inbox
                       </button>
                     </div>
                   ) : null}
@@ -2641,10 +2736,10 @@ export default function App() {
                       <div className="summary-meta">Remove a client from your managed subscription list.</div>
                     </button>
 
-                    <button type="button" className="summary-card text-start" onClick={() => setStage("dietitianClients")}>
-                      <div className="summary-label">Private Chats</div>
+                    <button type="button" className="summary-card text-start" onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}>
+                      <div className="summary-label">Messages</div>
                       <div className="summary-value">{managedClients.length}</div>
-                      <div className="summary-meta">Open a private conversation with any subscribed client.</div>
+                      <div className="summary-meta">Open client chats or send one-way announcements.</div>
                     </button>
                   </div>
                 </div>
@@ -2871,6 +2966,198 @@ export default function App() {
                   <div className="mt-4">
                     <button className="btn btn-outline-light" type="button" onClick={() => setStage("dietitianHome")}>
                       Back to Dashboard
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MESSAGE INBOX */}
+        {stage === "messageInbox" && currentUser && (
+          <div className="row justify-content-center">
+            <div className="col-lg-10">
+              <div className="card card-soft">
+                <div className="card-body p-4 p-md-5">
+                  <div className="private-chat-kicker">Messages</div>
+                  <h2 className="private-chat-title">Inbox</h2>
+                  <p className="private-chat-subtitle">
+                    {currentUser.role === "dietitian"
+                      ? "Open client conversations or create one-way announcement channels."
+                      : "Read messages and dietitian announcements in one place."}
+                  </p>
+
+                  <div className="row g-4 mt-1">
+                    <div className="col-lg-6">
+                      <div className="section-head">
+                        <h3 className="section-h">Chats</h3>
+                      </div>
+                      <div className="list-group list-group-soft">
+                        {isLoadingInbox ? (
+                          <div className="list-group-item text-muted">Loading inbox...</div>
+                        ) : messageInbox.length === 0 ? (
+                          <div className="list-group-item text-muted">No chats yet.</div>
+                        ) : (
+                          messageInbox.map((item) => (
+                            <button
+                              key={item.partner?.user_id}
+                              type="button"
+                              className="list-group-item text-start inbox-row"
+                              onClick={() => openPrivateChat(item.partner, "messageInbox")}
+                            >
+                              <div className="fw-semibold">{displayAccountName(item.partner)}</div>
+                              <div className="small text-muted">
+                                {item.last_message?.body || "No messages yet"}
+                              </div>
+                              {item.last_message?.created_at ? (
+                                <div className="small text-muted">{fmtIso(item.last_message.created_at)}</div>
+                              ) : null}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="col-lg-6">
+                      <div className="section-head">
+                        <h3 className="section-h">Announcements</h3>
+                      </div>
+                      <div className="list-group list-group-soft">
+                        {announcementChannels.length === 0 ? (
+                          <div className="list-group-item text-muted">No announcement channels yet.</div>
+                        ) : (
+                          announcementChannels.map((channel) => (
+                            <button
+                              key={channel.id}
+                              type="button"
+                              className="list-group-item text-start inbox-row"
+                              onClick={() => openAnnouncementChannel(channel)}
+                            >
+                              <div className="fw-semibold">{channel.name}</div>
+                              <div className="small text-muted">
+                                {currentUser.role === "dietitian"
+                                  ? `${channel.recipient_count || 0} client${Number(channel.recipient_count || 0) === 1 ? "" : "s"}`
+                                  : "Read-only announcement channel"}
+                              </div>
+                              {channel.last_message_at ? (
+                                <div className="small text-muted">{fmtIso(channel.last_message_at)}</div>
+                              ) : null}
+                            </button>
+                          ))
+                        )}
+                      </div>
+
+                      {currentUser.role === "dietitian" ? (
+                        <form className="private-chat-composer mt-3" onSubmit={handleCreateAnnouncementChannel}>
+                          <label className="form-label">Create Announcement Channel</label>
+                          <input
+                            className="form-control"
+                            value={announcementName}
+                            onChange={(e) => setAnnouncementName(e.target.value)}
+                            placeholder="e.g. Ramadan meal reminders"
+                          />
+                          <div className="announcement-client-list">
+                            {managedClients.map((client) => (
+                              <label key={client.user_id} className="form-check">
+                                <input
+                                  className="form-check-input"
+                                  type="checkbox"
+                                  checked={announcementSelectedClients.includes(client.user_id)}
+                                  onChange={(e) => {
+                                    setAnnouncementSelectedClients((prev) =>
+                                      e.target.checked
+                                        ? [...prev, client.user_id]
+                                        : prev.filter((id) => id !== client.user_id),
+                                    );
+                                  }}
+                                />
+                                <span className="form-check-label">{displayAccountName(client)}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <button className="btn btn-primary fw-bold" type="submit" disabled={isAnnouncementBusy}>
+                            {isAnnouncementBusy ? <Spinner label="Creating..." /> : "Create Channel"}
+                          </button>
+                        </form>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {inboxMsg ? <div className="alert alert-warning mt-3 mb-0 small">{inboxMsg}</div> : null}
+
+                  <div className="mt-4">
+                    <button
+                      className="btn btn-outline-light"
+                      type="button"
+                      onClick={() => setStage(currentUser.role === "dietitian" ? "dietitianHome" : "userHome")}
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ANNOUNCEMENT CHANNEL */}
+        {stage === "announcementChannel" && currentUser && activeAnnouncementChannel && (
+          <div className="row justify-content-center">
+            <div className="col-lg-9 col-xl-8">
+              <div className="card card-soft">
+                <div className="card-body p-4 p-md-5">
+                  <div className="private-chat-kicker">Announcement Channel</div>
+                  <h2 className="private-chat-title">{activeAnnouncementChannel.name}</h2>
+                  <p className="private-chat-subtitle">
+                    {currentUser.role === "dietitian"
+                      ? "Only you can send announcements here. Clients can read them but cannot reply."
+                      : "This channel is read-only. Your dietitian can send announcements here."}
+                  </p>
+
+                  <div className="chat-shell private-chat-shell mb-3">
+                    {isAnnouncementBusy && announcementMessages.length === 0 ? (
+                      <div className="chat-empty">Loading announcements...</div>
+                    ) : announcementMessages.length === 0 ? (
+                      <div className="chat-empty">No announcements yet.</div>
+                    ) : (
+                      announcementMessages.map((message) => (
+                        <div key={`${message.id}-${message.created_at}`} className="chat-message chat-announcement">
+                          <div>{message.body}</div>
+                          <div className="chat-meta">Announcement - {fmtIso(message.created_at)}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {currentUser.role === "dietitian" ? (
+                    <form className="private-chat-composer" onSubmit={handleSendAnnouncement}>
+                      <textarea
+                        className="form-control private-chat-input"
+                        rows={3}
+                        value={announcementInput}
+                        onChange={(e) => setAnnouncementInput(e.target.value)}
+                        placeholder="Write an announcement..."
+                      />
+                      <button className="btn btn-primary fw-bold" type="submit" disabled={isAnnouncementBusy}>
+                        {isAnnouncementBusy ? <Spinner label="Sending..." /> : "Send Announcement"}
+                      </button>
+                    </form>
+                  ) : (
+                    <div className="alert alert-info mb-0 small">
+                      Announcements are read-only for clients.
+                    </div>
+                  )}
+
+                  {announcementMsg ? <div className="alert alert-warning mt-3 mb-0 small">{announcementMsg}</div> : null}
+
+                  <div className="mt-3">
+                    <button
+                      className="btn btn-outline-light"
+                      type="button"
+                      onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
+                    >
+                      Back to Inbox
                     </button>
                   </div>
                 </div>

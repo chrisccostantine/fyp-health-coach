@@ -269,6 +269,25 @@ CREATE TABLE IF NOT EXISTS private_messages (
     body TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS announcement_channels (
+    id SERIAL PRIMARY KEY,
+    dietitian_user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS announcement_channel_recipients (
+    channel_id INTEGER NOT NULL,
+    client_user_id TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(channel_id, client_user_id)
+);
+CREATE TABLE IF NOT EXISTS announcement_messages (
+    id SERIAL PRIMARY KEY,
+    channel_id INTEGER NOT NULL,
+    sender_user_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS progress_checkins (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -326,6 +345,9 @@ MIGRATIONS = [
     "ALTER TABLE user_nudge_settings ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE user_nudge_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "CREATE TABLE IF NOT EXISTS private_messages (id SERIAL PRIMARY KEY, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS private_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS announcement_channels (id SERIAL PRIMARY KEY, dietitian_user_id TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS announcement_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, dietitian_user_id TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS announcement_channel_recipients (channel_id INTEGER NOT NULL, client_user_id TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(channel_id, client_user_id))",
+    "CREATE TABLE IF NOT EXISTS announcement_messages (id SERIAL PRIMARY KEY, channel_id INTEGER NOT NULL, sender_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS announcement_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id INTEGER NOT NULL, sender_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS progress_checkins (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS progress_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS item_adherence (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, item_key TEXT NOT NULL, item_type TEXT NOT NULL, title TEXT, status TEXT NOT NULL, plan_date TEXT, note TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, item_key))" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS item_adherence (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, item_key TEXT NOT NULL, item_type TEXT NOT NULL, title TEXT, status TEXT NOT NULL, plan_date TEXT, note TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, item_key))",
     "CREATE TABLE IF NOT EXISTS weekly_updates (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS weekly_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
@@ -611,6 +633,181 @@ def list_private_messages(user_a_id: str, user_b_id: str):
             },
         ).fetchall()
     return [dict(row._mapping) for row in rows]
+
+
+def list_private_inbox(user_id: str, partners: list[dict]):
+    inbox = []
+    with engine.begin() as conn:
+        for partner in partners:
+            partner_id = partner.get("user_id")
+            if not partner_id:
+                continue
+            row = conn.execute(
+                text(
+                    """
+                    SELECT id, sender_user_id, recipient_user_id, body, created_at
+                    FROM private_messages
+                    WHERE (sender_user_id = :user_id AND recipient_user_id = :partner_id)
+                       OR (sender_user_id = :partner_id AND recipient_user_id = :user_id)
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT 1
+                    """
+                ),
+                {"user_id": user_id, "partner_id": partner_id},
+            ).mappings().first()
+            inbox.append(
+                {
+                    "partner": partner,
+                    "last_message": dict(row) if row else None,
+                }
+            )
+    return sorted(
+        inbox,
+        key=lambda item: str((item.get("last_message") or {}).get("created_at") or ""),
+        reverse=True,
+    )
+
+
+def create_announcement_channel(dietitian_user_id: str, name: str, client_user_ids: list[str]):
+    clean_name = str(name or "").strip()
+    if not clean_name:
+        raise ValueError("Channel name is required.")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO announcement_channels(dietitian_user_id, name)
+                VALUES (:dietitian_user_id, :name)
+                """
+            ),
+            {"dietitian_user_id": dietitian_user_id, "name": clean_name},
+        )
+        channel_id = conn.execute(
+            text(
+                """
+                SELECT MAX(id)
+                FROM announcement_channels
+                WHERE dietitian_user_id = :dietitian_user_id
+                """
+            ),
+            {"dietitian_user_id": dietitian_user_id},
+        ).scalar()
+        for client_user_id in client_user_ids:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO announcement_channel_recipients(channel_id, client_user_id)
+                    VALUES (:channel_id, :client_user_id)
+                    """
+                ),
+                {"channel_id": channel_id, "client_user_id": client_user_id},
+            )
+    return get_announcement_channel(channel_id)
+
+
+def get_announcement_channel(channel_id: int):
+    with engine.begin() as conn:
+        channel = conn.execute(
+            text(
+                """
+                SELECT id, dietitian_user_id, name, created_at
+                FROM announcement_channels
+                WHERE id = :channel_id
+                """
+            ),
+            {"channel_id": channel_id},
+        ).mappings().first()
+        if not channel:
+            return None
+        recipients = conn.execute(
+            text(
+                """
+                SELECT client_user_id
+                FROM announcement_channel_recipients
+                WHERE channel_id = :channel_id
+                ORDER BY client_user_id ASC
+                """
+            ),
+            {"channel_id": channel_id},
+        ).mappings().all()
+    result = dict(channel)
+    result["client_user_ids"] = [row["client_user_id"] for row in recipients]
+    return result
+
+
+def list_announcement_channels_for_dietitian(dietitian_user_id: str):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT c.id, c.dietitian_user_id, c.name, c.created_at,
+                       COUNT(r.client_user_id) AS recipient_count,
+                       MAX(m.created_at) AS last_message_at
+                FROM announcement_channels c
+                LEFT JOIN announcement_channel_recipients r ON r.channel_id = c.id
+                LEFT JOIN announcement_messages m ON m.channel_id = c.id
+                WHERE c.dietitian_user_id = :dietitian_user_id
+                GROUP BY c.id, c.dietitian_user_id, c.name, c.created_at
+                ORDER BY COALESCE(MAX(m.created_at), c.created_at) DESC
+                """
+            ),
+            {"dietitian_user_id": dietitian_user_id},
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def list_announcement_channels_for_client(client_user_id: str):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT c.id, c.dietitian_user_id, c.name, c.created_at,
+                       MAX(m.created_at) AS last_message_at
+                FROM announcement_channels c
+                JOIN announcement_channel_recipients r ON r.channel_id = c.id
+                LEFT JOIN announcement_messages m ON m.channel_id = c.id
+                WHERE r.client_user_id = :client_user_id
+                GROUP BY c.id, c.dietitian_user_id, c.name, c.created_at
+                ORDER BY COALESCE(MAX(m.created_at), c.created_at) DESC
+                """
+            ),
+            {"client_user_id": client_user_id},
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def create_announcement_message(channel_id: int, sender_user_id: str, body: str):
+    message_body = str(body or "").strip()
+    if not message_body:
+        raise ValueError("Announcement body is required.")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO announcement_messages(channel_id, sender_user_id, body)
+                VALUES (:channel_id, :sender_user_id, :body)
+                """
+            ),
+            {"channel_id": channel_id, "sender_user_id": sender_user_id, "body": message_body},
+        )
+
+
+def list_announcement_messages(channel_id: int):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT id, channel_id, sender_user_id, body, created_at
+                FROM announcement_messages
+                WHERE channel_id = :channel_id
+                ORDER BY created_at ASC, id ASC
+                """
+            ),
+            {"channel_id": channel_id},
+        ).mappings().all()
+    return [dict(row) for row in rows]
 
 def create_auth_session(user_id: str, expires_at: str | None = None):
     token = secrets.token_urlsafe(32)
