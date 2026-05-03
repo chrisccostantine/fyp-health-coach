@@ -702,6 +702,16 @@ export default function App() {
   });
   const [googleCalendarMsg, setGoogleCalendarMsg] = useState("");
   const [isGoogleCalendarBusy, setIsGoogleCalendarBusy] = useState(false);
+  const [isCheckingUser, setIsCheckingUser] = useState(false);
+  const [checkUserMsg, setCheckUserMsg] = useState("");
+  const [stage, setStage] = useState(
+    initialSettings.authToken && initialSettings.currentUser
+      ? restoreStageFor(initialSettings.currentUser, initialSettings.currentStage)
+      : "auth",
+  ); // auth | userHome | dietitianHome | dietitianCreate | dietitianClients | messageInbox | announcementChannel | clientUpdates | privateChat | coachTools | quiz | results
+  const [step, setStep] = useState(ACTIVE_QUIZ_STEPS[0]);
+  const TOTAL_STEPS = ACTIVE_QUIZ_STEPS.length;
+  const stepPosition = Math.max(0, ACTIVE_QUIZ_STEPS.indexOf(step));
   // Extra quiz answers (MadMuscles style)
 
   useEffect(() => {
@@ -750,19 +760,6 @@ export default function App() {
       window.history.replaceState({}, "", nextUrl);
     }
   }, []);
-
-  const [isCheckingUser, setIsCheckingUser] = useState(false);
-  const [checkUserMsg, setCheckUserMsg] = useState("");
-
-  // ------- Funnel state (NEW) -------
-  const [stage, setStage] = useState(
-    initialSettings.authToken && initialSettings.currentUser
-      ? restoreStageFor(initialSettings.currentUser, initialSettings.currentStage)
-      : "auth",
-  ); // auth | userHome | dietitianHome | dietitianCreate | dietitianClients | messageInbox | announcementChannel | clientUpdates | privateChat | coachTools | quiz | results
-  const [step, setStep] = useState(ACTIVE_QUIZ_STEPS[0]);
-  const TOTAL_STEPS = ACTIVE_QUIZ_STEPS.length;
-  const stepPosition = Math.max(0, ACTIVE_QUIZ_STEPS.indexOf(step));
 
   /* -------------------- Exports -------------------- */
 
