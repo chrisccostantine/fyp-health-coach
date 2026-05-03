@@ -2145,6 +2145,7 @@ export default function App() {
 
   async function loadMessageInbox({ targetStage = null } = {}) {
     if (!currentUser) return;
+    if (targetStage) setStage(targetStage);
     setIsLoadingInbox(true);
     setInboxMsg("");
     try {
@@ -2152,31 +2153,28 @@ export default function App() {
       setMessageInbox(Array.isArray(data?.inbox) ? data.inbox : []);
       setAnnouncementChannels(Array.isArray(data?.announcement_channels) ? data.announcement_channels : []);
       setClientUpdates(Array.isArray(data?.client_updates) ? data.client_updates : []);
-      if (targetStage) setStage(targetStage);
     } catch (e) {
       setInboxMsg(`Error: ${e.message}`);
-      if (targetStage) setStage(targetStage);
     } finally {
       setIsLoadingInbox(false);
     }
   }
 
-  async function openInboxTab(tab = "chats") {
+  function openInboxTab(tab = "chats") {
     setMessageInboxTab(tab);
-    await loadMessageInbox({ targetStage: "messageInbox" });
+    loadMessageInbox({ targetStage: "messageInbox" });
   }
 
   async function loadClientUpdates({ targetStage = null } = {}) {
     if (!currentUser) return;
+    if (targetStage) setStage(targetStage);
     setIsClientUpdateBusy(true);
     setClientUpdateMsg("");
     try {
       const data = await api.getClientUpdates();
       setClientUpdates(Array.isArray(data?.updates) ? data.updates : []);
-      if (targetStage) setStage(targetStage);
     } catch (e) {
       setClientUpdateMsg(`Error: ${e.message}`);
-      if (targetStage) setStage(targetStage);
     } finally {
       setIsClientUpdateBusy(false);
     }
@@ -2459,11 +2457,18 @@ export default function App() {
 
   async function handleSelectManagedClient(client) {
     if (!client?.user_id) return;
+    setViewedAccount(client);
+    setPlan(null);
+    setCalendar(null);
+    setCheckUserMsg("");
+    setStage("results");
     await loadAccountData(client.user_id, { targetStage: "results" });
   }
 
   async function handleSelectOwnAccount() {
     if (!currentUser?.user_id) return;
+    setViewedAccount(currentUser);
+    setStage(homeStageFor(currentUser));
     await loadAccountData(currentUser.user_id, { targetStage: homeStageFor(currentUser) });
   }
 
