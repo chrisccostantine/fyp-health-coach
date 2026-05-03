@@ -2162,7 +2162,10 @@ export default function App() {
 
   function openInboxTab(tab = "chats") {
     setMessageInboxTab(tab);
-    loadMessageInbox({ targetStage: "messageInbox" });
+    setStage("messageInbox");
+    if (stage === "messageInbox") {
+      loadMessageInbox();
+    }
   }
 
   async function loadClientUpdates({ targetStage = null } = {}) {
@@ -2864,7 +2867,7 @@ export default function App() {
                       <button
                         className="btn btn-outline-light btn-lg"
                         type="button"
-                        onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
+                        onClick={() => openInboxTab("chats")}
                       >
                         {inboxUnreadCount > 0 ? (
                           <span className="dashboard-unread-badge">{inboxUnreadCount}</span>
@@ -2947,7 +2950,7 @@ export default function App() {
                       <button
                         className="btn btn-outline-light w-100"
                         type="button"
-                        onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
+                        onClick={() => openInboxTab("chats")}
                       >
                         {inboxUnreadCount > 0 ? (
                           <span className="dashboard-unread-badge">{inboxUnreadCount}</span>
@@ -3079,7 +3082,7 @@ export default function App() {
                     <button
                       type="button"
                       className="btn btn-primary btn-lg fw-bold dietitian-inbox-cta"
-                      onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
+                      onClick={() => openInboxTab("chats")}
                     >
                       {inboxUnreadCount > 0 ? (
                         <span className="dashboard-unread-badge">{inboxUnreadCount}</span>

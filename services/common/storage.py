@@ -3,7 +3,7 @@ import os
 import secrets
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 
 
 def _database_url() -> str:
@@ -400,6 +400,8 @@ MIGRATIONS = [
     "ALTER TABLE user_nudge_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "CREATE TABLE IF NOT EXISTS private_messages (id SERIAL PRIMARY KEY, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS private_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS private_message_reads (user_id TEXT NOT NULL, partner_user_id TEXT NOT NULL, last_read_message_id INTEGER DEFAULT 0, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id, partner_user_id))",
+    "CREATE INDEX IF NOT EXISTS idx_private_messages_sender_recipient_id ON private_messages(sender_user_id, recipient_user_id, id)",
+    "CREATE INDEX IF NOT EXISTS idx_private_messages_recipient_sender_id ON private_messages(recipient_user_id, sender_user_id, id)",
     "CREATE TABLE IF NOT EXISTS announcement_channels (id SERIAL PRIMARY KEY, dietitian_user_id TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS announcement_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, dietitian_user_id TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS announcement_channel_recipients (channel_id INTEGER NOT NULL, client_user_id TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(channel_id, client_user_id))",
     "CREATE TABLE IF NOT EXISTS announcement_messages (id SERIAL PRIMARY KEY, channel_id INTEGER NOT NULL, sender_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS announcement_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id INTEGER NOT NULL, sender_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
@@ -760,47 +762,61 @@ def mark_private_messages_read(user_id: str, partner_user_id: str):
 
 
 def list_private_inbox(user_id: str, partners: list[dict]):
-    inbox = []
+    partner_ids = [partner.get("user_id") for partner in partners if partner.get("user_id")]
+    if not partner_ids:
+        return []
+
+    partners_by_id = {partner["user_id"]: partner for partner in partners if partner.get("user_id")}
+    last_messages: dict[str, dict] = {}
+    unread_counts: dict[str, int] = {}
+
     with engine.begin() as conn:
-        for partner in partners:
-            partner_id = partner.get("user_id")
-            if not partner_id:
-                continue
-            row = conn.execute(
-                text(
-                    """
-                    SELECT id, sender_user_id, recipient_user_id, body, created_at
-                    FROM private_messages
-                    WHERE (sender_user_id = :user_id AND recipient_user_id = :partner_id)
-                       OR (sender_user_id = :partner_id AND recipient_user_id = :user_id)
-                    ORDER BY created_at DESC, id DESC
-                    LIMIT 1
-                    """
-                ),
-                {"user_id": user_id, "partner_id": partner_id},
-            ).mappings().first()
-            unread_count = conn.execute(
-                text(
-                    """
-                    SELECT COUNT(*)
-                    FROM private_messages m
-                    LEFT JOIN private_message_reads r
-                      ON r.user_id = :user_id
-                     AND r.partner_user_id = :partner_id
-                    WHERE m.sender_user_id = :partner_id
-                      AND m.recipient_user_id = :user_id
-                      AND m.id > COALESCE(r.last_read_message_id, 0)
-                    """
-                ),
-                {"user_id": user_id, "partner_id": partner_id},
-            ).scalar() or 0
-            inbox.append(
-                {
-                    "partner": partner,
-                    "last_message": dict(row) if row else None,
-                    "unread_count": int(unread_count),
-                }
-            )
+        message_stmt = text(
+            """
+            SELECT id, sender_user_id, recipient_user_id, body, created_at
+            FROM private_messages
+            WHERE (sender_user_id = :user_id AND recipient_user_id IN :partner_ids)
+               OR (recipient_user_id = :user_id AND sender_user_id IN :partner_ids)
+            ORDER BY created_at DESC, id DESC
+            """
+        ).bindparams(bindparam("partner_ids", expanding=True))
+        rows = conn.execute(
+            message_stmt,
+            {"user_id": user_id, "partner_ids": partner_ids},
+        ).mappings().all()
+        for row in rows:
+            item = dict(row)
+            partner_id = item["recipient_user_id"] if item["sender_user_id"] == user_id else item["sender_user_id"]
+            if partner_id not in last_messages:
+                last_messages[partner_id] = item
+
+        unread_stmt = text(
+            """
+            SELECT m.sender_user_id AS partner_user_id, COUNT(*) AS unread_count
+            FROM private_messages m
+            LEFT JOIN private_message_reads r
+              ON r.user_id = :user_id
+             AND r.partner_user_id = m.sender_user_id
+            WHERE m.recipient_user_id = :user_id
+              AND m.sender_user_id IN :partner_ids
+              AND m.id > COALESCE(r.last_read_message_id, 0)
+            GROUP BY m.sender_user_id
+            """
+        ).bindparams(bindparam("partner_ids", expanding=True))
+        unread_rows = conn.execute(
+            unread_stmt,
+            {"user_id": user_id, "partner_ids": partner_ids},
+        ).mappings().all()
+        unread_counts = {row["partner_user_id"]: int(row["unread_count"] or 0) for row in unread_rows}
+
+    inbox = [
+        {
+            "partner": partner,
+            "last_message": last_messages.get(partner_id),
+            "unread_count": unread_counts.get(partner_id, 0),
+        }
+        for partner_id, partner in partners_by_id.items()
+    ]
     return sorted(
         inbox,
         key=lambda item: str((item.get("last_message") or {}).get("created_at") or ""),
