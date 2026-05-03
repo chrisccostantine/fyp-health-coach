@@ -935,7 +935,6 @@ export default function App() {
       }).catch(() => {}); // non-blocking; failures are silent
       if (autoGoResults) setStage("results");
     } catch (e) {
-      setPlan(null);
       setPlanMsg(`Error: ${e.message}`);
     } finally {
       setIsPlanning(false);

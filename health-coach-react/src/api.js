@@ -131,7 +131,7 @@ async function fetchJSON(path, options = {}) {
   const base = apiBase();
   const url = path.startsWith("http") ? path : `${base}${path}`;
 
-  const timeoutMs = options.timeoutMs ?? 15000; // 15s default
+  const timeoutMs = options.timeoutMs ?? 30000; // 30s default
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -255,6 +255,7 @@ export const api = {
     const data = await fetchJSON("/plan/today", {
       method: "POST",
       body: JSON.stringify(body),
+      timeoutMs: 90000,
     });
 
     cachePlan(data);
@@ -431,6 +432,7 @@ export const api = {
     return await fetchJSON(`/user/${encodeURIComponent(userId)}/profile`, {
       method: "POST",
       body: JSON.stringify({ profile, goal, quiz_data: quizData }),
+      timeoutMs: 30000,
     });
   },
 

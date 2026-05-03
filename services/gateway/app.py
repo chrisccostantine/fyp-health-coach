@@ -1849,7 +1849,7 @@ def plan_today():
             "profile": profile.model_dump(),
             "goal": goal.model_dump(),
         },
-        timeout=20,
+        timeout=60,
     )
     if diet_res.status_code != 200:
         return jsonify({"error": "diet agent failed", "detail": diet_res.text}), 502
@@ -1863,7 +1863,7 @@ def plan_today():
             "goal": goal.model_dump(),
             "equipment": payload.get("equipment", []),
         },
-        timeout=20,
+        timeout=60,
     )
     if work_res.status_code != 200:
         return jsonify({"error": "exercise agent failed", "detail": work_res.text}), 502
