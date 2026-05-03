@@ -257,9 +257,11 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any], regener
             if not set(recipe.get("ingredients", set())).intersection(set(prefs["allergies"]))
         ]
     candidates = _rank_recipes(candidates or recipe_catalog, prefs)
-    start = _rotation_offset(regeneration_id, len(candidates))
+    rotation_pool_size = min(len(candidates), MEAL_POOL_SIZE)
+    start = _rotation_offset(regeneration_id, rotation_pool_size)
     if start:
-        candidates = candidates[start:] + candidates[:start]
+        top_candidates = candidates[:rotation_pool_size]
+        candidates = top_candidates[start:] + top_candidates[:start] + candidates[rotation_pool_size:]
 
     total_p = total_c = total_f = 0
 

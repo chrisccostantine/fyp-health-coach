@@ -66,7 +66,12 @@ function buildErrorMessage(data, res) {
   if (typeof d === "string" && d.trim()) return d;
 
   // if server returned something else
-  if (typeof data?.raw === "string" && data.raw.trim()) return data.raw;
+  if (typeof data?.raw === "string" && data.raw.trim()) {
+    if (/^\s*<!doctype html>|<html[\s>]/i.test(data.raw)) {
+      return `Server error (${res?.status || 500}). Check that the backend services are running.`;
+    }
+    return data.raw;
+  }
 
   return res?.statusText || `Request failed: ${res?.status || "unknown"}`;
 }

@@ -928,6 +928,34 @@ def _regeneration_offset(value) -> int:
         return sum(ord(ch) for ch in str(value or "")) % PLAN_SPAN_DAYS
 
 
+def _local_diet_suggest(profile: UserProfile, goal: Goal, regeneration_id=None) -> dict:
+    from services.diet_agent.app import build_rule_based_diet
+
+    plan = build_rule_based_diet(profile.model_dump(), goal.model_dump(), regeneration_id)
+    return {
+        "meals": plan.get("meals", []),
+        "meal_pool": plan.get("meal_pool", []),
+        "daily_calories": plan.get("daily_calories"),
+        "macros": plan.get("macros", {}),
+        "agent_fallback": "diet",
+    }
+
+
+def _local_exercise_suggest(profile: UserProfile, goal: Goal, equipment: list, regeneration_id=None) -> dict:
+    from services.exercise_agent.app import build_rule_based_exercise
+
+    plan = build_rule_based_exercise(
+        profile.model_dump(),
+        goal.model_dump(),
+        equipment,
+        regeneration_id,
+    )
+    return {
+        "workouts": plan.get("workouts", []),
+        "agent_fallback": "exercise",
+    }
+
+
 def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], span_days: int = PLAN_SPAN_DAYS, start_offset: int = 0):
     today = datetime.now(_safe_zoneinfo(APP_TIMEZONE)).date()
     base_meals = _copy_plan_items(meals)
@@ -1850,34 +1878,43 @@ def plan_today():
             }
         ), 422
 
-    diet_res = requests.post(
-        f"{DIET_URL}/diet/suggest",
-        json={
-            "user_id": user_id,
-            "profile": profile.model_dump(),
-            "goal": goal.model_dump(),
-            "regeneration_id": payload.get("regeneration_id"),
-        },
-        timeout=60,
-    )
-    if diet_res.status_code != 200:
-        return jsonify({"error": "diet agent failed", "detail": diet_res.text}), 502
-    diet = diet_res.json()
+    regeneration_id = payload.get("regeneration_id")
+    equipment = payload.get("equipment", [])
 
-    work_res = requests.post(
-        f"{EXERCISE_URL}/exercise/suggest",
-        json={
-            "user_id": user_id,
-            "profile": profile.model_dump(),
-            "goal": goal.model_dump(),
-            "equipment": payload.get("equipment", []),
-            "regeneration_id": payload.get("regeneration_id"),
-        },
-        timeout=60,
-    )
-    if work_res.status_code != 200:
-        return jsonify({"error": "exercise agent failed", "detail": work_res.text}), 502
-    work = work_res.json()
+    try:
+        diet_res = requests.post(
+            f"{DIET_URL}/diet/suggest",
+            json={
+                "user_id": user_id,
+                "profile": profile.model_dump(),
+                "goal": goal.model_dump(),
+                "regeneration_id": regeneration_id,
+            },
+            timeout=60,
+        )
+        if diet_res.status_code != 200:
+            return jsonify({"error": "diet agent failed", "detail": diet_res.text}), 502
+        diet = diet_res.json()
+    except requests.RequestException as e:
+        diet = _local_diet_suggest(profile, goal, regeneration_id)
+
+    try:
+        work_res = requests.post(
+            f"{EXERCISE_URL}/exercise/suggest",
+            json={
+                "user_id": user_id,
+                "profile": profile.model_dump(),
+                "goal": goal.model_dump(),
+                "equipment": equipment,
+                "regeneration_id": regeneration_id,
+            },
+            timeout=60,
+        )
+        if work_res.status_code != 200:
+            return jsonify({"error": "exercise agent failed", "detail": work_res.text}), 502
+        work = work_res.json()
+    except requests.RequestException as e:
+        work = _local_exercise_suggest(profile, goal, equipment, regeneration_id)
 
     daily_plan = DayPlan(
         user_id=user_id,
@@ -1890,8 +1927,18 @@ def plan_today():
         user_id,
         meal_pool or daily_payload.get("meals", []),
         daily_payload.get("workouts", []),
-        start_offset=_regeneration_offset(payload.get("regeneration_id")),
+        start_offset=_regeneration_offset(regeneration_id),
     )
+    generation_warnings = [
+        warning
+        for warning in [
+            "Used local diet generator because the diet agent was unreachable." if diet.get("agent_fallback") else None,
+            "Used local exercise generator because the exercise agent was unreachable." if work.get("agent_fallback") else None,
+        ]
+        if warning
+    ]
+    if generation_warnings:
+        plan_payload["generation_warnings"] = generation_warnings
     review_payload = _managed_plan_review_payload(session)
     if review_payload:
         plan_payload["review"] = review_payload
