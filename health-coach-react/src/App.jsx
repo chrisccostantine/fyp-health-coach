@@ -1986,6 +1986,13 @@ export default function App() {
 
   async function openPrivateChat(partner, returnStage = null) {
     if (!partner?.user_id) return;
+    setMessageInbox((prev) =>
+      prev.map((item) =>
+        item.partner?.user_id === partner.user_id
+          ? { ...item, unread_count: 0 }
+          : item,
+      ),
+    );
     setActiveChatPartner(partner);
     setPrivateChatReturnStage(
       returnStage || (currentUser?.role === "dietitian" ? "dietitianClients" : "userHome"),
@@ -1999,6 +2006,13 @@ export default function App() {
       const data = await api.getPrivateMessages(partner.user_id);
       setActiveChatPartner(data?.partner || partner);
       setPrivateMessages(Array.isArray(data?.messages) ? data.messages : []);
+      setMessageInbox((prev) =>
+        prev.map((item) =>
+          item.partner?.user_id === partner.user_id
+            ? { ...item, unread_count: 0 }
+            : item,
+        ),
+      );
     } catch (e) {
       setPrivateChatMsg(`Error: ${e.message}`);
     } finally {
@@ -2022,6 +2036,17 @@ export default function App() {
     } finally {
       setIsLoadingInbox(false);
     }
+  }
+
+  async function returnFromPrivateChat() {
+    const destination = privateChatReturnStage || defaultHomeStage;
+    setPrivateChatMsg("");
+    setPrivateChatInput("");
+    if (destination === "messageInbox") {
+      await loadMessageInbox({ targetStage: "messageInbox" });
+      return;
+    }
+    setStage(destination);
   }
 
   async function handleCreateAnnouncementChannel(event) {
@@ -3267,11 +3292,7 @@ export default function App() {
                         <button
                           className="btn btn-outline-light"
                           type="button"
-                          onClick={() => {
-                            setPrivateChatMsg("");
-                            setPrivateChatInput("");
-                            setStage(privateChatReturnStage || defaultHomeStage);
-                          }}
+                          onClick={returnFromPrivateChat}
                         >
                           Back
                         </button>
