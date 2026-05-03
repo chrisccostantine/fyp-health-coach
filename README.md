@@ -92,6 +92,14 @@ Or use the helper script after activating the virtual environment:
 run_all.bat
 ```
 
+For demos on Windows, use the one-command launcher. It checks that the Python
+virtual environment and frontend dependencies exist, then opens backend service
+windows and the React dev server:
+
+```powershell
+start_dev.bat
+```
+
 Backend ports:
 
 - Gateway: `8000`
@@ -157,6 +165,33 @@ npm run dev
 - `POST /nudge/send` - generate a motivation message
 - `POST /feedback` - submit event feedback
 - `POST /diet/chat` - modify diet plan via the diet agent
+
+## Demo Flow
+
+1. Run `start_dev.bat`.
+2. Open the Vite frontend URL shown in the React terminal.
+3. Create a client account or log in.
+4. Complete the quiz and generate a plan.
+5. Show the staged loading messages while meals, workouts, and the 30-day plan are built.
+6. Open the results dashboard and switch between plan days.
+7. Click Regenerate, Meals Only, Workouts Only, and Selected Day to show targeted plan updates.
+8. Click Undo to restore the previous plan.
+9. Log meal/workout adherence and submit a progress check-in.
+10. Use a dietitian account to review a client plan, request changes, approve, or reject it.
+
+## Reliability Notes
+
+- The gateway falls back to local diet/exercise generation if an agent service is unreachable.
+- Plan generation logs timing, selected regeneration scope, item counts, and fallback usage in the gateway console.
+- Frontend errors are translated into user-readable messages for timeouts, unavailable backend services, expired sessions, and server errors.
+
+## Known Limitations
+
+- Health guidance is general wellness support, not medical advice.
+- Dataset recipes can still contain imperfect labels or ingredient metadata, although obvious non-meal rows are filtered.
+- Plan history and Undo are stored locally in the browser.
+- Google Calendar integration requires valid Google OAuth environment variables.
+- OpenAI-backed chat features require `OPENAI_API_KEY`; without it, rule-based fallbacks are used.
 
 Example `POST /plan/today` request:
 

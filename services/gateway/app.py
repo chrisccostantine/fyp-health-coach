@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import traceback
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -992,6 +993,55 @@ def _build_month_plan(user_id: str, meals: list[dict], workouts: list[dict], spa
     return _plan_view_for_date(month_plan, plan_days[0]["date"])
 
 
+def _plan_day_by_date(plan: dict | None) -> dict[str, dict]:
+    return {
+        str(day.get("date", "")).strip(): day
+        for day in _plan_days(plan)
+        if str(day.get("date", "")).strip()
+    }
+
+
+def _merge_regenerated_plan(existing_plan: dict | None, new_plan: dict, scope: str, selected_date: str | None = None) -> dict:
+    if scope not in {"meals", "workouts", "day"}:
+        return new_plan
+
+    existing_days = _plan_day_by_date(existing_plan)
+    new_days = _plan_days(new_plan)
+    if not existing_days or not new_days:
+        return new_plan
+
+    target_date = str(selected_date or new_plan.get("active_date") or "").strip()
+    merged_days = []
+    for new_day in new_days:
+        day_date = str(new_day.get("date", "")).strip()
+        old_day = existing_days.get(day_date)
+        if not old_day:
+            merged_days.append(new_day)
+            continue
+
+        merged_day = {
+            "date": day_date,
+            "meals": _copy_plan_items(new_day.get("meals", [])),
+            "workouts": _copy_plan_items(new_day.get("workouts", [])),
+        }
+
+        if scope == "meals":
+            merged_day["workouts"] = _copy_plan_items(old_day.get("workouts", []))
+        elif scope == "workouts":
+            merged_day["meals"] = _copy_plan_items(old_day.get("meals", []))
+        elif scope == "day" and target_date and day_date != target_date:
+            merged_day["meals"] = _copy_plan_items(old_day.get("meals", []))
+            merged_day["workouts"] = _copy_plan_items(old_day.get("workouts", []))
+
+        merged_days.append(merged_day)
+
+    merged_plan = {
+        **new_plan,
+        "plan_days": merged_days,
+    }
+    return _plan_view_for_date(merged_plan, target_date or new_plan.get("active_date"))
+
+
 def _merge_updated_day_into_plan(existing_plan: dict | None, selected_date: str | None, updated_day_plan: dict, user_id: str):
     existing_plan = existing_plan or {}
     plan_days = _plan_days(existing_plan)
@@ -1858,6 +1908,7 @@ def chat():
 
 @app.post("/plan/today")
 def plan_today():
+    started_at = time.perf_counter()
     payload = request.get_json(force=True)
     try:
         session = _get_current_session()
@@ -1879,7 +1930,15 @@ def plan_today():
         ), 422
 
     regeneration_id = payload.get("regeneration_id")
+    regeneration_scope = str(payload.get("regeneration_scope") or "full").strip().lower()
+    selected_date = str(payload.get("selected_date") or "").strip() or None
     equipment = payload.get("equipment", [])
+    app.logger.info(
+        "plan_today start user_id=%s scope=%s selected_date=%s",
+        user_id,
+        regeneration_scope,
+        selected_date or "",
+    )
 
     try:
         diet_res = requests.post(
@@ -1939,11 +1998,35 @@ def plan_today():
     ]
     if generation_warnings:
         plan_payload["generation_warnings"] = generation_warnings
+        app.logger.warning(
+            "plan_today fallback user_id=%s warnings=%s",
+            user_id,
+            " | ".join(generation_warnings),
+        )
+    if regeneration_scope in {"meals", "workouts", "day"}:
+        plan_payload = _merge_regenerated_plan(
+            get_latest_plan(user_id),
+            plan_payload,
+            regeneration_scope,
+            selected_date,
+        )
+        if generation_warnings:
+            plan_payload["generation_warnings"] = generation_warnings
     review_payload = _managed_plan_review_payload(session)
     if review_payload:
         plan_payload["review"] = review_payload
     save_plan(user_id, plan_payload)
     calendar = _sync_calendar_for_plan(user_id, plan_payload)
+    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+    app.logger.info(
+        "plan_today complete user_id=%s scope=%s days=%s meals_today=%s workouts_today=%s elapsed_ms=%s",
+        user_id,
+        regeneration_scope,
+        len(plan_payload.get("plan_days", []) or []),
+        len(plan_payload.get("meals", []) or []),
+        len(plan_payload.get("workouts", []) or []),
+        elapsed_ms,
+    )
     return jsonify({**plan_payload, "calendar": calendar, "safety": _plan_safety_payload(safety)})
 
 

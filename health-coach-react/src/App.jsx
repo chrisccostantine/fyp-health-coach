@@ -8,6 +8,9 @@ import {
   clearAuthSession,
   getCachedCalendar,
   getCachedPlan,
+  getPlanHistory,
+  popPlanHistory,
+  pushPlanHistory,
   getSettings,
   saveAuthSession,
   saveSettings,
@@ -33,6 +36,14 @@ function Alert({ variant = "warning", children }) {
   if (!children) return null;
   return <div className={`alert alert-${variant} mt-3 mb-0`}>{children}</div>;
 }
+
+const PLAN_LOADING_STEPS = [
+  "Reading your quiz answers...",
+  "Filtering meal dataset...",
+  "Selecting workout matches...",
+  "Building your 30-day calendar...",
+  "Finalizing your plan...",
+];
 
 function safeArray(v) {
   return Array.isArray(v) ? v : [];
@@ -88,6 +99,38 @@ function getPlanSliceForDate(plan, selectedDate) {
     meals: Array.isArray(activeDay?.meals) ? activeDay.meals : [],
     workouts: Array.isArray(activeDay?.workouts) ? activeDay.workouts : [],
   };
+}
+
+function buildHealthSafetyNotes({
+  medicalConditionsInput,
+  injuriesInput,
+  deficit,
+  currentWeight,
+  targetWeight,
+  weight,
+  weightUnit,
+}) {
+  const notes = [];
+  const conditions = String(medicalConditionsInput || "").trim();
+  const injuries = String(injuriesInput || "").trim();
+  const deficitValue = Number(deficit);
+  const currentKg = toMetricWeight(currentWeight || weight, weightUnit);
+  const targetKg = toMetricWeight(targetWeight, weightUnit);
+
+  if (conditions) {
+    notes.push("Medical conditions were entered. Review this plan with a qualified clinician if symptoms, medication, pregnancy, diabetes, hypertension, kidney disease, or heart concerns apply.");
+  }
+  if (injuries) {
+    notes.push("Injuries or movement limits were entered. Stop exercises that cause pain and prefer low-impact swaps.");
+  }
+  if (Number.isFinite(deficitValue) && deficitValue > 750) {
+    notes.push("The selected calorie deficit is aggressive. Consider a smaller deficit for energy, adherence, and safety.");
+  }
+  if (currentKg && targetKg && targetKg < currentKg * 0.82) {
+    notes.push("The target weight is much lower than current weight. Aim for gradual progress and check whether the target is realistic.");
+  }
+
+  return notes;
 }
 
 /* -------------------- CalendarView -------------------- */
@@ -707,6 +750,27 @@ export default function App() {
   const [fitnessMeterPercent, setFitnessMeterPercent] = useState(45);
   const [fitnessSummary, setFitnessSummary] = useState("");
   const [isLoadingFitnessScore, setIsLoadingFitnessScore] = useState(false);
+  const healthSafetyNotes = useMemo(
+    () =>
+      buildHealthSafetyNotes({
+        medicalConditionsInput,
+        injuriesInput,
+        deficit,
+        currentWeight,
+        targetWeight,
+        weight,
+        weightUnit,
+      }),
+    [
+      medicalConditionsInput,
+      injuriesInput,
+      deficit,
+      currentWeight,
+      targetWeight,
+      weight,
+      weightUnit,
+    ],
+  );
   const ageBand =
     Number(age) < 25
       ? "under_25"
@@ -839,9 +903,11 @@ export default function App() {
 
   // ------- Plan -------
   const [plan, setPlan] = useState(null);
+  const [planHistoryCount, setPlanHistoryCount] = useState(() => getPlanHistory().length);
   const [selectedPlanDate, setSelectedPlanDate] = useState("");
   const [planMsg, setPlanMsg] = useState("");
   const [isPlanning, setIsPlanning] = useState(false);
+  const [planningStepIndex, setPlanningStepIndex] = useState(0);
   const [dietChatInput, setDietChatInput] = useState("");
   const [dietChatMessages, setDietChatMessages] = useState([]);
   const [isDietChatting, setIsDietChatting] = useState(false);
@@ -859,8 +925,24 @@ export default function App() {
     setSelectedPlanDate((current) => getActivePlanDate(plan, current));
   }, [plan]);
 
-  async function handlePlanToday({ autoGoResults = true } = {}) {
+  useEffect(() => {
+    if (!isPlanning) {
+      setPlanningStepIndex(0);
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setPlanningStepIndex((idx) => Math.min(idx + 1, PLAN_LOADING_STEPS.length - 1));
+    }, 3500);
+
+    return () => window.clearInterval(timer);
+  }, [isPlanning]);
+
+  const planningLabel = PLAN_LOADING_STEPS[planningStepIndex] || "Generating plan...";
+
+  async function handlePlanToday({ autoGoResults = true, regenerateScope = "full" } = {}) {
     setIsPlanning(true);
+    setPlanningStepIndex(0);
     setPlanMsg("");
     try {
       if (!userId?.trim()) throw new Error("User ID is required.");
@@ -907,9 +989,15 @@ export default function App() {
           .map((s) => s.trim())
           .filter(Boolean),
         regeneration_id: Date.now(),
+        regeneration_scope: regenerateScope,
+        selected_date: selectedPlanDate,
       };
 
       const data = await api.planToday(payload);
+      if (plan) {
+        const history = pushPlanHistory(plan);
+        setPlanHistoryCount(history.length);
+      }
       setPlan(data);
       setSelectedPlanDate(getActivePlanDate(data, ""));
       setCalendar(data?.calendar || null);
@@ -921,7 +1009,13 @@ export default function App() {
           text: "Your 30-day plan is ready. Ask me to modify meals, swap workouts, or explain the selected day.",
         },
       ]);
-      setPlanMsg(autoGoResults ? "" : "Plan regenerated.");
+      const scopeLabels = {
+        full: "Plan regenerated.",
+        meals: "Meals regenerated.",
+        workouts: "Workouts regenerated.",
+        day: "Selected day regenerated.",
+      };
+      setPlanMsg(autoGoResults ? "" : scopeLabels[regenerateScope] || "Plan regenerated.");
       // Persist profile so the user is recognised on next visit
       api.saveUserProfile(userId, {
         profile: payload.profile,
@@ -941,6 +1035,20 @@ export default function App() {
     } finally {
       setIsPlanning(false);
     }
+  }
+
+  function handleUndoPlan() {
+    const { restoredPlan, history } = popPlanHistory();
+    if (!restoredPlan) {
+      setPlanMsg("No previous plan to restore.");
+      setPlanHistoryCount(0);
+      return;
+    }
+    setPlan(restoredPlan);
+    cachePlan(restoredPlan);
+    setSelectedPlanDate(getActivePlanDate(restoredPlan, selectedPlanDate));
+    setPlanHistoryCount(history.length);
+    setPlanMsg("Previous plan restored.");
   }
 
   async function handleDietChat() {
@@ -1375,7 +1483,13 @@ export default function App() {
         cachePlan(data.plan);
       }
       setReviewNote("");
-      setReviewMsg(status === "approved" ? "Plan approved." : "Changes requested.");
+      setReviewMsg(
+        status === "approved"
+          ? "Plan approved."
+          : status === "rejected"
+            ? "Plan rejected."
+            : "Changes requested.",
+      );
     } catch (e) {
       setReviewMsg(`Error: ${e.message}`);
     } finally {
@@ -4164,13 +4278,28 @@ export default function App() {
                       </div>
                     </div>
 
+                    {healthSafetyNotes.length > 0 ? (
+                      <div className="alert alert-warning mt-4 mb-0 small">
+                        <div className="fw-semibold mb-1">Safety review</div>
+                        <ul className="mb-0 ps-3">
+                          {healthSafetyNotes.map((note, idx) => (
+                            <li key={idx}>{note}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="alert alert-info mt-4 mb-0 small">
+                        Health Coach provides general wellness guidance, not medical advice.
+                      </div>
+                    )}
+
                     <button
                       className="btn btn-primary w-100 mt-4"
                       onClick={() => handlePlanToday({ autoGoResults: true })}
                       disabled={isPlanning}
                     >
                       {isPlanning ? (
-                        <Spinner label="Generating..." />
+                        <Spinner label={planningLabel} />
                       ) : (
                         "Continue"
                       )}
@@ -4203,7 +4332,7 @@ export default function App() {
                       disabled={isPlanning}
                     >
                       {isPlanning ? (
-                        <Spinner label="Generating..." />
+                        <Spinner label={planningLabel} />
                       ) : (
                         "Get My Plan"
                       )}
@@ -4228,6 +4357,9 @@ export default function App() {
           isPlanning={isPlanning}
           handlePlanToday={handlePlanToday}
           planMsg={planMsg}
+          planningLabel={planningLabel}
+          planHistoryCount={planHistoryCount}
+          handleUndoPlan={handleUndoPlan}
           isReadOnlyClientView={isReadOnlyClientView}
           viewedAccount={viewedAccount}
           eventId={eventId}

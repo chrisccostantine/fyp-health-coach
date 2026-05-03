@@ -69,6 +69,20 @@ function reviewStatusLabel(status) {
   }
 }
 
+function reviewStatusDescription(status, isDietitianView) {
+  if (isDietitianView) {
+    if (status === "pending_review") return "Review the meals, workouts, and safety notes before approving this plan for the client.";
+    if (status === "approved") return "This plan is visible to the client.";
+    if (status === "changes_requested") return "Changes were requested. The client should update or regenerate the plan.";
+    if (status === "rejected") return "This plan was rejected and should not be used.";
+  }
+  if (status === "pending_review") return "Your plan is waiting for dietitian approval before you can use it.";
+  if (status === "approved") return "Your dietitian approved this plan.";
+  if (status === "changes_requested") return "Your dietitian requested changes. Review the note and regenerate or edit the plan.";
+  if (status === "rejected") return "Your dietitian rejected this plan. Please regenerate it or ask for guidance.";
+  return "";
+}
+
 export default function ResultsSection({
   stage,
   plan,
@@ -79,6 +93,9 @@ export default function ResultsSection({
   isPlanning,
   handlePlanToday,
   planMsg,
+  planningLabel,
+  planHistoryCount = 0,
+  handleUndoPlan,
   isReadOnlyClientView,
   viewedAccount,
 
@@ -193,6 +210,7 @@ export default function ResultsSection({
   const planReview = plan?.review || null;
   const planReviewStatus = planReview?.status || "";
   const planReviewLabel = reviewStatusLabel(planReviewStatus);
+  const planReviewDescription = reviewStatusDescription(planReviewStatus, isReadOnlyClientView);
   const canReviewPlan = isReadOnlyClientView && planReviewStatus === "pending_review";
   const planLockedForClient =
     Boolean(planReview?.required) &&
@@ -241,6 +259,7 @@ export default function ResultsSection({
                     } mt-3 mb-0 small`}
                   >
                     <div className="fw-semibold">{planReviewLabel}</div>
+                    {planReviewDescription ? <div>{planReviewDescription}</div> : null}
                     {planReview?.note ? <div>{planReview.note}</div> : null}
                   </div>
                 ) : null}
@@ -274,14 +293,50 @@ export default function ResultsSection({
                 <button
                   className="btn btn-primary fw-bold results-action-btn"
                   type="button"
-                  onClick={() => handlePlanToday({ autoGoResults: false })}
+                  onClick={() => handlePlanToday({ autoGoResults: false, regenerateScope: "full" })}
                   disabled={isPlanning || isReadOnlyClientView}
                 >
                   {isPlanning ? (
-                    <Loading label="Refreshing..." />
+                    <Loading label={planningLabel || "Refreshing..."} />
                   ) : (
                     "Regenerate"
                   )}
+                </button>
+
+                <button
+                  className="btn btn-outline-light results-action-btn"
+                  type="button"
+                  onClick={() => handlePlanToday({ autoGoResults: false, regenerateScope: "meals" })}
+                  disabled={isPlanning || isReadOnlyClientView || !plan}
+                >
+                  Meals Only
+                </button>
+
+                <button
+                  className="btn btn-outline-light results-action-btn"
+                  type="button"
+                  onClick={() => handlePlanToday({ autoGoResults: false, regenerateScope: "workouts" })}
+                  disabled={isPlanning || isReadOnlyClientView || !plan}
+                >
+                  Workouts Only
+                </button>
+
+                <button
+                  className="btn btn-outline-light results-action-btn"
+                  type="button"
+                  onClick={() => handlePlanToday({ autoGoResults: false, regenerateScope: "day" })}
+                  disabled={isPlanning || isReadOnlyClientView || !plan || !activeDate}
+                >
+                  Selected Day
+                </button>
+
+                <button
+                  className="btn btn-outline-light results-action-btn"
+                  type="button"
+                  onClick={handleUndoPlan}
+                  disabled={isPlanning || isReadOnlyClientView || !planHistoryCount}
+                >
+                  Undo
                 </button>
               </div>
             </div>
@@ -314,6 +369,9 @@ export default function ResultsSection({
                 <p className="text-muted mb-3">
                   Your plan is hidden until your dietitian approves the latest version.
                 </p>
+                {planReviewDescription ? (
+                  <p className="text-muted mb-3">{planReviewDescription}</p>
+                ) : null}
                 {planReview?.note ? (
                   <div className="alert alert-warning mt-3 mb-0 small">
                     {planReview.note}
@@ -632,7 +690,15 @@ export default function ResultsSection({
                             onClick={() => handlePlanReview?.("approved")}
                             disabled={isReviewingPlan}
                           >
-                            {isReviewingPlan ? <Loading label="Saving..." /> : "Accept"}
+                            {isReviewingPlan ? <Loading label="Saving..." /> : "Approve Plan"}
+                          </button>
+                          <button
+                            className="btn btn-outline-warning"
+                            type="button"
+                            onClick={() => handlePlanReview?.("changes_requested")}
+                            disabled={isReviewingPlan}
+                          >
+                            Request Changes
                           </button>
                           <button
                             className="btn btn-outline-danger"
@@ -640,7 +706,7 @@ export default function ResultsSection({
                             onClick={() => handlePlanReview?.("rejected")}
                             disabled={isReviewingPlan}
                           >
-                            Reject Plan
+                            Reject
                           </button>
                         </div>
                       </>

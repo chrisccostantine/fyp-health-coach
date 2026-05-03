@@ -4,7 +4,7 @@ from services.diet_agent.kaggle_recipe_db import load_kaggle_recipe_catalog
 from services.diet_agent.nutrition_db import RECIPE_CATALOG, calculate_recipe_nutrition
 from services.exercise_agent.app import WORKOUT_LIBRARY, build_rule_based_exercise
 from services.exercise_agent.workout_csv_db import load_workout_catalog
-from services.gateway.app import _build_day_workouts, _build_month_plan
+from services.gateway.app import _build_day_workouts, _build_month_plan, _merge_regenerated_plan
 
 
 def use_local_recipe_catalog(monkeypatch):
@@ -263,6 +263,58 @@ def test_month_plan_start_offset_changes_first_day():
     assert base_names != regenerated_names
 
 
+def test_meals_only_regeneration_preserves_existing_workouts():
+    old_plan = {
+        "user_id": "demo",
+        "active_date": "2026-05-03",
+        "plan_days": [
+            {
+                "date": "2026-05-03",
+                "meals": [{"name": "Old Meal"}],
+                "workouts": [{"name": "Old Workout"}],
+            }
+        ],
+    }
+    new_plan = {
+        "user_id": "demo",
+        "active_date": "2026-05-03",
+        "plan_days": [
+            {
+                "date": "2026-05-03",
+                "meals": [{"name": "New Meal"}],
+                "workouts": [{"name": "New Workout"}],
+            }
+        ],
+    }
+
+    merged = _merge_regenerated_plan(old_plan, new_plan, "meals", "2026-05-03")
+    assert merged["plan_days"][0]["meals"][0]["name"] == "New Meal"
+    assert merged["plan_days"][0]["workouts"][0]["name"] == "Old Workout"
+
+
+def test_selected_day_regeneration_preserves_other_days():
+    old_plan = {
+        "user_id": "demo",
+        "active_date": "2026-05-04",
+        "plan_days": [
+            {"date": "2026-05-03", "meals": [{"name": "Old Day 1 Meal"}], "workouts": []},
+            {"date": "2026-05-04", "meals": [{"name": "Old Day 2 Meal"}], "workouts": []},
+        ],
+    }
+    new_plan = {
+        "user_id": "demo",
+        "active_date": "2026-05-04",
+        "plan_days": [
+            {"date": "2026-05-03", "meals": [{"name": "New Day 1 Meal"}], "workouts": []},
+            {"date": "2026-05-04", "meals": [{"name": "New Day 2 Meal"}], "workouts": []},
+        ],
+    }
+
+    merged = _merge_regenerated_plan(old_plan, new_plan, "day", "2026-05-04")
+    assert merged["plan_days"][0]["meals"][0]["name"] == "Old Day 1 Meal"
+    assert merged["plan_days"][1]["meals"][0]["name"] == "New Day 2 Meal"
+
+
 def test_diet_regeneration_id_rotates_meal_choices(monkeypatch):
     use_local_recipe_catalog(monkeypatch)
 
@@ -280,6 +332,20 @@ def test_diet_regeneration_id_rotates_meal_choices(monkeypatch):
     assert [meal["name"] for meal in base_plan["meals"]] != [
         meal["name"] for meal in regenerated_plan["meals"]
     ]
+    load_kaggle_recipe_catalog.cache_clear()
+
+
+def test_diet_filters_obvious_non_meal_dataset_rows(monkeypatch):
+    use_local_recipe_catalog(monkeypatch)
+    plan = build_rule_based_diet(
+        {"age": 30, "sex": "F", "height_cm": 165, "weight_kg": 62, "activity_level": "moderate"},
+        {"type": "general_health", "deficit_kcal": 0},
+    )
+    blocked_words = {"brownie", "cake", "cookie", "cocktail", "panna cotta"}
+    meal_names = " ".join(meal["name"].lower() for meal in plan["meal_pool"][:12])
+
+    assert not any(word in meal_names for word in blocked_words)
+    assert all((meal["macros"].get("protein") or 0) >= 8 for meal in plan["meal_pool"][:12])
     load_kaggle_recipe_catalog.cache_clear()
 
 

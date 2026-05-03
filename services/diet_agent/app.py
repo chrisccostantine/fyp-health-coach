@@ -42,6 +42,32 @@ def tdee(profile: Dict[str, Any]) -> int:
 MEAL_TIMES = ["08:00", "13:00", "19:00"]
 MEAL_POOL_SIZE = 35
 PLANNED_SNACK_CALORIES = 250
+MEAL_AVOID_TAGS = {
+    "dessert",
+    "cake",
+    "cupcake",
+    "cookie",
+    "cookies",
+    "brownie",
+    "candy",
+    "cocktail",
+    "drink",
+    "drinks",
+    "alcoholic",
+    "ice cream",
+    "frozen dessert",
+    "pie",
+    "tart",
+}
+MEAL_HEALTH_TAGS = {
+    "healthy",
+    "quick and healthy",
+    "low cal",
+    "low fat",
+    "low sodium",
+    "low sugar",
+    "high fiber",
+}
 
 
 def _normalize_list(value: Any) -> list[str]:
@@ -78,10 +104,27 @@ def _recipe_matches(recipe: Dict[str, Any], prefs: Dict[str, Any]) -> bool:
     return True
 
 
+def _is_quality_meal_recipe(recipe: Dict[str, Any]) -> bool:
+    tags = {str(item).lower() for item in recipe.get("tags", set())}
+    nutrition = recipe.get("nutrition") or {}
+    macros = recipe.get("macros") or {}
+    calories = float(nutrition.get("calories") or 0)
+    protein = float(macros.get("protein") or nutrition.get("protein") or 0)
+    fat = float(macros.get("fat") or nutrition.get("fat") or 0)
+
+    if tags.intersection(MEAL_AVOID_TAGS):
+        return False
+    if calories <= 0 or calories > 900:
+        return False
+    if protein < 8:
+        return False
+    if fat > 45:
+        return False
+    return True
+
+
 def _rank_recipes(recipes: list[Dict[str, Any]], prefs: Dict[str, Any]) -> list[Dict[str, Any]]:
     preferred_vegetables = set(prefs["preferred_vegetables"])
-    health_tags = {"healthy", "quick and healthy", "low cal", "low fat", "low sodium", "low sugar", "high fiber"}
-    avoid_tags = {"dessert", "cake", "cookie", "cookies", "candy", "cocktail", "drink", "drinks", "alcoholic"}
 
     def score(recipe: Dict[str, Any]) -> int:
         ingredients = {str(item).lower() for item in recipe.get("ingredients", set())}
@@ -98,9 +141,9 @@ def _rank_recipes(recipes: list[Dict[str, Any]], prefs: Dict[str, Any]) -> list[
             nutrition_score += 1
         return (
             len(ingredients.intersection(preferred_vegetables)) * 4
-            + len(tags.intersection(health_tags)) * 3
+            + len(tags.intersection(MEAL_HEALTH_TAGS)) * 3
             + nutrition_score
-            - len(tags.intersection(avoid_tags)) * 8
+            - len(tags.intersection(MEAL_AVOID_TAGS)) * 12
         )
 
     return sorted(recipes, key=score, reverse=True)
@@ -256,6 +299,9 @@ def build_rule_based_diet(profile: Dict[str, Any], goal: Dict[str, Any], regener
             for recipe in recipe_catalog
             if not set(recipe.get("ingredients", set())).intersection(set(prefs["allergies"]))
         ]
+    quality_candidates = [recipe for recipe in candidates if _is_quality_meal_recipe(recipe)]
+    if len(quality_candidates) >= 3:
+        candidates = quality_candidates
     candidates = _rank_recipes(candidates or recipe_catalog, prefs)
     rotation_pool_size = min(len(candidates), MEAL_POOL_SIZE)
     start = _rotation_offset(regeneration_id, rotation_pool_size)

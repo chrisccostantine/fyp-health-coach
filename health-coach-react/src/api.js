@@ -2,6 +2,7 @@
 
 const SETTINGS_KEY = "hc.settings.v1";
 const PLAN_KEY = "hc.lastPlan.v1";
+const PLAN_HISTORY_KEY = "hc.planHistory.v1";
 const CALENDAR_KEY = "hc.calendar.v1";
 
 const ENV_GATEWAY_URL = (import.meta.env.VITE_GATEWAY_URL || "").trim();
@@ -51,6 +52,7 @@ function withUserId(body = {}) {
 function buildErrorMessage(data, res) {
   // FastAPI typical: { detail: "..." } or { detail: [ { msg, loc } ] }
   const d = data?.detail ?? data?.message ?? data?.error ?? null;
+  const status = Number(res?.status || 0);
 
   if (Array.isArray(d)) {
     // validation errors
@@ -63,7 +65,18 @@ function buildErrorMessage(data, res) {
     if (parts.length) return parts.join(" | ");
   }
 
-  if (typeof d === "string" && d.trim()) return d;
+  if (typeof d === "string" && d.trim()) {
+    if (status === 401) return "Your session expired. Please log in again.";
+    if (status === 403) return d;
+    if (status === 502 && /diet agent failed/i.test(d)) {
+      return "Meal generation service failed. Please try regenerating meals again.";
+    }
+    if (status === 502 && /exercise agent failed/i.test(d)) {
+      return "Workout generation service failed. Please try regenerating workouts again.";
+    }
+    if (status >= 500) return `${d}. Please try again in a moment.`;
+    return d;
+  }
 
   // if server returned something else
   if (typeof data?.raw === "string" && data.raw.trim()) {
@@ -72,6 +85,10 @@ function buildErrorMessage(data, res) {
     }
     return data.raw;
   }
+
+  if (status === 401) return "Your session expired. Please log in again.";
+  if (status === 404) return "That record could not be found.";
+  if (status >= 500) return "Server error. Please try again in a moment.";
 
   return res?.statusText || `Request failed: ${res?.status || "unknown"}`;
 }
@@ -123,6 +140,29 @@ export function cachePlan(plan) {
 export function getCachedPlan() {
   return safeJsonParse(localStorage.getItem(PLAN_KEY), null);
 }
+export function getPlanHistory() {
+  const history = safeJsonParse(localStorage.getItem(PLAN_HISTORY_KEY), []);
+  return Array.isArray(history) ? history : [];
+}
+export function pushPlanHistory(plan) {
+  if (!plan || !Array.isArray(plan?.plan_days)) return getPlanHistory();
+  const history = getPlanHistory();
+  const nextHistory = [
+    {
+      saved_at: new Date().toISOString(),
+      plan,
+    },
+    ...history,
+  ].slice(0, 5);
+  localStorage.setItem(PLAN_HISTORY_KEY, JSON.stringify(nextHistory));
+  return nextHistory;
+}
+export function popPlanHistory() {
+  const history = getPlanHistory();
+  const [latest, ...rest] = history;
+  localStorage.setItem(PLAN_HISTORY_KEY, JSON.stringify(rest));
+  return { restoredPlan: latest?.plan || null, history: rest };
+}
 
 export function cacheCalendar(calendar) {
   localStorage.setItem(CALENDAR_KEY, JSON.stringify(calendar || {}));
@@ -166,7 +206,10 @@ async function fetchJSON(path, options = {}) {
     return data;
   } catch (e) {
     if (e.name === "AbortError")
-      throw new Error(`Request timeout after ${timeoutMs}ms`);
+      throw new Error("This is taking longer than expected. Please try again, or regenerate only meals/workouts.");
+    if (e instanceof TypeError && /fetch/i.test(e.message || "")) {
+      throw new Error("Cannot reach the backend. Make sure the gateway server is running.");
+    }
     throw e;
   } finally {
     clearTimeout(timer);
@@ -256,6 +299,8 @@ export const api = {
       goal: payload?.goal,
       equipment: payload?.equipment || [],
       regeneration_id: payload?.regeneration_id,
+      regeneration_scope: payload?.regeneration_scope,
+      selected_date: payload?.selected_date,
     });
 
     const data = await fetchJSON("/plan/today", {
