@@ -643,6 +643,11 @@ export default function App() {
   const [announcementMsg, setAnnouncementMsg] = useState("");
   const [isAnnouncementBusy, setIsAnnouncementBusy] = useState(false);
   const [isEditingAnnouncementChannel, setIsEditingAnnouncementChannel] = useState(false);
+  const [clientUpdates, setClientUpdates] = useState([]);
+  const [clientUpdateBody, setClientUpdateBody] = useState("");
+  const [clientUpdateImage, setClientUpdateImage] = useState("");
+  const [clientUpdateMsg, setClientUpdateMsg] = useState("");
+  const [isClientUpdateBusy, setIsClientUpdateBusy] = useState(false);
   const inboxUnreadCount = useMemo(
     () =>
       messageInbox.reduce(
@@ -700,7 +705,7 @@ export default function App() {
   const [checkUserMsg, setCheckUserMsg] = useState("");
 
   // ------- Funnel state (NEW) -------
-  const [stage, setStage] = useState("auth"); // auth | userHome | dietitianHome | dietitianCreate | dietitianClients | privateChat | coachTools | quiz | results
+  const [stage, setStage] = useState("auth"); // auth | userHome | dietitianHome | dietitianCreate | dietitianClients | messageInbox | announcementChannel | clientUpdates | privateChat | coachTools | quiz | results
   const [step, setStep] = useState(ACTIVE_QUIZ_STEPS[0]);
   const TOTAL_STEPS = ACTIVE_QUIZ_STEPS.length;
   const stepPosition = Math.max(0, ACTIVE_QUIZ_STEPS.indexOf(step));
@@ -2047,6 +2052,85 @@ export default function App() {
     }
   }
 
+  async function loadClientUpdates({ targetStage = null } = {}) {
+    if (!currentUser) return;
+    setIsClientUpdateBusy(true);
+    setClientUpdateMsg("");
+    try {
+      const data = await api.getClientUpdates();
+      setClientUpdates(Array.isArray(data?.updates) ? data.updates : []);
+      if (targetStage) setStage(targetStage);
+    } catch (e) {
+      setClientUpdateMsg(`Error: ${e.message}`);
+      if (targetStage) setStage(targetStage);
+    } finally {
+      setIsClientUpdateBusy(false);
+    }
+  }
+
+  function handleClientUpdateImage(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      setClientUpdateImage("");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setClientUpdateMsg("Choose an image file.");
+      event.target.value = "";
+      return;
+    }
+    if (file.size > 1_100_000) {
+      setClientUpdateMsg("Choose an image under about 1 MB.");
+      event.target.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setClientUpdateImage(String(reader.result || ""));
+      setClientUpdateMsg("");
+    };
+    reader.onerror = () => setClientUpdateMsg("Could not read that image.");
+    reader.readAsDataURL(file);
+  }
+
+  async function handleCreateClientUpdate(event) {
+    event.preventDefault();
+    if (!clientUpdateBody.trim() && !clientUpdateImage) {
+      setClientUpdateMsg("Write text or choose an image first.");
+      return;
+    }
+    setIsClientUpdateBusy(true);
+    setClientUpdateMsg("");
+    try {
+      await api.createClientUpdate({
+        body: clientUpdateBody.trim(),
+        image_data: clientUpdateImage,
+      });
+      setClientUpdateBody("");
+      setClientUpdateImage("");
+      await loadClientUpdates();
+      setClientUpdateMsg("Update posted for 24 hours.");
+    } catch (e) {
+      setClientUpdateMsg(`Error: ${e.message}`);
+    } finally {
+      setIsClientUpdateBusy(false);
+    }
+  }
+
+  async function handleDeleteClientUpdate(update) {
+    if (!update?.id) return;
+    setIsClientUpdateBusy(true);
+    setClientUpdateMsg("");
+    try {
+      await api.deleteClientUpdate(update.id);
+      setClientUpdates((prev) => prev.filter((item) => item.id !== update.id));
+    } catch (e) {
+      setClientUpdateMsg(`Error: ${e.message}`);
+    } finally {
+      setIsClientUpdateBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!currentUser || !["userHome", "dietitianHome"].includes(stage)) return;
     let cancelled = false;
@@ -2658,6 +2742,15 @@ export default function App() {
                         Inbox
                       </button>
                     ) : null}
+                    {currentUser?.managed_by ? (
+                      <button
+                        className="btn btn-outline-light btn-lg"
+                        type="button"
+                        onClick={() => loadClientUpdates({ targetStage: "clientUpdates" })}
+                      >
+                        Updates
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -2700,6 +2793,13 @@ export default function App() {
                           <span className="dashboard-unread-badge">{inboxUnreadCount}</span>
                         ) : null}
                         Open Inbox
+                      </button>
+                      <button
+                        className="btn btn-outline-light w-100 mt-2"
+                        type="button"
+                        onClick={() => loadClientUpdates({ targetStage: "clientUpdates" })}
+                      >
+                        Client Updates
                       </button>
                     </div>
                   ) : null}
@@ -2836,6 +2936,13 @@ export default function App() {
                     <div className="text-muted small">
                       Client chats and one-way announcement channels are managed from the inbox.
                     </div>
+                    <button
+                      type="button"
+                      className="btn btn-outline-light btn-lg fw-bold"
+                      onClick={() => loadClientUpdates({ targetStage: "clientUpdates" })}
+                    >
+                      Client Updates
+                    </button>
                   </div>
 
                   <div className="results-summary dietitian-dashboard-actions">
@@ -3074,6 +3181,112 @@ export default function App() {
                   <div className="mt-4">
                     <button className="btn btn-outline-light" type="button" onClick={() => setStage("dietitianHome")}>
                       Back to Dashboard
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* CLIENT UPDATES */}
+        {stage === "clientUpdates" && currentUser && (
+          <div className="row justify-content-center">
+            <div className="col-lg-10">
+              <div className="card card-soft">
+                <div className="card-body p-4 p-md-5">
+                  <div className="private-chat-kicker">24 Hour Updates</div>
+                  <h2 className="private-chat-title">Client Updates</h2>
+                  <p className="private-chat-subtitle">
+                    {currentUser.role === "dietitian"
+                      ? "See text and image updates shared by clients under your care."
+                      : "Share a quick text or image update with clients under the same dietitian."}
+                  </p>
+
+                  {currentUser.role !== "dietitian" && currentUser.managed_by ? (
+                    <form className="client-update-composer mt-4" onSubmit={handleCreateClientUpdate}>
+                      <textarea
+                        className="form-control private-chat-input"
+                        rows={3}
+                        maxLength={500}
+                        value={clientUpdateBody}
+                        onChange={(e) => setClientUpdateBody(e.target.value)}
+                        placeholder="Share a meal, progress note, or quick update..."
+                      />
+                      <div className="client-update-picker">
+                        <input
+                          className="form-control"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleClientUpdateImage}
+                        />
+                        {clientUpdateImage ? (
+                          <button
+                            className="btn btn-outline-light"
+                            type="button"
+                            onClick={() => setClientUpdateImage("")}
+                          >
+                            Remove Image
+                          </button>
+                        ) : null}
+                      </div>
+                      {clientUpdateImage ? (
+                        <img className="client-update-preview" src={clientUpdateImage} alt="Selected update" />
+                      ) : null}
+                      <button className="btn btn-primary fw-bold" type="submit" disabled={isClientUpdateBusy}>
+                        {isClientUpdateBusy ? <Spinner label="Posting..." /> : "Post Update"}
+                      </button>
+                    </form>
+                  ) : null}
+
+                  <div className="client-update-feed mt-4">
+                    {isClientUpdateBusy && clientUpdates.length === 0 ? (
+                      <div className="list-group-item text-muted">Loading updates...</div>
+                    ) : clientUpdates.length === 0 ? (
+                      <div className="list-group-item text-muted">No active updates yet.</div>
+                    ) : (
+                      clientUpdates.map((update) => {
+                        const canDelete =
+                          currentUser.role === "dietitian" || update.user_id === currentUser.user_id;
+                        return (
+                          <article key={update.id} className="client-update-card">
+                            <div className="client-update-head">
+                              <div>
+                                <div className="client-update-name">{displayAccountName(update.author)}</div>
+                                <div className="client-update-time">
+                                  {fmtIso(update.created_at)} · expires {fmtIso(update.expires_at)}
+                                </div>
+                              </div>
+                              {canDelete ? (
+                                <button
+                                  className="btn btn-outline-light btn-sm"
+                                  type="button"
+                                  onClick={() => handleDeleteClientUpdate(update)}
+                                  disabled={isClientUpdateBusy}
+                                >
+                                  Delete
+                                </button>
+                              ) : null}
+                            </div>
+                            {update.body ? <p className="client-update-body">{update.body}</p> : null}
+                            {update.image_data ? (
+                              <img className="client-update-image" src={update.image_data} alt="Client update" />
+                            ) : null}
+                          </article>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {clientUpdateMsg ? <div className="alert alert-warning mt-3 mb-0 small">{clientUpdateMsg}</div> : null}
+
+                  <div className="mt-4">
+                    <button
+                      className="btn btn-outline-light"
+                      type="button"
+                      onClick={() => setStage(currentUser.role === "dietitian" ? "dietitianHome" : "userHome")}
+                    >
+                      Back
                     </button>
                   </div>
                 </div>

@@ -236,6 +236,92 @@ def test_private_inbox_unread_count_clears_after_read(gateway_client):
     assert refreshed.get_json()["inbox"][0]["unread_count"] == 0
 
 
+def test_client_updates_are_visible_to_group_and_moderated(gateway_client):
+    dietitian_res = gateway_client.post(
+        "/auth/signup",
+        json={
+            "display_name": "Dietitian",
+            "email": "updates-dietitian@example.com",
+            "password": "securepass123",
+            "role": "dietitian",
+        },
+    )
+    dietitian_token = dietitian_res.get_json()["token"]
+
+    client_one_res = gateway_client.post(
+        "/dietitian/clients",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={
+            "display_name": "Client One",
+            "email": "updates-client-one@example.com",
+            "password": "securepass123",
+        },
+    )
+    client_two_res = gateway_client.post(
+        "/dietitian/clients",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+        json={
+            "display_name": "Client Two",
+            "email": "updates-client-two@example.com",
+            "password": "securepass123",
+        },
+    )
+    assert client_one_res.status_code == 201
+    assert client_two_res.status_code == 201
+
+    client_one_login = gateway_client.post(
+        "/auth/login",
+        json={"email": "updates-client-one@example.com", "password": "securepass123"},
+    )
+    client_two_login = gateway_client.post(
+        "/auth/login",
+        json={"email": "updates-client-two@example.com", "password": "securepass123"},
+    )
+    client_one_token = client_one_login.get_json()["token"]
+    client_two_token = client_two_login.get_json()["token"]
+
+    image_data = "data:image/png;base64,aGVsbG8="
+    create_res = gateway_client.post(
+        "/client-updates",
+        headers={"Authorization": f"Bearer {client_one_token}"},
+        json={"body": "Meal prep went well", "image_data": image_data},
+    )
+    assert create_res.status_code == 201
+    update_id = create_res.get_json()["update"]["id"]
+
+    peer_feed = gateway_client.get(
+        "/client-updates",
+        headers={"Authorization": f"Bearer {client_two_token}"},
+    )
+    assert peer_feed.status_code == 200
+    assert peer_feed.get_json()["updates"][0]["body"] == "Meal prep went well"
+
+    forbidden_delete = gateway_client.delete(
+        f"/client-updates/{update_id}",
+        headers={"Authorization": f"Bearer {client_two_token}"},
+    )
+    assert forbidden_delete.status_code == 403
+
+    dietitian_feed = gateway_client.get(
+        "/client-updates",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+    )
+    assert dietitian_feed.status_code == 200
+    assert dietitian_feed.get_json()["updates"][0]["image_data"] == image_data
+
+    delete_res = gateway_client.delete(
+        f"/client-updates/{update_id}",
+        headers={"Authorization": f"Bearer {dietitian_token}"},
+    )
+    assert delete_res.status_code == 200
+
+    empty_feed = gateway_client.get(
+        "/client-updates",
+        headers={"Authorization": f"Bearer {client_two_token}"},
+    )
+    assert empty_feed.get_json()["updates"] == []
+
+
 def test_signup_requires_health_data_consent_for_user(gateway_client):
     res = gateway_client.post(
         "/auth/signup",

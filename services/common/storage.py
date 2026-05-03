@@ -155,6 +155,15 @@ CREATE TABLE IF NOT EXISTS announcement_messages (
     body TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS client_updates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    dietitian_user_id TEXT NOT NULL,
+    body TEXT,
+    image_data TEXT,
+    expires_at TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS progress_checkins (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -321,6 +330,15 @@ CREATE TABLE IF NOT EXISTS announcement_messages (
     body TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS client_updates (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    dietitian_user_id TEXT NOT NULL,
+    body TEXT,
+    image_data TEXT,
+    expires_at TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS progress_checkins (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -382,6 +400,7 @@ MIGRATIONS = [
     "CREATE TABLE IF NOT EXISTS announcement_channels (id SERIAL PRIMARY KEY, dietitian_user_id TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS announcement_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, dietitian_user_id TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS announcement_channel_recipients (channel_id INTEGER NOT NULL, client_user_id TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(channel_id, client_user_id))",
     "CREATE TABLE IF NOT EXISTS announcement_messages (id SERIAL PRIMARY KEY, channel_id INTEGER NOT NULL, sender_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS announcement_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id INTEGER NOT NULL, sender_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS client_updates (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, dietitian_user_id TEXT NOT NULL, body TEXT, image_data TEXT, expires_at TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS client_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, dietitian_user_id TEXT NOT NULL, body TEXT, image_data TEXT, expires_at TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS progress_checkins (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS progress_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, weight_kg REAL, meal_adherence INTEGER, workout_adherence INTEGER, energy_level INTEGER, notes TEXT, checked_in_on TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS item_adherence (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, item_key TEXT NOT NULL, item_type TEXT NOT NULL, title TEXT, status TEXT NOT NULL, plan_date TEXT, note TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, item_key))" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS item_adherence (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, item_key TEXT NOT NULL, item_type TEXT NOT NULL, title TEXT, status TEXT NOT NULL, plan_date TEXT, note TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, item_key))",
     "CREATE TABLE IF NOT EXISTS weekly_updates (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS weekly_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, recommendation TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
@@ -933,6 +952,90 @@ def list_announcement_messages(channel_id: int):
         ).mappings().all()
     return [dict(row) for row in rows]
 
+
+def create_client_update(
+    user_id: str,
+    dietitian_user_id: str,
+    body: str | None,
+    image_data: str | None,
+    expires_at: str,
+):
+    clean_body = str(body or "").strip()
+    clean_image = str(image_data or "").strip()
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO client_updates(user_id, dietitian_user_id, body, image_data, expires_at)
+                VALUES (:user_id, :dietitian_user_id, :body, :image_data, :expires_at)
+                """
+            ),
+            {
+                "user_id": user_id,
+                "dietitian_user_id": dietitian_user_id,
+                "body": clean_body or None,
+                "image_data": clean_image or None,
+                "expires_at": expires_at,
+            },
+        )
+        update_id = conn.execute(
+            text(
+                """
+                SELECT MAX(id)
+                FROM client_updates
+                WHERE user_id = :user_id AND dietitian_user_id = :dietitian_user_id
+                """
+            ),
+            {"user_id": user_id, "dietitian_user_id": dietitian_user_id},
+        ).scalar()
+    return get_client_update(update_id)
+
+
+def get_client_update(update_id: int):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT u.id, u.user_id, u.dietitian_user_id, u.body, u.image_data,
+                       u.expires_at, u.created_at, a.email, a.display_name
+                FROM client_updates u
+                LEFT JOIN auth_users a ON a.user_id = u.user_id
+                WHERE u.id = :update_id
+                """
+            ),
+            {"update_id": update_id},
+        ).mappings().first()
+    return dict(row) if row else None
+
+
+def list_client_updates_for_group(dietitian_user_id: str, now_iso: str):
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT u.id, u.user_id, u.dietitian_user_id, u.body, u.image_data,
+                       u.expires_at, u.created_at, a.email, a.display_name
+                FROM client_updates u
+                LEFT JOIN auth_users a ON a.user_id = u.user_id
+                WHERE u.dietitian_user_id = :dietitian_user_id
+                  AND u.expires_at > :now_iso
+                ORDER BY u.created_at DESC, u.id DESC
+                """
+            ),
+            {"dietitian_user_id": dietitian_user_id, "now_iso": now_iso},
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def delete_client_update(update_id: int):
+    with engine.begin() as conn:
+        result = conn.execute(
+            text("DELETE FROM client_updates WHERE id = :update_id"),
+            {"update_id": update_id},
+        )
+    return result.rowcount > 0
+
+
 def create_auth_session(user_id: str, expires_at: str | None = None):
     token = secrets.token_urlsafe(32)
     with engine.begin() as conn:
@@ -1402,6 +1505,15 @@ def export_user_data(user_id: str):
             """),
             {"uid": user_id},
         ).mappings().all()
+        client_updates = conn.execute(
+            text("""
+                SELECT user_id, dietitian_user_id, body, image_data, expires_at, created_at
+                FROM client_updates
+                WHERE user_id=:uid
+                ORDER BY created_at DESC
+            """),
+            {"uid": user_id},
+        ).mappings().all()
 
     return {
         "account": dict(auth_user) if auth_user else None,
@@ -1419,6 +1531,7 @@ def export_user_data(user_id: str):
         "weekly_update": get_latest_weekly_update(user_id),
         "nudge_settings": get_nudge_settings(user_id),
         "private_messages": [dict(row) for row in messages],
+        "client_updates": [dict(row) for row in client_updates],
         "audit_logs": list_audit_logs_for_user(user_id),
     }
 
@@ -1439,6 +1552,7 @@ def delete_user_account_data(user_id: str):
             "DELETE FROM progress_checkins WHERE user_id = :uid",
             "DELETE FROM weekly_updates WHERE user_id = :uid",
             "DELETE FROM private_messages WHERE sender_user_id = :uid OR recipient_user_id = :uid",
+            "DELETE FROM client_updates WHERE user_id = :uid OR dietitian_user_id = :uid",
             "DELETE FROM audit_logs WHERE actor_user_id = :uid OR target_user_id = :uid",
             "UPDATE auth_users SET managed_by_user_id = NULL WHERE managed_by_user_id = :uid",
             "DELETE FROM auth_users WHERE user_id = :uid",

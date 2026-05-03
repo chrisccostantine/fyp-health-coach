@@ -21,6 +21,7 @@ from services.common.storage import (
     create_private_message,
     create_announcement_channel,
     create_announcement_message,
+    create_client_update,
     update_announcement_channel,
     create_auth_session,
     create_auth_user,
@@ -28,6 +29,7 @@ from services.common.storage import (
     delete_google_calendar_token,
     delete_auth_session,
     delete_auth_sessions_for_user,
+    delete_client_update,
     delete_password_reset_token,
     delete_user_account_data,
     export_user_data,
@@ -36,6 +38,7 @@ from services.common.storage import (
     get_auth_user_by_email,
     get_auth_user_by_id,
     get_latest_weekly_update,
+    get_client_update,
     get_nudge_settings,
     get_password_reset_token,
     is_managed_by,
@@ -49,6 +52,7 @@ from services.common.storage import (
     list_announcement_channels_for_dietitian,
     list_announcement_channels_for_client,
     list_announcement_messages,
+    list_client_updates_for_group,
     list_managed_auth_users,
     list_all_nudge_settings,
     mark_nudge_sent,
@@ -322,6 +326,23 @@ def _serialize_announcement_message(message: dict):
         "sender_user_id": message.get("sender_user_id"),
         "body": message.get("body") or "",
         "created_at": _json_dt(message.get("created_at")),
+    }
+
+
+def _serialize_client_update(update: dict):
+    return {
+        "id": update.get("id"),
+        "user_id": update.get("user_id"),
+        "dietitian_user_id": update.get("dietitian_user_id"),
+        "body": update.get("body") or "",
+        "image_data": update.get("image_data") or "",
+        "created_at": _json_dt(update.get("created_at")),
+        "expires_at": _json_dt(update.get("expires_at")),
+        "author": {
+            "user_id": update.get("user_id"),
+            "display_name": update.get("display_name") or "",
+            "email": update.get("email") or "",
+        },
     }
 
 
@@ -2033,6 +2054,75 @@ def send_announcement_message_route(channel_id):
             "can_send": True,
         }
     )
+
+
+@app.get("/client-updates")
+def list_client_updates_route():
+    session, error = _require_auth()
+    if error:
+        return error
+
+    if (session.get("role") or "user") == "dietitian":
+        dietitian_user_id = session["user_id"]
+    else:
+        dietitian_user_id = session.get("managed_by_user_id")
+        if not dietitian_user_id:
+            return jsonify({"ok": True, "updates": []})
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    updates = list_client_updates_for_group(dietitian_user_id, now_iso)
+    return jsonify({"ok": True, "updates": [_serialize_client_update(update) for update in updates]})
+
+
+@app.post("/client-updates")
+def create_client_update_route():
+    session, error = _require_auth()
+    if error:
+        return error
+    if (session.get("role") or "user") == "dietitian":
+        return jsonify({"error": "Only clients can post updates."}), 403
+
+    dietitian_user_id = session.get("managed_by_user_id")
+    if not dietitian_user_id:
+        return jsonify({"error": "Updates are available for clients managed by a dietitian."}), 403
+
+    data = request.get_json(force=True)
+    body = str(data.get("body") or "").strip()
+    image_data = str(data.get("image_data") or "").strip()
+    if not body and not image_data:
+        return jsonify({"error": "Write text or choose an image first."}), 400
+    if len(body) > 500:
+        return jsonify({"error": "Update text must be 500 characters or fewer."}), 400
+    if image_data:
+        if not image_data.startswith("data:image/"):
+            return jsonify({"error": "Only image uploads are supported for updates."}), 400
+        if len(image_data) > 1_600_000:
+            return jsonify({"error": "Image is too large. Choose an image under about 1 MB."}), 400
+
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    update = create_client_update(session["user_id"], dietitian_user_id, body, image_data, expires_at)
+    record_audit_log(session["user_id"], dietitian_user_id, "client_update.created", {"update_id": update.get("id")})
+    return jsonify({"ok": True, "update": _serialize_client_update(update)}), 201
+
+
+@app.delete("/client-updates/<int:update_id>")
+def delete_client_update_route(update_id):
+    session, error = _require_auth()
+    if error:
+        return error
+
+    update = get_client_update(update_id)
+    if not update:
+        return jsonify({"error": "Update not found."}), 404
+
+    is_author = update.get("user_id") == session["user_id"]
+    is_group_dietitian = (session.get("role") or "user") == "dietitian" and update.get("dietitian_user_id") == session["user_id"]
+    if not is_author and not is_group_dietitian:
+        return jsonify({"error": "You do not have access to remove this update."}), 403
+
+    delete_client_update(update_id)
+    record_audit_log(session["user_id"], update.get("user_id"), "client_update.deleted", {"update_id": update_id})
+    return jsonify({"ok": True, "update_id": update_id})
 
 
 @app.post("/messages/<partner_user_id>")

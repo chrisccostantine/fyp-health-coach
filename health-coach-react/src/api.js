@@ -419,6 +419,23 @@ export const api = {
     });
   },
 
+  async getClientUpdates() {
+    return await fetchJSON("/client-updates", { method: "GET" });
+  },
+
+  async createClientUpdate({ body, image_data }) {
+    return await fetchJSON("/client-updates", {
+      method: "POST",
+      body: JSON.stringify({ body, image_data }),
+    });
+  },
+
+  async deleteClientUpdate(updateId) {
+    return await fetchJSON(`/client-updates/${encodeURIComponent(updateId)}`, {
+      method: "DELETE",
+    });
+  },
+
   async sendNudge({ tone, goal }) {
     return await fetchJSON("/nudge/send", {
       method: "POST",
