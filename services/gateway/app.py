@@ -1816,8 +1816,15 @@ def dietitian_clients():
     role_error = _require_dietitian(session)
     if role_error:
         return role_error
+    active_updates = list_client_updates_for_group(session["user_id"], datetime.now(timezone.utc).isoformat())
+    active_update_user_ids = {update.get("user_id") for update in active_updates}
     clients = list_managed_auth_users(session["user_id"])
-    return jsonify({"ok": True, "clients": [_client_with_plan_review(client) for client in clients]})
+    payload = []
+    for client in clients:
+        item = _client_with_plan_review(client)
+        item["has_active_update"] = client.get("user_id") in active_update_user_ids
+        payload.append(item)
+    return jsonify({"ok": True, "clients": payload})
 
 
 @app.post("/dietitian/clients")

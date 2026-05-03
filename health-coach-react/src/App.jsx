@@ -378,7 +378,6 @@ const REFRESHABLE_STAGES = new Set([
   "dietitianCreate",
   "dietitianClients",
   "messageInbox",
-  "clientUpdates",
   "coachTools",
   "quiz",
   "results",
@@ -2868,15 +2867,6 @@ export default function App() {
                         Inbox
                       </button>
                     ) : null}
-                    {currentUser?.managed_by ? (
-                      <button
-                        className="btn btn-outline-light btn-lg"
-                        type="button"
-                        onClick={() => openInboxTab("updates")}
-                      >
-                        Updates
-                      </button>
-                    ) : null}
                   </div>
                 </div>
               </div>
@@ -2958,13 +2948,6 @@ export default function App() {
                           <span className="dashboard-unread-badge">{inboxUnreadCount}</span>
                         ) : null}
                         Open Inbox
-                      </button>
-                      <button
-                        className="btn btn-outline-light w-100 mt-2"
-                        type="button"
-                        onClick={() => openInboxTab("updates")}
-                      >
-                        Client Updates
                       </button>
                     </div>
                   ) : null}
@@ -3099,15 +3082,8 @@ export default function App() {
                       Open Inbox
                     </button>
                     <div className="text-muted small">
-                      Client chats and one-way announcement channels are managed from the inbox.
+                      Client chats, one-way announcements, and updates are managed from the inbox.
                     </div>
-                    <button
-                      type="button"
-                      className="btn btn-outline-light btn-lg fw-bold"
-                      onClick={() => openInboxTab("updates")}
-                    >
-                      Client Updates
-                    </button>
                   </div>
 
                   <div className="results-summary dietitian-dashboard-actions">
