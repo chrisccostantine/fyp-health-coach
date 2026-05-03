@@ -2717,7 +2717,20 @@ export default function App() {
                     Choose what you want to do next. Client plans can be viewed here, but only each client can create or change their own plan.
                   </p>
 
-                  <div className="results-summary">
+                  <div className="d-grid gap-3 mb-4">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-lg fw-bold dietitian-inbox-cta"
+                      onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
+                    >
+                      Open Inbox
+                    </button>
+                    <div className="text-muted small">
+                      Client chats and one-way announcement channels are managed from the inbox.
+                    </div>
+                  </div>
+
+                  <div className="results-summary dietitian-dashboard-actions">
                     <button type="button" className="summary-card text-start" onClick={() => setStage("dietitianCreate")}>
                       <div className="summary-label">Create User</div>
                       <div className="summary-value">+</div>
@@ -2734,12 +2747,6 @@ export default function App() {
                       <div className="summary-label">Cancel Subscription</div>
                       <div className="summary-value">-</div>
                       <div className="summary-meta">Remove a client from your managed subscription list.</div>
-                    </button>
-
-                    <button type="button" className="summary-card text-start" onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}>
-                      <div className="summary-label">Messages</div>
-                      <div className="summary-value">{managedClients.length}</div>
-                      <div className="summary-meta">Open client chats or send one-way announcements.</div>
                     </button>
                   </div>
                 </div>
@@ -2899,7 +2906,7 @@ export default function App() {
                   <div className="results-kicker">Dietitian Dashboard</div>
                   <h2 className="section-title mb-3">Subscribed Clients</h2>
                   <p className="text-muted mb-4">
-                    View saved client plans, open private chats, or cancel a subscription. Clients must log into their own accounts to create or edit plans.
+                    View saved client plans or cancel a subscription. Client chats and announcements are in the Inbox.
                   </p>
 
                   <div className="list-group list-group-soft">
@@ -2938,13 +2945,6 @@ export default function App() {
                                 onClick={() => handleSelectManagedClient(client)}
                               >
                                 View Plan
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-outline-light btn-sm"
-                                onClick={() => openPrivateChat(client, "dietitianClients")}
-                              >
-                                Open Chat
                               </button>
                               <button
                                 type="button"

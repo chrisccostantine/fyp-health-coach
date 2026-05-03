@@ -1354,6 +1354,14 @@ pre.out {
   gap:12px;
 }
 
+.dietitian-inbox-cta{
+  min-height: 60px;
+}
+
+.dietitian-dashboard-actions{
+  grid-template-columns: repeat(3, minmax(0,1fr));
+}
+
 @media (max-width: 768px){
   .results-header{ flex-direction: column; }
   .results-actions{ width:100%; }
@@ -1365,6 +1373,7 @@ pre.out {
     margin-top: 8px;
   }
   .results-summary{ grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .dietitian-dashboard-actions{ grid-template-columns: 1fr; }
   .results-title{ font-size: 1.75rem; line-height: 1.08; }
   .summary-card{ padding: 10px; border-radius: 14px; }
   .summary-label{ font-size: .78rem; }
