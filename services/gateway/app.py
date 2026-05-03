@@ -44,6 +44,7 @@ from services.common.storage import (
     list_progress_checkins,
     list_private_messages,
     list_private_inbox,
+    mark_private_messages_read,
     list_announcement_channels_for_dietitian,
     list_announcement_channels_for_client,
     list_announcement_messages,
@@ -1865,6 +1866,7 @@ def messages_inbox():
                 {
                     "partner": item["partner"],
                     "last_message": _serialize_private_message(item["last_message"]) if item.get("last_message") else None,
+                    "unread_count": item.get("unread_count", 0),
                 }
                 for item in inbox
             ],
@@ -1884,6 +1886,7 @@ def get_private_messages(partner_user_id):
         return jsonify({"error": "Private chat is only available with your assigned dietitian or managed client."}), 403
 
     messages = list_private_messages(session["user_id"], partner_user_id)
+    mark_private_messages_read(session["user_id"], partner_user_id)
     return jsonify(
         {
             "ok": True,

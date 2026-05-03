@@ -1746,12 +1746,89 @@ pre.out {
 
 .inbox-row{
   border: 1px solid rgba(255,255,255,.08) !important;
-  background: rgba(255,255,255,.04) !important;
-  color: #fff !important;
+  background: #17201d !important;
+  color: #f8fff9 !important;
+  padding: 14px 16px !important;
 }
 
 .inbox-row:hover{
-  background: rgba(255,255,255,.08) !important;
+  background: #1d2a25 !important;
+}
+
+.inbox-row .text-muted{
+  color: rgba(238,246,241,.72) !important;
+}
+
+.inbox-row-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:4px;
+}
+
+.inbox-name{
+  color:#ffffff;
+  font-weight:900;
+}
+
+.unread-badge{
+  min-width:24px;
+  height:24px;
+  padding:0 7px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:#22c55e;
+  color:#03130a;
+  font-weight:900;
+  font-size:.78rem;
+}
+
+.inbox-topbar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:14px;
+}
+
+.inbox-icon-tab{
+  width:48px;
+  height:48px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.18);
+  background:rgba(255,255,255,.06);
+  color:#fff;
+  font-weight:950;
+  font-size:1.2rem;
+}
+
+.inbox-icon-tab.active{
+  background:#22c55e;
+  color:#03130a;
+}
+
+.inbox-tabs{
+  display:flex;
+  gap:8px;
+  margin-top:18px;
+  border-bottom:1px solid rgba(255,255,255,.10);
+}
+
+.inbox-tabs button{
+  flex:1;
+  border:0;
+  background:transparent;
+  color:rgba(255,255,255,.68);
+  font-weight:900;
+  padding:12px 8px;
+  border-bottom:3px solid transparent;
+}
+
+.inbox-tabs button.active{
+  color:#fff;
+  border-bottom-color:#22c55e;
 }
 
 .announcement-client-list{
@@ -1762,6 +1839,19 @@ pre.out {
   padding: 10px;
   border: 1px solid rgba(255,255,255,.10);
   border-radius: 8px;
+}
+
+.announcement-client-list .form-check{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:#f8fff9;
+  min-height:28px;
+}
+
+.announcement-client-list .form-check-label{
+  color:#f8fff9;
+  font-weight:700;
 }
 
 .results-date-picker{

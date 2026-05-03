@@ -631,6 +631,7 @@ export default function App() {
   const [isLoadingPrivateMessages, setIsLoadingPrivateMessages] = useState(false);
   const [isSendingPrivateMessage, setIsSendingPrivateMessage] = useState(false);
   const [messageInbox, setMessageInbox] = useState([]);
+  const [messageInboxTab, setMessageInboxTab] = useState("chats");
   const [announcementChannels, setAnnouncementChannels] = useState([]);
   const [isLoadingInbox, setIsLoadingInbox] = useState(false);
   const [inboxMsg, setInboxMsg] = useState("");
@@ -2013,6 +2014,7 @@ export default function App() {
       const data = await api.getMessageInbox();
       setMessageInbox(Array.isArray(data?.inbox) ? data.inbox : []);
       setAnnouncementChannels(Array.isArray(data?.announcement_channels) ? data.announcement_channels : []);
+      setMessageInboxTab("chats");
       if (targetStage) setStage(targetStage);
     } catch (e) {
       setInboxMsg(`Error: ${e.message}`);
@@ -2980,19 +2982,45 @@ export default function App() {
             <div className="col-lg-10">
               <div className="card card-soft">
                 <div className="card-body p-4 p-md-5">
-                  <div className="private-chat-kicker">Messages</div>
-                  <h2 className="private-chat-title">Inbox</h2>
-                  <p className="private-chat-subtitle">
-                    {currentUser.role === "dietitian"
-                      ? "Open client conversations or create one-way announcement channels."
-                      : "Read messages and dietitian announcements in one place."}
-                  </p>
+                  <div className="inbox-topbar">
+                    <div>
+                      <div className="private-chat-kicker">Messages</div>
+                      <h2 className="private-chat-title">Inbox</h2>
+                      <p className="private-chat-subtitle">
+                        {messageInboxTab === "chats"
+                          ? "Open conversations from your chat list."
+                          : "One-way announcements live here. Clients can read but cannot reply."}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className={`inbox-icon-tab ${messageInboxTab === "announcements" ? "active" : ""}`}
+                      onClick={() => setMessageInboxTab((tab) => (tab === "announcements" ? "chats" : "announcements"))}
+                      aria-label="Announcements"
+                    >
+                      !
+                    </button>
+                  </div>
 
-                  <div className="row g-4 mt-1">
-                    <div className="col-lg-6">
-                      <div className="section-head">
-                        <h3 className="section-h">Chats</h3>
-                      </div>
+                  <div className="inbox-tabs">
+                    <button
+                      type="button"
+                      className={messageInboxTab === "chats" ? "active" : ""}
+                      onClick={() => setMessageInboxTab("chats")}
+                    >
+                      Chats
+                    </button>
+                    <button
+                      type="button"
+                      className={messageInboxTab === "announcements" ? "active" : ""}
+                      onClick={() => setMessageInboxTab("announcements")}
+                    >
+                      Announcements
+                    </button>
+                  </div>
+
+                  {messageInboxTab === "chats" ? (
+                    <div className="whatsapp-list mt-3">
                       <div className="list-group list-group-soft">
                         {isLoadingInbox ? (
                           <div className="list-group-item text-muted">Loading inbox...</div>
@@ -3006,7 +3034,12 @@ export default function App() {
                               className="list-group-item text-start inbox-row"
                               onClick={() => openPrivateChat(item.partner, "messageInbox")}
                             >
-                              <div className="fw-semibold">{displayAccountName(item.partner)}</div>
+                              <div className="inbox-row-head">
+                                <span className="inbox-name">{displayAccountName(item.partner)}</span>
+                                {Number(item.unread_count || 0) > 0 ? (
+                                  <span className="unread-badge">{item.unread_count}</span>
+                                ) : null}
+                              </div>
                               <div className="small text-muted">
                                 {item.last_message?.body || "No messages yet"}
                               </div>
@@ -3018,11 +3051,8 @@ export default function App() {
                         )}
                       </div>
                     </div>
-
-                    <div className="col-lg-6">
-                      <div className="section-head">
-                        <h3 className="section-h">Announcements</h3>
-                      </div>
+                  ) : (
+                    <div className="whatsapp-list mt-3">
                       <div className="list-group list-group-soft">
                         {announcementChannels.length === 0 ? (
                           <div className="list-group-item text-muted">No announcement channels yet.</div>
@@ -3034,7 +3064,9 @@ export default function App() {
                               className="list-group-item text-start inbox-row"
                               onClick={() => openAnnouncementChannel(channel)}
                             >
-                              <div className="fw-semibold">{channel.name}</div>
+                              <div className="inbox-row-head">
+                                <span className="inbox-name">{channel.name}</span>
+                              </div>
                               <div className="small text-muted">
                                 {currentUser.role === "dietitian"
                                   ? `${channel.recipient_count || 0} client${Number(channel.recipient_count || 0) === 1 ? "" : "s"}`
@@ -3082,7 +3114,7 @@ export default function App() {
                         </form>
                       ) : null}
                     </div>
-                  </div>
+                  )}
 
                   {inboxMsg ? <div className="alert alert-warning mt-3 mb-0 small">{inboxMsg}</div> : null}
 

@@ -129,6 +129,32 @@ CREATE TABLE IF NOT EXISTS private_messages (
     body TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS private_message_reads (
+    user_id TEXT NOT NULL,
+    partner_user_id TEXT NOT NULL,
+    last_read_message_id INTEGER DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(user_id, partner_user_id)
+);
+CREATE TABLE IF NOT EXISTS announcement_channels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dietitian_user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS announcement_channel_recipients (
+    channel_id INTEGER NOT NULL,
+    client_user_id TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(channel_id, client_user_id)
+);
+CREATE TABLE IF NOT EXISTS announcement_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id INTEGER NOT NULL,
+    sender_user_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS progress_checkins (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -269,6 +295,13 @@ CREATE TABLE IF NOT EXISTS private_messages (
     body TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS private_message_reads (
+    user_id TEXT NOT NULL,
+    partner_user_id TEXT NOT NULL,
+    last_read_message_id INTEGER DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(user_id, partner_user_id)
+);
 CREATE TABLE IF NOT EXISTS announcement_channels (
     id SERIAL PRIMARY KEY,
     dietitian_user_id TEXT NOT NULL,
@@ -345,6 +378,7 @@ MIGRATIONS = [
     "ALTER TABLE user_nudge_settings ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "ALTER TABLE user_nudge_settings ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
     "CREATE TABLE IF NOT EXISTS private_messages (id SERIAL PRIMARY KEY, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS private_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, sender_user_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+    "CREATE TABLE IF NOT EXISTS private_message_reads (user_id TEXT NOT NULL, partner_user_id TEXT NOT NULL, last_read_message_id INTEGER DEFAULT 0, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id, partner_user_id))",
     "CREATE TABLE IF NOT EXISTS announcement_channels (id SERIAL PRIMARY KEY, dietitian_user_id TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS announcement_channels (id INTEGER PRIMARY KEY AUTOINCREMENT, dietitian_user_id TEXT NOT NULL, name TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
     "CREATE TABLE IF NOT EXISTS announcement_channel_recipients (channel_id INTEGER NOT NULL, client_user_id TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(channel_id, client_user_id))",
     "CREATE TABLE IF NOT EXISTS announcement_messages (id SERIAL PRIMARY KEY, channel_id INTEGER NOT NULL, sender_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)" if IS_POSTGRES else "CREATE TABLE IF NOT EXISTS announcement_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id INTEGER NOT NULL, sender_user_id TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
@@ -635,6 +669,47 @@ def list_private_messages(user_a_id: str, user_b_id: str):
     return [dict(row._mapping) for row in rows]
 
 
+def mark_private_messages_read(user_id: str, partner_user_id: str):
+    with engine.begin() as conn:
+        latest_id = conn.execute(
+            text(
+                """
+                SELECT MAX(id)
+                FROM private_messages
+                WHERE (sender_user_id = :user_id AND recipient_user_id = :partner_id)
+                   OR (sender_user_id = :partner_id AND recipient_user_id = :user_id)
+                """
+            ),
+            {"user_id": user_id, "partner_id": partner_user_id},
+        ).scalar() or 0
+        if IS_POSTGRES:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO private_message_reads(user_id, partner_user_id, last_read_message_id, updated_at)
+                    VALUES (:user_id, :partner_id, :latest_id, CURRENT_TIMESTAMP)
+                    ON CONFLICT (user_id, partner_user_id)
+                    DO UPDATE SET last_read_message_id = EXCLUDED.last_read_message_id,
+                                  updated_at = CURRENT_TIMESTAMP
+                    """
+                ),
+                {"user_id": user_id, "partner_id": partner_user_id, "latest_id": latest_id},
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO private_message_reads(user_id, partner_user_id, last_read_message_id, updated_at)
+                    VALUES (:user_id, :partner_id, :latest_id, CURRENT_TIMESTAMP)
+                    ON CONFLICT(user_id, partner_user_id)
+                    DO UPDATE SET last_read_message_id = excluded.last_read_message_id,
+                                  updated_at = CURRENT_TIMESTAMP
+                    """
+                ),
+                {"user_id": user_id, "partner_id": partner_user_id, "latest_id": latest_id},
+            )
+
+
 def list_private_inbox(user_id: str, partners: list[dict]):
     inbox = []
     with engine.begin() as conn:
@@ -655,10 +730,26 @@ def list_private_inbox(user_id: str, partners: list[dict]):
                 ),
                 {"user_id": user_id, "partner_id": partner_id},
             ).mappings().first()
+            unread_count = conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM private_messages m
+                    LEFT JOIN private_message_reads r
+                      ON r.user_id = :user_id
+                     AND r.partner_user_id = :partner_id
+                    WHERE m.sender_user_id = :partner_id
+                      AND m.recipient_user_id = :user_id
+                      AND m.id > COALESCE(r.last_read_message_id, 0)
+                    """
+                ),
+                {"user_id": user_id, "partner_id": partner_id},
+            ).scalar() or 0
             inbox.append(
                 {
                     "partner": partner,
                     "last_message": dict(row) if row else None,
+                    "unread_count": int(unread_count),
                 }
             )
     return sorted(
