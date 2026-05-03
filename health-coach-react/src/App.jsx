@@ -643,6 +643,14 @@ export default function App() {
   const [announcementMsg, setAnnouncementMsg] = useState("");
   const [isAnnouncementBusy, setIsAnnouncementBusy] = useState(false);
   const [isEditingAnnouncementChannel, setIsEditingAnnouncementChannel] = useState(false);
+  const inboxUnreadCount = useMemo(
+    () =>
+      messageInbox.reduce(
+        (sum, item) => sum + Math.max(0, Number(item?.unread_count || 0)),
+        0,
+      ),
+    [messageInbox],
+  );
   const [googleCalendar, setGoogleCalendar] = useState({
     enabled: false,
     connected: false,
@@ -2039,6 +2047,23 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (!currentUser || !["userHome", "dietitianHome"].includes(stage)) return;
+    let cancelled = false;
+
+    api.getMessageInbox()
+      .then((data) => {
+        if (cancelled) return;
+        setMessageInbox(Array.isArray(data?.inbox) ? data.inbox : []);
+        setAnnouncementChannels(Array.isArray(data?.announcement_channels) ? data.announcement_channels : []);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stage, currentUser?.user_id]);
+
   async function returnFromPrivateChat() {
     const destination = privateChatReturnStage || defaultHomeStage;
     const partnerId = activeChatPartner?.user_id;
@@ -2627,6 +2652,9 @@ export default function App() {
                         type="button"
                         onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
                       >
+                        {inboxUnreadCount > 0 ? (
+                          <span className="dashboard-unread-badge">{inboxUnreadCount}</span>
+                        ) : null}
                         Inbox
                       </button>
                     ) : null}
@@ -2668,6 +2696,9 @@ export default function App() {
                         type="button"
                         onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
                       >
+                        {inboxUnreadCount > 0 ? (
+                          <span className="dashboard-unread-badge">{inboxUnreadCount}</span>
+                        ) : null}
                         Open Inbox
                       </button>
                     </div>
@@ -2797,6 +2828,9 @@ export default function App() {
                       className="btn btn-primary btn-lg fw-bold dietitian-inbox-cta"
                       onClick={() => loadMessageInbox({ targetStage: "messageInbox" })}
                     >
+                      {inboxUnreadCount > 0 ? (
+                        <span className="dashboard-unread-badge">{inboxUnreadCount}</span>
+                      ) : null}
                       Open Inbox
                     </button>
                     <div className="text-muted small">
