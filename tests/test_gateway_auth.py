@@ -435,6 +435,30 @@ def test_plan_today_blocks_unsafe_minor_profile(gateway_client):
     assert "under 16" in data["safety"]["blocks"][0]
 
 
+def test_high_risk_profile_requires_assigned_dietitian_review(gateway_client):
+    res = gateway_client.post(
+        "/plan/today",
+        json={
+            "user_id": "demo-user",
+            "profile": {
+                "age": 30,
+                "sex": "F",
+                "height_cm": 165,
+                "weight_kg": 70,
+                "activity_level": "light",
+                "diet": {"medical_conditions": ["diabetes"]},
+            },
+            "goal": {"type": "general_health", "deficit_kcal": 0},
+            "equipment": [],
+        },
+    )
+
+    assert res.status_code == 422
+    data = res.get_json()
+    assert data["safety"]["requires_review"] is True
+    assert "dietitian review" in data["error"].lower()
+
+
 def test_progress_checkin_and_weekly_update(gateway_client):
     profile_res = gateway_client.post(
         "/user/demo-user/profile",

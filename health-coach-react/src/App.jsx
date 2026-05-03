@@ -813,6 +813,7 @@ export default function App() {
   const [letFoodDecide, setLetFoodDecide] = useState(false);
   const [veggies, setVeggies] = useState([]);
   const [allergiesInput, setAllergiesInput] = useState(stored?.allergiesInput ?? "");
+  const [dislikedFoodsInput, setDislikedFoodsInput] = useState(stored?.dislikedFoodsInput ?? "");
   const [medicalConditionsInput, setMedicalConditionsInput] = useState(
     stored?.medicalConditionsInput ?? "",
   );
@@ -959,6 +960,7 @@ export default function App() {
       equipment,
       dietPref,
       allergiesInput,
+      dislikedFoodsInput,
       medicalConditionsInput,
       injuriesInput,
     });
@@ -973,6 +975,7 @@ export default function App() {
     equipment,
     dietPref,
     allergiesInput,
+    dislikedFoodsInput,
     medicalConditionsInput,
     injuriesInput,
   ]);
@@ -1036,6 +1039,7 @@ export default function App() {
             preference: dietPref,
             preferred_vegetables: letFoodDecide ? [] : veggies,
             allergies: splitCommaList(allergiesInput),
+            disliked_foods: splitCommaList(dislikedFoodsInput),
             medical_conditions: splitCommaList(medicalConditionsInput),
             sugar_frequency: sugarFreq,
             water_intake: waterIntake,
@@ -1101,7 +1105,7 @@ export default function App() {
           fitnessLevel, workoutLocation, trainingFreq, workoutDurationPref,
           workoutTimePref,
           targetWeight, heightUnit, weightUnit, sugarFreq, waterIntake,
-          additionalGoals, pushupsLevel, pullupsLevel, allergiesInput,
+          additionalGoals, pushupsLevel, pullupsLevel, allergiesInput, dislikedFoodsInput,
           medicalConditionsInput, injuriesInput,
         },
       }).catch(() => {}); // non-blocking; failures are silent
@@ -5078,6 +5082,13 @@ export default function App() {
 
                     <input
                       className="line-input mt-3"
+                      placeholder="Disliked foods, comma separated"
+                      value={dislikedFoodsInput}
+                      onChange={(e) => setDislikedFoodsInput(e.target.value)}
+                    />
+
+                    <input
+                      className="line-input mt-3"
                       placeholder="Medical conditions, comma separated"
                       value={medicalConditionsInput}
                       onChange={(e) => setMedicalConditionsInput(e.target.value)}
@@ -5246,6 +5257,9 @@ export default function App() {
                     {healthSafetyNotes.length > 0 ? (
                       <div className="alert alert-warning mt-4 mb-0 small">
                         <div className="fw-semibold mb-1">Safety review</div>
+                        <div className="mb-2">
+                          Plans involving teen users, pregnancy, diabetes, eating disorder history, medications, or medical conditions must be approved by a dietitian before use.
+                        </div>
                         <ul className="mb-0 ps-3">
                           {healthSafetyNotes.map((note, idx) => (
                             <li key={idx}>{note}</li>
@@ -5401,6 +5415,22 @@ export default function App() {
             rel="noreferrer"
           >
             Terms of Service
+          </a>
+          <a
+            className="text-decoration-none text-muted"
+            href="/medical-disclaimer.html"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Medical Disclaimer
+          </a>
+          <a
+            className="text-decoration-none text-muted"
+            href="/data-deletion.html"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Data Deletion
           </a>
           <a
             className="text-decoration-none text-muted"
