@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 function sumBy(items, keys) {
   return items.reduce((acc, item) => {
     const value = keys
@@ -175,6 +177,8 @@ export default function ResultsSection({
   Alert,
   showAdvancedPanels = true,
 }) {
+  const [isRegenerateMenuOpen, setIsRegenerateMenuOpen] = useState(false);
+
   if (stage !== "results") return null;
 
   const Calendar = CalendarView;
@@ -224,6 +228,10 @@ export default function ResultsSection({
         day: "numeric",
       })
     : new Date().toLocaleDateString();
+  const runRegenerate = (regenerateScope) => {
+    setIsRegenerateMenuOpen(false);
+    handlePlanToday({ autoGoResults: false, regenerateScope });
+  };
   return (
     <div className="row g-4">
       <div className="col-lg-8">
@@ -290,45 +298,38 @@ export default function ResultsSection({
                   Edit Plan Setup
                 </button>
 
-                <button
-                  className="btn btn-primary fw-bold results-action-btn"
-                  type="button"
-                  onClick={() => handlePlanToday({ autoGoResults: false, regenerateScope: "full" })}
-                  disabled={isPlanning || isReadOnlyClientView}
-                >
-                  {isPlanning ? (
-                    <Loading label={planningLabel || "Refreshing..."} />
-                  ) : (
-                    "Regenerate"
-                  )}
-                </button>
+                <div className="regenerate-menu-wrap">
+                  <button
+                    className="btn btn-primary fw-bold results-action-btn"
+                    type="button"
+                    onClick={() => setIsRegenerateMenuOpen((open) => !open)}
+                    disabled={isPlanning || isReadOnlyClientView}
+                    aria-expanded={isRegenerateMenuOpen}
+                  >
+                    {isPlanning ? (
+                      <Loading label={planningLabel || "Refreshing..."} />
+                    ) : (
+                      "Regenerate"
+                    )}
+                  </button>
 
-                <button
-                  className="btn btn-outline-light results-action-btn"
-                  type="button"
-                  onClick={() => handlePlanToday({ autoGoResults: false, regenerateScope: "meals" })}
-                  disabled={isPlanning || isReadOnlyClientView || !plan}
-                >
-                  Meals Only
-                </button>
-
-                <button
-                  className="btn btn-outline-light results-action-btn"
-                  type="button"
-                  onClick={() => handlePlanToday({ autoGoResults: false, regenerateScope: "workouts" })}
-                  disabled={isPlanning || isReadOnlyClientView || !plan}
-                >
-                  Workouts Only
-                </button>
-
-                <button
-                  className="btn btn-outline-light results-action-btn"
-                  type="button"
-                  onClick={() => handlePlanToday({ autoGoResults: false, regenerateScope: "day" })}
-                  disabled={isPlanning || isReadOnlyClientView || !plan || !activeDate}
-                >
-                  Selected Day
-                </button>
+                  {isRegenerateMenuOpen ? (
+                    <div className="regenerate-menu">
+                      <button type="button" onClick={() => runRegenerate("full")}>
+                        Full Regeneration
+                      </button>
+                      <button type="button" onClick={() => runRegenerate("meals")} disabled={!plan}>
+                        Meals Only
+                      </button>
+                      <button type="button" onClick={() => runRegenerate("workouts")} disabled={!plan}>
+                        Workouts Only
+                      </button>
+                      <button type="button" onClick={() => runRegenerate("day")} disabled={!plan || !activeDate}>
+                        Selected Day
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
 
                 <button
                   className="btn btn-outline-light results-action-btn"
