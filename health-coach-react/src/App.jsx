@@ -313,6 +313,7 @@ function describeGoogleCalendarSync(syncResult) {
   const google = syncResult?.google_calendar;
   if (!google) return "";
   if (google.error) return `Error: ${google.error}`;
+  if (google.syncing) return "Google Calendar is syncing in the background.";
   if (Number.isFinite(google.created)) {
     return google.created > 0
       ? `Google Calendar synced ${google.created} event${google.created === 1 ? "" : "s"}.`

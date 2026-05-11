@@ -3,6 +3,7 @@ import os
 import time
 import traceback
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -130,6 +131,7 @@ app = Flask(__name__)
 CORS(app)
 init_db()
 openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY")) if os.environ.get("OPENAI_API_KEY") else None
+calendar_sync_executor = ThreadPoolExecutor(max_workers=2)
 
 
 def _serialize_auth_user(user: dict):
@@ -1522,7 +1524,27 @@ def _sync_google_calendar_for_user(user_id: str, events: list[dict]):
         )
 
 
-def _sync_calendar_for_plan(user_id: str, plan: dict):
+def _sync_google_calendar_background(user_id: str, events: list[dict]):
+    try:
+        with app.app_context():
+            result = _sync_google_calendar_for_user(user_id, events)
+            if result and result.get("error"):
+                app.logger.warning(
+                    "Background Google Calendar sync failed for user %s: %s",
+                    user_id,
+                    result.get("error"),
+                )
+            elif result:
+                app.logger.info(
+                    "Background Google Calendar sync complete user_id=%s created=%s",
+                    user_id,
+                    result.get("created"),
+                )
+    except Exception:
+        app.logger.exception("Background Google Calendar sync crashed for user %s", user_id)
+
+
+def _sync_calendar_for_plan(user_id: str, plan: dict, *, google_mode: str = "inline"):
     try:
         res = requests.post(
             f"{SCHEDULER_URL}/calendar/sync",
@@ -1531,7 +1553,13 @@ def _sync_calendar_for_plan(user_id: str, plan: dict):
         )
         if res.status_code == 200:
             data = res.json()
-            google = _sync_google_calendar_for_user(user_id, data.get("events", []))
+            events = data.get("events", [])
+            if google_mode == "background":
+                calendar_sync_executor.submit(_sync_google_calendar_background, user_id, events)
+                data["google_calendar"] = {"connected": None, "syncing": True}
+                return data
+
+            google = _sync_google_calendar_for_user(user_id, events)
             if google is not None:
                 data["google_calendar"] = google
             return data
@@ -2379,7 +2407,7 @@ def plan_today():
     if review_payload:
         plan_payload["review"] = review_payload
     save_plan(user_id, plan_payload)
-    calendar = _sync_calendar_for_plan(user_id, plan_payload)
+    calendar = _sync_calendar_for_plan(user_id, plan_payload, google_mode="background")
     elapsed_ms = int((time.perf_counter() - started_at) * 1000)
     app.logger.info(
         "plan_today complete user_id=%s scope=%s days=%s meals_today=%s workouts_today=%s elapsed_ms=%s",
@@ -2675,21 +2703,22 @@ def get_user_route(user_id):
     if session and target_user_id is None:
         return jsonify({"error": "Forbidden"}), 403
 
-    data = get_user(target_user_id or user_id)
-    if not data:
+    resolved_user_id = target_user_id or user_id
+    data = get_user(resolved_user_id)
+    plan = get_latest_plan(resolved_user_id)
+    calendar = _list_calendar(resolved_user_id)
+    target_auth_user = get_auth_user_by_id(resolved_user_id)
+    if not data and not plan and not target_auth_user:
         return jsonify({"exists": False})
-    plan = get_latest_plan(target_user_id or user_id)
-    calendar = _list_calendar(target_user_id or user_id)
-    target_auth_user = get_auth_user_by_id(target_user_id or user_id)
-    if session and session["user_id"] != (target_user_id or user_id):
-        record_audit_log(session["user_id"], target_user_id or user_id, "dietitian.client_viewed", {})
+    if session and session["user_id"] != resolved_user_id:
+        record_audit_log(session["user_id"], resolved_user_id, "dietitian.client_viewed", {})
     return jsonify(
         {
             "exists": True,
-            **data,
+            **(data or {"profile": {}, "goal": {}, "quiz_data": {}}),
             "plan": plan,
             "calendar": calendar,
-            "user_id": target_user_id or user_id,
+            "user_id": resolved_user_id,
             "account": _serialize_auth_user(target_auth_user) if target_auth_user else None,
         }
     )
