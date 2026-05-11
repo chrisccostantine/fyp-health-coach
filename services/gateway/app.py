@@ -721,9 +721,11 @@ def _client_with_plan_review(client: dict):
     payload = _serialize_auth_user(client)
     plan = get_latest_plan(client["user_id"])
     if isinstance(plan, dict):
+        payload["plan"] = plan
         payload["plan_review"] = plan.get("review")
         payload["has_plan"] = True
     else:
+        payload["plan"] = None
         payload["plan_review"] = None
         payload["has_plan"] = False
     payload["adherence_summary"] = item_adherence_summary(client["user_id"])

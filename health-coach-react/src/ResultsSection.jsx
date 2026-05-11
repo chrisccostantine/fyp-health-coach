@@ -349,10 +349,13 @@ export default function ResultsSection({
 
             {!plan ? (
               <div className="empty-state mt-4">
-                <div className="empty-state-title">No plan generated yet</div>
+                <div className="empty-state-title">
+                  {isReadOnlyClientView ? "No saved plan found for this client" : "No plan generated yet"}
+                </div>
                 <p className="text-muted mb-3">
-                  Complete your plan setup to generate a personalized meal and workout
-                  plan.
+                  {isReadOnlyClientView
+                    ? "This client account has progress data, but no generated plan is saved under this client login yet."
+                    : "Complete your plan setup to generate a personalized meal and workout plan."}
                 </p>
                 <button
                   className="btn btn-primary fw-bold"
@@ -360,7 +363,7 @@ export default function ResultsSection({
                   onClick={() => setStage("quiz")}
                   disabled={isReadOnlyClientView}
                 >
-                  {isReadOnlyClientView ? "Client Must Log In" : "Start My Plan"}
+                  {isReadOnlyClientView ? "Waiting For Client Plan" : "Start My Plan"}
                 </button>
               </div>
             ) : planLockedForClient ? (

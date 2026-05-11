@@ -1619,7 +1619,7 @@ export default function App() {
     }
   }
 
-  async function loadAccountData(uid, { quiet = false, targetStage = null } = {}) {
+  async function loadAccountData(uid, { quiet = false, targetStage = null, fallbackPlan = null, fallbackAccount = null } = {}) {
     if (!uid) return;
     setIsCheckingUser(true);
     if (!quiet) setCheckUserMsg("");
@@ -1629,16 +1629,21 @@ export default function App() {
       const data = await api.checkUser(uid);
       const isManagedClientView =
         currentUser?.role === "dietitian" && uid !== currentUser.user_id;
-      if (data.exists) {
+      const nextPlan = data.plan || fallbackPlan || null;
+      if (data.exists || nextPlan) {
         hydrateSavedUser(data);
-        setViewedAccount(data.account || null);
+        if (nextPlan && !data.plan) {
+          setPlan(nextPlan);
+          cachePlan(nextPlan);
+        }
+        setViewedAccount(data.account || fallbackAccount || null);
         if (targetStage) {
           setStage(targetStage);
         } else {
-          setStage(isManagedClientView ? "results" : data.plan ? "results" : "quiz");
+          setStage(isManagedClientView ? "results" : nextPlan ? "results" : "quiz");
         }
       } else {
-        setViewedAccount(data.account || null);
+        setViewedAccount(data.account || fallbackAccount || null);
         setPlan(null);
         setCalendar(null);
         if (isManagedClientView) {
@@ -2494,11 +2499,16 @@ export default function App() {
   async function handleSelectManagedClient(client) {
     if (!client?.user_id) return;
     setViewedAccount(client);
-    setPlan(null);
+    setPlan(client.plan || null);
+    if (client.plan) cachePlan(client.plan);
     setCalendar(null);
     setCheckUserMsg("");
     setStage("results");
-    await loadAccountData(client.user_id, { targetStage: "results" });
+    await loadAccountData(client.user_id, {
+      targetStage: "results",
+      fallbackPlan: client.plan || null,
+      fallbackAccount: client,
+    });
   }
 
   async function handleSelectOwnAccount() {
