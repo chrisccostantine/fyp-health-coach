@@ -102,6 +102,17 @@ function getPlanSliceForDate(plan, selectedDate) {
   };
 }
 
+function planReviewSignature(plan) {
+  if (!plan) return "";
+  const review = plan.review || {};
+  return JSON.stringify({
+    status: review.status || "",
+    reviewed_at: review.reviewed_at || "",
+    note: review.note || "",
+    history_count: Array.isArray(review.history) ? review.history.length : 0,
+  });
+}
+
 function buildHealthSafetyNotes({
   medicalConditionsInput,
   injuriesInput,
@@ -1546,6 +1557,13 @@ export default function App() {
         setPlan(data.plan);
         cachePlan(data.plan);
       }
+      setManagedClients((prev) =>
+        prev.map((client) =>
+          client.user_id === viewedAccount.user_id
+            ? { ...client, plan_review: data?.review || data?.plan?.review || client.plan_review }
+            : client,
+        ),
+      );
       setReviewNote("");
       setReviewMsg(
         status === "approved"
@@ -1654,6 +1672,62 @@ export default function App() {
       if (!quiet) setClientMsg(`Error: ${e.message}`);
     }
   }
+
+  useEffect(() => {
+    const ownUserId = currentUser?.user_id;
+    if (!ownUserId || currentUser?.role === "dietitian") return undefined;
+    if (viewedAccount?.user_id && viewedAccount.user_id !== ownUserId) return undefined;
+    if (!["userHome", "results"].includes(stage)) return undefined;
+
+    let cancelled = false;
+    let isRefreshing = false;
+
+    const refreshLatestPlan = async () => {
+      if (cancelled || isRefreshing || document.visibilityState === "hidden") return;
+      isRefreshing = true;
+      try {
+        const data = await api.checkUser(ownUserId);
+        if (cancelled || !data?.plan) return;
+
+        const previousReview = plan?.review || {};
+        const nextReview = data.plan.review || {};
+        const hasReviewChange = planReviewSignature(data.plan) !== planReviewSignature(plan);
+
+        if (hasReviewChange || (!plan && data.plan)) {
+          setPlan(data.plan);
+          cachePlan(data.plan);
+          if (data.calendar) {
+            setCalendar(data.calendar);
+            cacheCalendar(data.calendar);
+          }
+
+          if (previousReview.status === "pending_review" && nextReview.status === "approved") {
+            setPlanMsg("Your dietitian approved this plan.");
+          }
+        }
+      } catch {
+        // Keep this quiet; the normal page actions still show explicit errors.
+      } finally {
+        isRefreshing = false;
+      }
+    };
+
+    const intervalId = window.setInterval(refreshLatestPlan, 2000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshLatestPlan();
+      }
+    };
+
+    refreshLatestPlan();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [currentUser?.user_id, currentUser?.role, viewedAccount?.user_id, stage, plan]);
 
   useEffect(() => {
     if (stage !== "coachTools" || !currentUser || currentUser.role === "dietitian") return;
