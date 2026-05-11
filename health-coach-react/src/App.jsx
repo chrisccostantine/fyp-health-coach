@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import ResultsSection from "./ResultsSection";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 
 import {
   api,
@@ -15,6 +14,8 @@ import {
   saveAuthSession,
   saveSettings,
 } from "./api";
+
+const ResultsSection = lazy(() => import("./ResultsSection"));
 /* -------------------- Exports -------------------- */
 export { App, NudgeView, CalendarView };
 
@@ -404,7 +405,7 @@ function AccountAvatar({ account, hasUpdate = false, size = "md" }) {
   return (
     <span className={`account-avatar account-avatar-${size} ${hasUpdate ? "has-update" : ""}`}>
       {account?.profile_image_data ? (
-        <img src={account.profile_image_data} alt="" />
+        <img src={account.profile_image_data} alt="" decoding="async" />
       ) : (
         <span>{accountInitials(account)}</span>
       )}
@@ -1222,7 +1223,7 @@ export default function App() {
   }
 
   // ------- Calendar -------
-  const [calendar, setCalendar] = useState(getCachedCalendar());
+  const [, setCalendar] = useState(getCachedCalendar());
   const [calendarMsg, setCalendarMsg] = useState("");
   function calcFitnessAge() {
     // super simple placeholder logic (you can improve later)
@@ -1361,7 +1362,7 @@ export default function App() {
   const [eventId, setEventId] = useState("");
   const [rating, setRating] = useState(5);
   const [reason, setReason] = useState("");
-  const [feedbackStatus, setFeedbackStatus] = useState("completed");
+  const [feedbackStatus] = useState("completed");
   const [feedbackOut, setFeedbackOut] = useState("");
   const [isFeedback, setIsFeedback] = useState(false);
   const [adherenceItems, setAdherenceItems] = useState([]);
@@ -1380,7 +1381,6 @@ export default function App() {
   const [reviewNote, setReviewNote] = useState("");
   const [reviewMsg, setReviewMsg] = useState("");
   const [isReviewingPlan, setIsReviewingPlan] = useState(false);
-  const [clientReviewNotes, setClientReviewNotes] = useState({});
 
   useEffect(() => {
     if (stage !== "results" || !userId?.trim()) return;
@@ -1477,22 +1477,6 @@ export default function App() {
     }
   }
 
-  const coachToolFeedbackItems = useMemo(() => {
-    const events = Array.isArray(calendar?.events) ? calendar.events : [];
-    const today = todayIsoLocal();
-    return events.filter(
-      (item) =>
-        item?.id &&
-        (item?.type === "meal" || item?.type === "workout") &&
-        String(item?.starts_at || "").startsWith(today),
-    );
-  }, [calendar]);
-
-  const selectedFeedbackItem = useMemo(
-    () => coachToolFeedbackItems.find((item) => item.id === eventId) || null,
-    [coachToolFeedbackItems, eventId],
-  );
-
   function startQuiz() {
     if (!currentUser) {
       setCheckUserMsg("Create an account or log in to continue.");
@@ -1572,36 +1556,6 @@ export default function App() {
       );
     } catch (e) {
       setReviewMsg(`Error: ${e.message}`);
-    } finally {
-      setIsReviewingPlan(false);
-    }
-  }
-
-  async function handleDashboardPlanReview(client, status) {
-    if (!client?.user_id) return;
-    setIsReviewingPlan(true);
-    setClientMsg("");
-    try {
-      const note = clientReviewNotes[client.user_id] || "";
-      const data = await api.reviewPlan({
-        client_user_id: client.user_id,
-        status,
-        note,
-      });
-      setManagedClients((prev) =>
-        prev.map((entry) =>
-          entry.user_id === client.user_id
-            ? { ...entry, plan_review: data?.review || data?.plan?.review || entry.plan_review, has_plan: true }
-            : entry,
-        ),
-      );
-      if (viewedAccount?.user_id === client.user_id && data?.plan) {
-        setPlan(data.plan);
-      }
-      setClientReviewNotes((prev) => ({ ...prev, [client.user_id]: "" }));
-      setClientMsg(status === "approved" ? "Plan approved." : status === "rejected" ? "Plan rejected." : "Changes requested.");
-    } catch (e) {
-      setClientMsg(`Error: ${e.message}`);
     } finally {
       setIsReviewingPlan(false);
     }
@@ -3425,7 +3379,7 @@ export default function App() {
                         ) : null}
                       </div>
                       {clientUpdateImage ? (
-                        <img className="client-update-preview" src={clientUpdateImage} alt="Selected update" />
+                        <img className="client-update-preview" src={clientUpdateImage} alt="Selected update" decoding="async" />
                       ) : null}
                       <button className="btn btn-primary fw-bold" type="submit" disabled={isClientUpdateBusy}>
                         {isClientUpdateBusy ? <Spinner label="Posting..." /> : "Post Update"}
@@ -3464,7 +3418,7 @@ export default function App() {
                             </div>
                             {update.body ? <p className="client-update-body">{update.body}</p> : null}
                             {update.image_data ? (
-                              <img className="client-update-image" src={update.image_data} alt="Client update" />
+                              <img className="client-update-image" src={update.image_data} alt="Client update" loading="lazy" decoding="async" />
                             ) : null}
                           </article>
                         );
@@ -3663,7 +3617,7 @@ export default function App() {
                             ) : null}
                           </div>
                           {clientUpdateImage ? (
-                            <img className="client-update-preview" src={clientUpdateImage} alt="Selected update" />
+                            <img className="client-update-preview" src={clientUpdateImage} alt="Selected update" decoding="async" />
                           ) : null}
                           <button className="btn btn-primary fw-bold" type="submit" disabled={isClientUpdateBusy}>
                             {isClientUpdateBusy ? <Spinner label="Posting..." /> : "Post Update"}
@@ -3705,7 +3659,7 @@ export default function App() {
                                 </div>
                                 {update.body ? <p className="client-update-body">{update.body}</p> : null}
                                 {update.image_data ? (
-                                  <img className="client-update-image" src={update.image_data} alt="Client update" />
+                                  <img className="client-update-image" src={update.image_data} alt="Client update" loading="lazy" decoding="async" />
                                 ) : null}
                               </article>
                             );
@@ -4089,8 +4043,9 @@ export default function App() {
                           <div className="long-right">
                             <img
                               className="long-img"
-                              src="/images/male.png"
+                              src="/images/male.webp"
                               alt="Male"
+                              decoding="async"
                             />
                           </div>
                         }
@@ -4107,8 +4062,9 @@ export default function App() {
                           <div className="long-right">
                             <img
                               className="long-img"
-                              src="/images/female.png"
-                              alt="Male"
+                              src="/images/female.webp"
+                              alt="Female"
+                              decoding="async"
                             />
                           </div>
                         }
@@ -4127,22 +4083,22 @@ export default function App() {
                         {
                           k: "slim",
                           t: "Slim",
-                          img: "/images/slim-body-male.png",
+                          img: "/images/slim-body-male.webp",
                         },
                         {
                           k: "average",
                           t: "Average",
-                          img: "/images/average-body-male.png",
+                          img: "/images/average-body-male.webp",
                         },
                         {
                           k: "big",
                           t: "Big",
-                          img: "/images/big-body-male.png",
+                          img: "/images/big-body-male.webp",
                         },
                         {
                           k: "heavy",
                           t: "Heavy",
-                          img: "/images/heavy-body-male.png",
+                          img: "/images/heavy-body-male.webp",
                         },
                       ].map((x) => (
                         <button
@@ -4159,6 +4115,8 @@ export default function App() {
                               className="img-card-img"
                               src={x.img}
                               alt={x.t}
+                              loading="lazy"
+                              decoding="async"
                             />
                           </div>
                           <div className="img-card-bottom">{x.t}</div>
@@ -4273,8 +4231,10 @@ export default function App() {
                     <div className="problem-layout mt-4">
                       <div className="img-ph tall">
                         <img
-                          src="/images/average-body-male.png"
+                          src="/images/average-body-male.webp"
                           alt="Preview"
+                          loading="lazy"
+                          decoding="async"
                         />
                       </div>
 
@@ -4662,18 +4622,18 @@ export default function App() {
                     <h3 className="quiz-title">Like it or dislike it</h3>
 
                     {[
-                      { name: "Cardio", img: "/images/exercises/cardio.png" },
+                      { name: "Cardio", img: "/images/exercises/cardio.webp" },
                       {
                         name: "Yoga / Stretching",
-                        img: "/images/exercises/yoga.png",
+                        img: "/images/exercises/yoga.webp",
                       },
                       {
                         name: "Lifting weights",
-                        img: "/images/exercises/lifting.png",
+                        img: "/images/exercises/lifting.webp",
                       },
                       {
                         name: "Pull-ups",
-                        img: "/images/exercises/pullups.png",
+                        img: "/images/exercises/pullups.webp",
                       },
                     ].map((item) => (
                       <div key={item.name} className="exercise-card">
@@ -4682,6 +4642,8 @@ export default function App() {
                             className="exercise-img"
                             src={item.img}
                             alt={item.name}
+                            loading="lazy"
+                            decoding="async"
                           />
                         </div>
 
@@ -5326,76 +5288,87 @@ export default function App() {
         )}
 
         {/* RESULTS */}
-        <ResultsSection
-          stage={stage}
-          plan={plan}
-          selectedPlanDate={selectedPlanDate}
-          setSelectedPlanDate={setSelectedPlanDate}
-          setStage={setStage}
-          handleGoHome={() => setStage(isReadOnlyClientView ? "dietitianClients" : defaultHomeStage)}
-          isPlanning={isPlanning}
-          handlePlanToday={handlePlanToday}
-          planMsg={planMsg}
-          planningLabel={planningLabel}
-          planHistoryCount={planHistoryCount}
-          handleUndoPlan={handleUndoPlan}
-          isReadOnlyClientView={isReadOnlyClientView}
-          viewedAccount={viewedAccount}
-          eventId={eventId}
-          setEventId={setEventId}
-          rating={rating}
-          setRating={setRating}
-          reason={reason}
-          setReason={setReason}
-          isFeedback={isFeedback}
-          handleFeedback={handleFeedback}
-          feedbackOut={feedbackOut}
-          adherenceItems={adherenceItems}
-          adherenceMsg={adherenceMsg}
-          savingAdherenceKey={savingAdherenceKey}
-          handleItemAdherence={handleItemAdherence}
-          calendar={calendar}
-          calendarMsg={calendarMsg}
-          progressWeight={progressWeight}
-          setProgressWeight={setProgressWeight}
-          mealAdherence={mealAdherence}
-          setMealAdherence={setMealAdherence}
-          workoutAdherence={workoutAdherence}
-          setWorkoutAdherence={setWorkoutAdherence}
-          energyLevel={energyLevel}
-          setEnergyLevel={setEnergyLevel}
-          progressNotes={progressNotes}
-          setProgressNotes={setProgressNotes}
-          progressHistory={progressHistory}
-          weeklyLock={weeklyLock}
-          weeklyUpdate={weeklyUpdate}
-          progressMsg={progressMsg}
-          isProgressBusy={isProgressBusy}
-          handleProgressCheckIn={handleProgressCheckIn}
-          handleWeeklyUpdate={handleWeeklyUpdate}
-          reviewNote={reviewNote}
-          setReviewNote={setReviewNote}
-          reviewMsg={reviewMsg}
-          isReviewingPlan={isReviewingPlan}
-          handlePlanReview={handlePlanReview}
-          googleCalendar={googleCalendar}
-          googleCalendarMsg={googleCalendarMsg}
-          isGoogleCalendarBusy={isGoogleCalendarBusy}
-          handleGoogleCalendarConnect={handleGoogleCalendarConnect}
-          handleGoogleCalendarDisconnect={handleGoogleCalendarDisconnect}
-          nudgeMsg={nudgeMsg}
-          dietChatInput={dietChatInput}
-          setDietChatInput={setDietChatInput}
-          dietChatMessages={dietChatMessages}
-          isDietChatting={isDietChatting}
-          dietChatMsg={dietChatMsg}
-          handleDietChat={handleDietChat}
-          CalendarView={CalendarView}
-          NudgeView={NudgeView}
-          Spinner={Spinner}
-          Alert={Alert}
-          showAdvancedPanels={false}
-        />
+        {stage === "results" ? (
+          <Suspense
+            fallback={
+              <div className="card card-soft">
+                <div className="card-body p-4">
+                  <Spinner label="Loading results..." />
+                </div>
+              </div>
+            }
+          >
+            <ResultsSection
+              stage={stage}
+              plan={plan}
+              selectedPlanDate={selectedPlanDate}
+              setSelectedPlanDate={setSelectedPlanDate}
+              setStage={setStage}
+              handleGoHome={() => setStage(isReadOnlyClientView ? "dietitianClients" : defaultHomeStage)}
+              isPlanning={isPlanning}
+              handlePlanToday={handlePlanToday}
+              planMsg={planMsg}
+              planningLabel={planningLabel}
+              planHistoryCount={planHistoryCount}
+              handleUndoPlan={handleUndoPlan}
+              isReadOnlyClientView={isReadOnlyClientView}
+              viewedAccount={viewedAccount}
+              eventId={eventId}
+              setEventId={setEventId}
+              rating={rating}
+              setRating={setRating}
+              reason={reason}
+              setReason={setReason}
+              isFeedback={isFeedback}
+              handleFeedback={handleFeedback}
+              feedbackOut={feedbackOut}
+              adherenceItems={adherenceItems}
+              adherenceMsg={adherenceMsg}
+              savingAdherenceKey={savingAdherenceKey}
+              handleItemAdherence={handleItemAdherence}
+              calendarMsg={calendarMsg}
+              progressWeight={progressWeight}
+              setProgressWeight={setProgressWeight}
+              mealAdherence={mealAdherence}
+              setMealAdherence={setMealAdherence}
+              workoutAdherence={workoutAdherence}
+              setWorkoutAdherence={setWorkoutAdherence}
+              energyLevel={energyLevel}
+              setEnergyLevel={setEnergyLevel}
+              progressNotes={progressNotes}
+              setProgressNotes={setProgressNotes}
+              progressHistory={progressHistory}
+              weeklyLock={weeklyLock}
+              weeklyUpdate={weeklyUpdate}
+              progressMsg={progressMsg}
+              isProgressBusy={isProgressBusy}
+              handleProgressCheckIn={handleProgressCheckIn}
+              handleWeeklyUpdate={handleWeeklyUpdate}
+              reviewNote={reviewNote}
+              setReviewNote={setReviewNote}
+              reviewMsg={reviewMsg}
+              isReviewingPlan={isReviewingPlan}
+              handlePlanReview={handlePlanReview}
+              googleCalendar={googleCalendar}
+              googleCalendarMsg={googleCalendarMsg}
+              isGoogleCalendarBusy={isGoogleCalendarBusy}
+              handleGoogleCalendarConnect={handleGoogleCalendarConnect}
+              handleGoogleCalendarDisconnect={handleGoogleCalendarDisconnect}
+              nudgeMsg={nudgeMsg}
+              dietChatInput={dietChatInput}
+              setDietChatInput={setDietChatInput}
+              dietChatMessages={dietChatMessages}
+              isDietChatting={isDietChatting}
+              dietChatMsg={dietChatMsg}
+              handleDietChat={handleDietChat}
+              CalendarView={CalendarView}
+              NudgeView={NudgeView}
+              Spinner={Spinner}
+              Alert={Alert}
+              showAdvancedPanels={false}
+            />
+          </Suspense>
+        ) : null}
       </div>
 
       <footer className="text-center pb-4 pt-4">

@@ -144,7 +144,6 @@ export default function ResultsSection({
   handlePlanReview,
 
   // calendar
-  calendar,
   calendarMsg,
   googleCalendar,
   googleCalendarMsg,
